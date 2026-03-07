@@ -27,9 +27,9 @@ indicatif.workspace = true
 thiserror.workspace = true
 
 # tb-prod-specific deps
-confy = "0.6"
-chrono-humanize = "0.2"
+dirs = "6"
 html2text = "0.14"
+urlencoding = "2"
 
 [dev-dependencies]
 http.workspace = true
