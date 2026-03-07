@@ -2231,14 +2231,10 @@ dependencies = [
  "assert_cmd",
  "chrono",
  "clap",
- "clap_complete",
- "colored 3.1.1",
+ "dirs",
  "http",
- "indicatif",
  "predicates",
  "reqwest",
- "reqwest-middleware",
- "rusqlite",
  "rvcr",
  "serde",
  "serde_json",
@@ -2247,6 +2243,7 @@ dependencies = [
  "tokio",
  "toml",
  "toolbox-core",
+ "urlencoding",
 ]
 
 [[package]]

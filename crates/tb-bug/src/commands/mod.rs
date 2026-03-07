@@ -1,0 +1,12 @@
+pub mod config_cmd;
+pub mod doctor;
+pub mod errors;
+pub mod events;
+pub mod fetch;
+pub mod prime;
+pub mod projects;
+pub mod releases;
+pub mod report;
+pub mod search;
+pub mod stability;
+pub mod trends;
