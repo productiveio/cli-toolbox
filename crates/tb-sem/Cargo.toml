@@ -22,6 +22,12 @@ toml.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
 
+# tb-sem-specific deps
+chrono-tz = "0.10"
+dirs = "6"
+regex = "1"
+iana-time-zone = "0.1"
+
 [dev-dependencies]
 http.workspace = true
 rvcr.workspace = true
