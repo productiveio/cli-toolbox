@@ -28,7 +28,7 @@ enum Commands {
         /// Filter by severity: error, warning, info
         #[arg(long)]
         severity: Option<String>,
-        /// Only errors seen after this time (e.g., 1d, 7d, 24h, 2026-03-01)
+        /// Only errors seen after this time (e.g., today, yesterday, 1d, 7d, 24h, 2026-03-01)
         #[arg(long)]
         since: Option<String>,
         /// Filter by release stage (e.g., production)

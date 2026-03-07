@@ -1,7 +1,27 @@
+use chrono::{NaiveDate, Utc};
+
 use crate::api::BugsnagClient;
 use crate::config::Config;
 use crate::error::Result;
 use crate::output;
+
+/// Normalize a `--since` value into a format the Bugsnag API accepts.
+///
+/// Bugsnag accepts: full ISO8601 (`2026-03-07T00:00:00Z`) and relative
+/// durations (`1d`, `7d`, `24h`). This function converts human-friendly
+/// shortcuts so the user doesn't have to type full ISO8601.
+fn parse_since(value: &str) -> String {
+    match value {
+        "today" => Utc::now().format("%Y-%m-%dT00:00:00Z").to_string(),
+        "yesterday" => (Utc::now() - chrono::Duration::days(1))
+            .format("%Y-%m-%dT00:00:00Z")
+            .to_string(),
+        v if NaiveDate::parse_from_str(v, "%Y-%m-%d").is_ok() => {
+            format!("{v}T00:00:00Z")
+        }
+        other => other.to_string(),
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
@@ -27,7 +47,8 @@ pub async fn run(
     if let Some(s) = severity {
         filters.push(("event.severity", s));
     }
-    if let Some(s) = since {
+    let since_value = since.map(parse_since);
+    if let Some(ref s) = since_value {
         filters.push(("event.since", s));
     }
     if let Some(s) = stage {
