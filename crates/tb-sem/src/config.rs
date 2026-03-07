@@ -33,26 +33,37 @@ impl Config {
         Ok(dir.join("semi/config.toml"))
     }
 
-    /// Load config from: secrets.toml (cwd) > ~/.config/semi/config.toml.
+    /// Load config from (first match wins):
+    ///   1. secrets.toml [semaphore] section (monorepo root)
+    ///   2. ~/.config/semi/config.toml (standalone)
     /// Token can be overridden by SEMAPHORE_API_TOKEN env var.
     pub fn load() -> Result<Self> {
-        let paths = [
-            PathBuf::from("secrets.toml"),
-            Self::config_path().unwrap_or_default(),
-        ];
-
         let mut config: Option<Config> = None;
-        for path in &paths {
+
+        // Try monorepo secrets.toml with [semaphore] section
+        let secrets_path = PathBuf::from("secrets.toml");
+        if secrets_path.exists() {
+            let content = std::fs::read_to_string(&secrets_path)?;
+            let table: toml::Table = toml::from_str(&content)?;
+            if let Some(section) = table.get("semaphore") {
+                config = Some(section.clone().try_into().map_err(|e: toml::de::Error| {
+                    SemiError::Config(format!("invalid [semaphore] section: {}", e))
+                })?);
+            }
+        }
+
+        // Fall back to standalone config
+        if config.is_none() {
+            let path = Self::config_path().unwrap_or_default();
             if path.exists() {
-                let content = std::fs::read_to_string(path)?;
+                let content = std::fs::read_to_string(&path)?;
                 config = Some(toml::from_str(&content)?);
-                break;
             }
         }
 
         let mut config = config.ok_or_else(|| {
             SemiError::Config(
-                "No config found. Run `semi config init --token <TOKEN>` or create ~/.config/semi/config.toml".into(),
+                "No config found. Run `tb-sem config init --token <TOKEN>` or create ~/.config/semi/config.toml".into(),
             )
         })?;
 
