@@ -268,8 +268,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 )
                 .await?;
             }
-            TaskAction::Show { ref id } => {
-                commands::task::run(&client, id, cli.json).await?;
+            TaskAction::Show { id } => {
+                commands::task::run(&client, &id, cli.json).await?;
             }
             TaskAction::Create {
                 title,
@@ -306,7 +306,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 )
                 .await?;
             }
-            TaskAction::Update { ref id, status, title, assignee } => {
+            TaskAction::Update { id, status, title, assignee } => {
                 if status.is_none() && title.is_none() && assignee.is_none() {
                     return Err("Provide at least one of --status, --title, or --assignee".into());
                 }
@@ -315,7 +315,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 cache.ensure_fresh(&client).await?;
 
                 let workflow_id = if status.is_some() {
-                    let task_resp = client.get_task(id).await?;
+                    let task_resp = client.get_task(&id).await?;
                     let project_id = task_resp.data.relationship_id("project");
                     project_id.and_then(|pid| cache.workflow_id_for_project(pid).ok().flatten())
                 } else {
@@ -326,7 +326,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
                 commands::task_update::run(
                     &client,
-                    id,
+                    &id,
                     status_id.as_deref(),
                     title.as_deref(),
                     assignee_id.as_deref(),
@@ -336,10 +336,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             }
         },
         Commands::Todo { action } => match action {
-            TodoAction::List { ref task_id } => {
-                commands::todos::list(&client, task_id, cli.json).await?;
+            TodoAction::List { task_id } => {
+                commands::todos::list(&client, &task_id, cli.json).await?;
             }
-            TodoAction::Create { ref task_id, title, assignee } => {
+            TodoAction::Create { task_id, title, assignee } => {
                 let assignee_id = if let Some(ref a) = assignee {
                     let cache = Cache::new(client.org_id())?;
                     cache.ensure_fresh(&client).await?;
@@ -347,25 +347,25 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 } else {
                     None
                 };
-                commands::todos::create(&client, task_id, &title, assignee_id.as_deref(), cli.json).await?;
+                commands::todos::create(&client, &task_id, &title, assignee_id.as_deref(), cli.json).await?;
             }
-            TodoAction::Update { ref todo_id, done, title } => {
+            TodoAction::Update { todo_id, done, title } => {
                 if done.is_none() && title.is_none() {
                     return Err("Provide at least one of --done or --title".into());
                 }
-                commands::todos::update(&client, todo_id, done, title.as_deref(), cli.json).await?;
+                commands::todos::update(&client, &todo_id, done, title.as_deref(), cli.json).await?;
             }
         },
         Commands::Comment { action } => match action {
-            CommentAction::Add { ref id, body, body_file, body_stdin } => {
+            CommentAction::Add { id, body, body_file, body_stdin } => {
                 let resolved_body = read_text_input(body.as_deref(), body_file.as_deref(), body_stdin)?
                     .ok_or("Provide BODY, --body-file, or --body-stdin")?;
-                commands::task_comment::run(&client, id, &resolved_body, cli.json).await?;
+                commands::task_comment::run(&client, &id, &resolved_body, cli.json).await?;
             }
         },
         Commands::Project { action } => match action {
-            ProjectAction::Show { ref project } => {
-                commands::project::run(&client, project, cli.json).await?;
+            ProjectAction::Show { project } => {
+                commands::project::run(&client, &project, cli.json).await?;
             }
         },
         Commands::Prime => {
