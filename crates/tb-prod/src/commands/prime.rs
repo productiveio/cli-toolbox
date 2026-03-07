@@ -23,19 +23,19 @@ pub async fn run(client: &ProductiveClient, config: &Config) -> Result<()> {
     println!("{} (person_id: {})\n", user_name, person_id);
 
     println!("## Commands");
-    println!("- `tb-prod project \"X\"` — project context (statuses, task lists)");
-    println!("- `tb-prod tasks` — my open tasks");
-    println!("- `tb-prod tasks --project \"X\" --category all` — all tasks in project");
-    println!("- `tb-prod tasks --task-list ID --category all --search \"keyword\"` — search in task list");
-    println!("- `tb-prod task ID` — task detail with subtasks, todos, comments");
-    println!("- `tb-prod create --title \"...\" --project \"X\" --task-list \"Y\"` — create task");
-    println!("- `tb-prod update ID --status \"Done\"` — update status");
-    println!("- `tb-prod update ID --title \"...\" --assignee \"Name\"` — update fields");
-    println!("- `tb-prod comment ID \"message\"` — add comment");
-    println!("- `tb-prod comment ID --body-stdin` — comment from stdin");
-    println!("- `tb-prod todo-create TASK_ID --title \"...\"` — add todo");
-    println!("- `tb-prod todo-update TODO_ID --done true` — complete todo");
-    println!("- `tb-prod todos TASK_ID` — list todos\n");
+    println!("- `tb-prod project show \"X\"` — project context (statuses, task lists)");
+    println!("- `tb-prod task list` — my open tasks");
+    println!("- `tb-prod task list --project \"X\" --category all` — all tasks in project");
+    println!("- `tb-prod task list --task-list ID --category all --search \"keyword\"` — search in task list");
+    println!("- `tb-prod task show ID` — task detail with subtasks, todos, comments");
+    println!("- `tb-prod task create --title \"...\" --project \"X\" --task-list \"Y\"` — create task");
+    println!("- `tb-prod task update ID --status \"Done\"` — update status");
+    println!("- `tb-prod task update ID --title \"...\" --assignee \"Name\"` — update fields");
+    println!("- `tb-prod comment add ID \"message\"` — add comment");
+    println!("- `tb-prod comment add ID --body-stdin` — comment from stdin");
+    println!("- `tb-prod todo create TASK_ID --title \"...\"` — add todo");
+    println!("- `tb-prod todo update TODO_ID --done true` — complete todo");
+    println!("- `tb-prod todo list TASK_ID` — list todos\n");
 
     println!("## Notes");
     println!("- `--project`, `--status`, `--assignee`, `--task-list` accept names (fuzzy matched)");

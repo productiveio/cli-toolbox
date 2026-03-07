@@ -21,8 +21,46 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Commands {
+    /// Manage tasks
+    Task {
+        #[command(subcommand)]
+        action: TaskAction,
+    },
+    /// Manage todos
+    Todo {
+        #[command(subcommand)]
+        action: TodoAction,
+    },
+    /// Manage comments
+    Comment {
+        #[command(subcommand)]
+        action: CommentAction,
+    },
+    /// Project information
+    Project {
+        #[command(subcommand)]
+        action: ProjectAction,
+    },
+    /// AI context dump — quick command reference
+    Prime,
+    /// Manage cache
+    Cache {
+        #[command(subcommand)]
+        action: CacheAction,
+    },
+    /// Health check
+    Doctor,
+    /// Manage configuration
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum TaskAction {
     /// List tasks with filters
-    Tasks {
+    List {
         /// Filter by task list (ID or name)
         #[arg(long)]
         task_list: Option<String>,
@@ -40,7 +78,7 @@ enum Commands {
         search: Option<String>,
     },
     /// Show single task detail
-    Task {
+    Show {
         /// Task ID
         id: String,
     },
@@ -88,26 +126,17 @@ enum Commands {
         #[arg(long)]
         assignee: Option<String>,
     },
-    /// Add a comment to a task
-    Comment {
-        /// Task ID
-        id: String,
-        /// Comment body (HTML or plain text)
-        body: Option<String>,
-        /// Read body from file
-        #[arg(long)]
-        body_file: Option<String>,
-        /// Read body from stdin
-        #[arg(long)]
-        body_stdin: bool,
-    },
+}
+
+#[derive(clap::Subcommand)]
+enum TodoAction {
     /// List todos for a task
-    Todos {
+    List {
         /// Task ID
         task_id: String,
     },
     /// Create a todo on a task
-    TodoCreate {
+    Create {
         /// Task ID
         task_id: String,
         /// Todo title/description
@@ -118,7 +147,7 @@ enum Commands {
         assignee: Option<String>,
     },
     /// Update a todo
-    TodoUpdate {
+    Update {
         /// Todo ID
         todo_id: String,
         /// Mark done (true) or undone (false)
@@ -128,24 +157,31 @@ enum Commands {
         #[arg(long)]
         title: Option<String>,
     },
-    /// Project context — statuses, task lists
-    Project {
+}
+
+#[derive(clap::Subcommand)]
+enum CommentAction {
+    /// Add a comment
+    Add {
+        /// Entity ID (e.g. task ID)
+        id: String,
+        /// Comment body (HTML or plain text)
+        body: Option<String>,
+        /// Read body from file
+        #[arg(long)]
+        body_file: Option<String>,
+        /// Read body from stdin
+        #[arg(long)]
+        body_stdin: bool,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum ProjectAction {
+    /// Show project context — statuses, task lists
+    Show {
         /// Project ID or name
         project: String,
-    },
-    /// AI context dump — quick command reference
-    Prime,
-    /// Manage cache
-    Cache {
-        #[command(subcommand)]
-        action: CacheAction,
-    },
-    /// Health check
-    Doctor,
-    /// Manage configuration
-    Config {
-        #[command(subcommand)]
-        action: ConfigAction,
     },
 }
 
@@ -202,128 +238,136 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let client = ProductiveClient::new(&config);
 
     match cli.command {
-        Commands::Tasks {
-            task_list,
-            project,
-            assignee,
-            category,
-            search,
-        } => {
-            let cache = Cache::new(client.org_id())?;
-            cache.ensure_fresh(&client).await?;
-
-            let project_id = project.as_deref().map(|p| cache.resolve_project(p)).transpose()?;
-            let task_list_id = match task_list.as_deref() {
-                Some(tl) => Some(cache::resolve_task_list(&client, tl, project_id.as_deref()).await?),
-                None => None,
-            };
-            let assignee_id = assignee.as_deref().map(|a| cache.resolve_person(a)).transpose()?;
-
-            commands::tasks::run(
-                &client,
-                &config,
-                task_list_id.as_deref(),
-                project_id.as_deref(),
-                assignee_id.as_deref(),
-                category.as_deref(),
-                search.as_deref(),
-                cli.json,
-            )
-            .await?;
-        }
-        Commands::Task { ref id } => {
-            commands::task::run(&client, id, cli.json).await?;
-        }
-        Commands::Create {
-            title,
-            project,
-            task_list,
-            status,
-            assignee,
-            description,
-            description_file,
-            description_stdin,
-            due_date,
-        } => {
-            let cache = Cache::new(client.org_id())?;
-            cache.ensure_fresh(&client).await?;
-
-            let project_id = cache.resolve_project(&project)?;
-            let workflow_id = cache.workflow_id_for_project(&project_id)?;
-            let task_list_id = cache::resolve_task_list(&client, &task_list, Some(&project_id)).await?;
-            let status_id = status.as_deref().map(|s| cache.resolve_workflow_status(s, workflow_id.as_deref())).transpose()?;
-            let assignee_id = assignee.as_deref().map(|a| cache.resolve_person(a)).transpose()?;
-
-            let desc = read_text_input(description.as_deref(), description_file.as_deref(), description_stdin)?;
-
-            commands::task_create::run(
-                &client,
-                &title,
-                &project_id,
-                &task_list_id,
-                status_id.as_deref(),
-                assignee_id.as_deref(),
-                desc.as_deref(),
-                due_date.as_deref(),
-                cli.json,
-            )
-            .await?;
-        }
-        Commands::Update { ref id, status, title, assignee } => {
-            if status.is_none() && title.is_none() && assignee.is_none() {
-                return Err("Provide at least one of --status, --title, or --assignee".into());
-            }
-
-            let cache = Cache::new(client.org_id())?;
-            cache.ensure_fresh(&client).await?;
-
-            let workflow_id = if status.is_some() {
-                let task_resp = client.get_task(id).await?;
-                let project_id = task_resp.data.relationship_id("project");
-                project_id.and_then(|pid| cache.workflow_id_for_project(pid).ok().flatten())
-            } else {
-                None
-            };
-            let status_id = status.as_deref().map(|s| cache.resolve_workflow_status(s, workflow_id.as_deref())).transpose()?;
-            let assignee_id = assignee.as_deref().map(|a| cache.resolve_person(a)).transpose()?;
-
-            commands::task_update::run(
-                &client,
-                id,
-                status_id.as_deref(),
-                title.as_deref(),
-                assignee_id.as_deref(),
-                cli.json,
-            )
-            .await?;
-        }
-        Commands::Comment { ref id, body, body_file, body_stdin } => {
-            let resolved_body = read_text_input(body.as_deref(), body_file.as_deref(), body_stdin)?
-                .ok_or("Provide BODY, --body-file, or --body-stdin")?;
-            commands::task_comment::run(&client, id, &resolved_body, cli.json).await?;
-        }
-        Commands::Todos { ref task_id } => {
-            commands::todos::list(&client, task_id, cli.json).await?;
-        }
-        Commands::TodoCreate { ref task_id, title, assignee } => {
-            let assignee_id = if let Some(ref a) = assignee {
+        Commands::Task { action } => match action {
+            TaskAction::List {
+                task_list,
+                project,
+                assignee,
+                category,
+                search,
+            } => {
                 let cache = Cache::new(client.org_id())?;
                 cache.ensure_fresh(&client).await?;
-                Some(cache.resolve_person(a)?)
-            } else {
-                None
-            };
-            commands::todos::create(&client, task_id, &title, assignee_id.as_deref(), cli.json).await?;
-        }
-        Commands::TodoUpdate { ref todo_id, done, title } => {
-            if done.is_none() && title.is_none() {
-                return Err("Provide at least one of --done or --title".into());
+
+                let project_id = project.as_deref().map(|p| cache.resolve_project(p)).transpose()?;
+                let task_list_id = match task_list.as_deref() {
+                    Some(tl) => Some(cache::resolve_task_list(&client, tl, project_id.as_deref()).await?),
+                    None => None,
+                };
+                let assignee_id = assignee.as_deref().map(|a| cache.resolve_person(a)).transpose()?;
+
+                commands::tasks::run(
+                    &client,
+                    &config,
+                    task_list_id.as_deref(),
+                    project_id.as_deref(),
+                    assignee_id.as_deref(),
+                    category.as_deref(),
+                    search.as_deref(),
+                    cli.json,
+                )
+                .await?;
             }
-            commands::todos::update(&client, todo_id, done, title.as_deref(), cli.json).await?;
-        }
-        Commands::Project { ref project } => {
-            commands::project::run(&client, project, cli.json).await?;
-        }
+            TaskAction::Show { ref id } => {
+                commands::task::run(&client, id, cli.json).await?;
+            }
+            TaskAction::Create {
+                title,
+                project,
+                task_list,
+                status,
+                assignee,
+                description,
+                description_file,
+                description_stdin,
+                due_date,
+            } => {
+                let cache = Cache::new(client.org_id())?;
+                cache.ensure_fresh(&client).await?;
+
+                let project_id = cache.resolve_project(&project)?;
+                let workflow_id = cache.workflow_id_for_project(&project_id)?;
+                let task_list_id = cache::resolve_task_list(&client, &task_list, Some(&project_id)).await?;
+                let status_id = status.as_deref().map(|s| cache.resolve_workflow_status(s, workflow_id.as_deref())).transpose()?;
+                let assignee_id = assignee.as_deref().map(|a| cache.resolve_person(a)).transpose()?;
+
+                let desc = read_text_input(description.as_deref(), description_file.as_deref(), description_stdin)?;
+
+                commands::task_create::run(
+                    &client,
+                    &title,
+                    &project_id,
+                    &task_list_id,
+                    status_id.as_deref(),
+                    assignee_id.as_deref(),
+                    desc.as_deref(),
+                    due_date.as_deref(),
+                    cli.json,
+                )
+                .await?;
+            }
+            TaskAction::Update { ref id, status, title, assignee } => {
+                if status.is_none() && title.is_none() && assignee.is_none() {
+                    return Err("Provide at least one of --status, --title, or --assignee".into());
+                }
+
+                let cache = Cache::new(client.org_id())?;
+                cache.ensure_fresh(&client).await?;
+
+                let workflow_id = if status.is_some() {
+                    let task_resp = client.get_task(id).await?;
+                    let project_id = task_resp.data.relationship_id("project");
+                    project_id.and_then(|pid| cache.workflow_id_for_project(pid).ok().flatten())
+                } else {
+                    None
+                };
+                let status_id = status.as_deref().map(|s| cache.resolve_workflow_status(s, workflow_id.as_deref())).transpose()?;
+                let assignee_id = assignee.as_deref().map(|a| cache.resolve_person(a)).transpose()?;
+
+                commands::task_update::run(
+                    &client,
+                    id,
+                    status_id.as_deref(),
+                    title.as_deref(),
+                    assignee_id.as_deref(),
+                    cli.json,
+                )
+                .await?;
+            }
+        },
+        Commands::Todo { action } => match action {
+            TodoAction::List { ref task_id } => {
+                commands::todos::list(&client, task_id, cli.json).await?;
+            }
+            TodoAction::Create { ref task_id, title, assignee } => {
+                let assignee_id = if let Some(ref a) = assignee {
+                    let cache = Cache::new(client.org_id())?;
+                    cache.ensure_fresh(&client).await?;
+                    Some(cache.resolve_person(a)?)
+                } else {
+                    None
+                };
+                commands::todos::create(&client, task_id, &title, assignee_id.as_deref(), cli.json).await?;
+            }
+            TodoAction::Update { ref todo_id, done, title } => {
+                if done.is_none() && title.is_none() {
+                    return Err("Provide at least one of --done or --title".into());
+                }
+                commands::todos::update(&client, todo_id, done, title.as_deref(), cli.json).await?;
+            }
+        },
+        Commands::Comment { action } => match action {
+            CommentAction::Add { ref id, body, body_file, body_stdin } => {
+                let resolved_body = read_text_input(body.as_deref(), body_file.as_deref(), body_stdin)?
+                    .ok_or("Provide BODY, --body-file, or --body-stdin")?;
+                commands::task_comment::run(&client, id, &resolved_body, cli.json).await?;
+            }
+        },
+        Commands::Project { action } => match action {
+            ProjectAction::Show { ref project } => {
+                commands::project::run(&client, project, cli.json).await?;
+            }
+        },
         Commands::Prime => {
             commands::prime::run(&client, &config).await?;
         }
