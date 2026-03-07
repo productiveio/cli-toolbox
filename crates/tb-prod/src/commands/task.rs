@@ -22,6 +22,8 @@ struct TaskDetail {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     subtasks: Vec<SubtaskRow>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    todos: Vec<TodoRow>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     comments: Vec<CommentRow>,
 }
 
@@ -31,6 +33,13 @@ struct SubtaskRow {
     number: String,
     title: String,
     status: String,
+}
+
+#[derive(Debug, Serialize)]
+struct TodoRow {
+    id: String,
+    description: String,
+    done: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -54,9 +63,10 @@ pub async fn run(
     let creator_name = resolve_person(&resp.included, task.relationship_id("creator"));
     let task_list_name = resolve_name(&resp.included, "task_lists", task.relationship_id("task_list"));
 
-    // Fetch subtasks and comments in parallel
-    let (subtasks_resp, comments_resp) = tokio::join!(
+    // Fetch subtasks, todos, and comments in parallel
+    let (subtasks_resp, todos_resp, comments_resp) = tokio::join!(
         client.get_subtasks(task_id),
+        client.get_todos(task_id),
         client.list_comments(task_id),
     );
 
@@ -72,6 +82,19 @@ pub async fn run(
                         title: st.attr_str("title").to_string(),
                         status: st_status,
                     }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let todos: Vec<TodoRow> = todos_resp
+        .map(|r| {
+            r.data
+                .iter()
+                .map(|t| TodoRow {
+                    id: t.id.clone(),
+                    description: t.attr_str("description").to_string(),
+                    done: t.attr_bool("closed"),
                 })
                 .collect()
         })
@@ -99,7 +122,7 @@ pub async fn run(
 
     let url = format!(
         "https://app.productive.io/{}/tasks/task/{}",
-        "109-productive", // TODO: derive from org
+        client.org_id(),
         task.id
     );
 
@@ -118,6 +141,7 @@ pub async fn run(
         description,
         url,
         subtasks,
+        todos,
         comments,
     };
 
@@ -148,6 +172,14 @@ pub async fn run(
         println!("\n--- Subtasks ({}) ---", detail.subtasks.len());
         for st in &detail.subtasks {
             println!("  #{} [{}] {}", st.number, st.status, st.title);
+        }
+    }
+
+    if !detail.todos.is_empty() {
+        println!("\n--- Todos ({}) ---", detail.todos.len());
+        for t in &detail.todos {
+            let check = if t.done { "[x]" } else { "[ ]" };
+            println!("  {} {} (ID: {})", check, t.description, t.id);
         }
     }
 

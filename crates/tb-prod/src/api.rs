@@ -152,6 +152,10 @@ impl ProductiveClient {
         }
     }
 
+    pub fn org_id(&self) -> &str {
+        &self.org_id
+    }
+
     fn request(&self, method: reqwest::Method, url: &str) -> reqwest::RequestBuilder {
         self.client
             .request(method, url)

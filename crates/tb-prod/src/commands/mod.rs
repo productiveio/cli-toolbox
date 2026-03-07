@@ -1,7 +1,11 @@
+pub mod cache_cmd;
 pub mod config_cmd;
 pub mod doctor;
+pub mod prime;
+pub mod project;
 pub mod task;
 pub mod tasks;
 pub mod task_create;
 pub mod task_update;
 pub mod task_comment;
+pub mod todos;

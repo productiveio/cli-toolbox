@@ -21,6 +21,7 @@ pub async fn run(
     config: &Config,
     task_list_id: Option<&str>,
     project_id: Option<&str>,
+    assignee_override: Option<&str>,
     category: Option<&str>,
     search: Option<&str>,
     json: bool,
@@ -75,8 +76,10 @@ pub async fn run(
         query = query.filter("query", q);
     }
 
-    // Default assignee filter (unless task_list or search is specified)
-    if task_list_id.is_none() && search.is_none() {
+    // Assignee filter: explicit override > default (when no task_list/search)
+    if let Some(aid) = assignee_override {
+        query = query.filter_array("assignee_id", aid);
+    } else if task_list_id.is_none() && search.is_none() {
         if let Some(ref pid) = config.person_id {
             query = query.filter_array("assignee_id", pid);
         }

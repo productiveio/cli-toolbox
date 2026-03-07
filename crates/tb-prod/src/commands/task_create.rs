@@ -64,7 +64,8 @@ pub async fn run(
         number: task.attr_str("number").to_string(),
         title: task.attr_str("title").to_string(),
         url: format!(
-            "https://app.productive.io/109-productive/tasks/task/{}",
+            "https://app.productive.io/{}/tasks/task/{}",
+            client.org_id(),
             task.id
         ),
     };
