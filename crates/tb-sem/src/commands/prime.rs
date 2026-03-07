@@ -41,7 +41,7 @@ pub async fn run(
                 parts.push(format!("Last {} run: {} -- {}", name, time, result));
             }
         }
-        parts.push("Commands: `semi triage`, `semi runs <project> --failed`".to_string());
+        parts.push("Commands: `tb-sem triage`, `tb-sem runs <project> --failed`".to_string());
         println!("{}", parts.join("\n"));
     } else {
         println!("# Semaphore CI Active\n");
@@ -54,16 +54,16 @@ pub async fn run(
         }
 
         println!("\n## Quick Commands");
-        println!("- `semi triage` - Full triage of latest failed e2e run");
-        println!("- `semi runs e2e-tests --failed --limit 5` - Recent failed runs");
-        println!("- `semi failures <pipeline-id>` - Parsed failure summary");
-        println!("- `semi deploys api --around <pipeline-id>` - Deploy overlap check");
+        println!("- `tb-sem triage` - Full triage of latest failed e2e run");
+        println!("- `tb-sem runs e2e-tests --failed --limit 5` - Recent failed runs");
+        println!("- `tb-sem failures <pipeline-id>` - Parsed failure summary");
+        println!("- `tb-sem deploys api --around <pipeline-id>` - Deploy overlap check");
 
         println!("\n## E2E Triage Workflow");
-        println!("1. `semi runs e2e-tests --failed` -> find the run");
-        println!("2. `semi failures <pipeline-id>` -> see what failed and why");
-        println!("3. `semi deploys api --around <pipeline-id>` -> check deploy overlap");
-        println!("Or just: `semi triage` for all-in-one");
+        println!("1. `tb-sem runs e2e-tests --failed` -> find the run");
+        println!("2. `tb-sem failures <pipeline-id>` -> see what failed and why");
+        println!("3. `tb-sem deploys api --around <pipeline-id>` -> check deploy overlap");
+        println!("Or just: `tb-sem triage` for all-in-one");
     }
 
     Ok(())

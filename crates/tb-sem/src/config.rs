@@ -26,16 +26,16 @@ pub fn default_timezone() -> String {
 }
 
 impl Config {
-    /// Standard config file path: ~/.config/semi/config.toml
+    /// Standard config file path: ~/.config/tb-sem/config.toml
     pub fn config_path() -> Result<PathBuf> {
         let dir = dirs::config_dir()
             .ok_or_else(|| SemiError::Config("cannot determine config directory".into()))?;
-        Ok(dir.join("semi/config.toml"))
+        Ok(dir.join("tb-sem/config.toml"))
     }
 
     /// Load config from (first match wins):
     ///   1. secrets.toml [semaphore] section (monorepo root)
-    ///   2. ~/.config/semi/config.toml (standalone)
+    ///   2. ~/.config/tb-sem/config.toml (standalone)
     /// Token can be overridden by SEMAPHORE_API_TOKEN env var.
     pub fn load() -> Result<Self> {
         let mut config: Option<Config> = None;
@@ -63,7 +63,7 @@ impl Config {
 
         let mut config = config.ok_or_else(|| {
             SemiError::Config(
-                "No config found. Run `tb-sem config init --token <TOKEN>` or create ~/.config/semi/config.toml".into(),
+                "No config found. Run `tb-sem config init --token <TOKEN>` or create ~/.config/tb-sem/config.toml".into(),
             )
         })?;
 
@@ -100,7 +100,7 @@ impl Config {
         if name.contains('-') && name.len() >= 36 {
             // Raw UUID, no default branch
             return Err(SemiError::Config(format!(
-                "Project UUID '{}' not in config. Use `semi config add` to register it.",
+                "Project UUID '{}' not in config. Use `tb-sem config add` to register it.",
                 name
             )));
         }
