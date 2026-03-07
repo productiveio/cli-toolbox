@@ -306,6 +306,26 @@ impl ProductiveClient {
         self.create("/tasks", payload).await
     }
 
+    pub async fn bulk_create_tasks(&self, payload: &serde_json::Value) -> Result<JsonApiResponse> {
+        let url = format!("{}/tasks", self.base_url);
+        let resp = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/vnd.api+json; ext=bulk")
+            .header("Accept", "application/vnd.api+json; ext=bulk")
+            .header("X-Auth-Token", &self.token)
+            .header("X-Organization-Id", &self.org_id)
+            .json(payload)
+            .send()
+            .await?;
+        let status = resp.status().as_u16();
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(TbProdError::Api { status, message: body });
+        }
+        Ok(resp.json().await?)
+    }
+
     pub async fn update_task(&self, id: &str, payload: &serde_json::Value) -> Result<JsonApiSingleResponse> {
         self.update(&format!("/tasks/{}", id), payload).await
     }

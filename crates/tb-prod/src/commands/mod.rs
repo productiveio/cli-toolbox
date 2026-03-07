@@ -7,5 +7,6 @@ pub mod task;
 pub mod tasks;
 pub mod task_create;
 pub mod task_update;
+pub mod task_batch;
 pub mod task_comment;
 pub mod todos;

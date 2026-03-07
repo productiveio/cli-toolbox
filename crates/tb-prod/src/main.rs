@@ -85,14 +85,14 @@ enum TaskAction {
     /// Create a new task
     Create {
         /// Task title
-        #[arg(long)]
-        title: String,
+        #[arg(long, required_unless_present = "batch")]
+        title: Option<String>,
         /// Project (ID or name)
-        #[arg(long)]
-        project: String,
+        #[arg(long, required_unless_present = "batch")]
+        project: Option<String>,
         /// Task list (ID or name)
-        #[arg(long)]
-        task_list: String,
+        #[arg(long, required_unless_present = "batch")]
+        task_list: Option<String>,
         /// Workflow status (ID or name)
         #[arg(long)]
         status: Option<String>,
@@ -111,6 +111,12 @@ enum TaskAction {
         /// Due date (YYYY-MM-DD)
         #[arg(long)]
         due_date: Option<String>,
+        /// Batch create from JSON file (array of task objects)
+        #[arg(long, conflicts_with_all = ["title", "project", "task_list", "status", "assignee", "description", "description_file", "description_stdin", "due_date"])]
+        batch: Option<String>,
+        /// Validate and show resolved payload without creating
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Update a task
     Update {
@@ -281,30 +287,56 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 description_file,
                 description_stdin,
                 due_date,
+                batch,
+                dry_run,
             } => {
                 let cache = Cache::new(client.org_id())?;
                 cache.ensure_fresh(&client).await?;
 
-                let project_id = cache.resolve_project(&project)?;
-                let workflow_id = cache.workflow_id_for_project(&project_id)?;
-                let task_list_id = cache::resolve_task_list(&client, &task_list, Some(&project_id)).await?;
-                let status_id = status.as_deref().map(|s| cache.resolve_workflow_status(s, workflow_id.as_deref())).transpose()?;
-                let assignee_id = assignee.as_deref().map(|a| cache.resolve_person(a)).transpose()?;
+                if let Some(batch_file) = batch {
+                    let content = std::fs::read_to_string(&batch_file)
+                        .map_err(|e| format!("Cannot read batch file '{}': {}", batch_file, e))?;
+                    commands::task_batch::run(&client, &cache, &content, dry_run, cli.json).await?;
+                } else {
+                    let title = title.as_ref().unwrap();
+                    let project = project.as_ref().unwrap();
+                    let task_list = task_list.as_ref().unwrap();
 
-                let desc = read_text_input(description.as_deref(), description_file.as_deref(), description_stdin)?;
+                    let project_id = cache.resolve_project(project)?;
+                    let workflow_id = cache.workflow_id_for_project(&project_id)?;
+                    let task_list_id = cache::resolve_task_list(&client, task_list, Some(&project_id)).await?;
+                    let status_id = status.as_deref().map(|s| cache.resolve_workflow_status(s, workflow_id.as_deref())).transpose()?;
+                    let assignee_id = assignee.as_deref().map(|a| cache.resolve_person(a)).transpose()?;
 
-                commands::task_create::run(
-                    &client,
-                    &title,
-                    &project_id,
-                    &task_list_id,
-                    status_id.as_deref(),
-                    assignee_id.as_deref(),
-                    desc.as_deref(),
-                    due_date.as_deref(),
-                    cli.json,
-                )
-                .await?;
+                    let desc = read_text_input(description.as_deref(), description_file.as_deref(), description_stdin)?;
+
+                    if dry_run {
+                        let resolved = serde_json::json!({
+                            "title": title,
+                            "project_id": project_id,
+                            "task_list_id": task_list_id,
+                            "workflow_status_id": status_id,
+                            "assignee_id": assignee_id,
+                            "description": desc.as_deref().map(|d| if d.len() > 100 { format!("{}...", &d[..100]) } else { d.to_string() }),
+                            "due_date": due_date,
+                        });
+                        println!("{}", serde_json::to_string_pretty(&resolved)?);
+                        eprintln!("Dry run — no task created.");
+                    } else {
+                        commands::task_create::run(
+                            &client,
+                            title,
+                            &project_id,
+                            &task_list_id,
+                            status_id.as_deref(),
+                            assignee_id.as_deref(),
+                            desc.as_deref(),
+                            due_date.as_deref(),
+                            cli.json,
+                        )
+                        .await?;
+                    }
+                }
             }
             TaskAction::Update { id, status, title, assignee } => {
                 if status.is_none() && title.is_none() && assignee.is_none() {
