@@ -1,0 +1,46 @@
+[package]
+name = "tb-lf"
+version = "0.1.0"
+edition = "2024"
+description = "Langfuse insights CLI"
+
+[[bin]]
+name = "tb-lf"
+path = "src/main.rs"
+
+[lib]
+doctest = false
+
+[dependencies]
+toolbox-core.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+reqwest-middleware.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+chrono.workspace = true
+colored.workspace = true
+indicatif.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+
+# tb-lf-specific deps
+base64 = "0.22"
+urlencoding = "2.1"
+csv = "1.4"
+textplots = "0.8"
+dialoguer = "0.12"
+log = "0.4"
+env_logger = "0.11"
+rand = "0.10"
+uuid = { version = "1.0", features = ["v4"] }
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true
+http.workspace = true
+rvcr.workspace = true

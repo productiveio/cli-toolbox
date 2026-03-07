@@ -1,0 +1,27 @@
+[package]
+name = "tb-sem"
+version = "0.1.0"
+edition = "2024"
+description = "Semaphore CI insights CLI"
+
+[[bin]]
+name = "tb-sem"
+path = "src/main.rs"
+
+[lib]
+doctest = false
+
+[dependencies]
+toolbox-core.workspace = true
+clap.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+http.workspace = true
+rvcr.workspace = true

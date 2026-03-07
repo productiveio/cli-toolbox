@@ -1,0 +1,36 @@
+[package]
+name = "tb-prod"
+version = "0.1.0"
+edition = "2024"
+description = "Productive.io API CLI"
+
+[[bin]]
+name = "tb-prod"
+path = "src/main.rs"
+
+[lib]
+doctest = false
+
+[dependencies]
+toolbox-core.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+reqwest-middleware.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+chrono.workspace = true
+colored.workspace = true
+indicatif.workspace = true
+thiserror.workspace = true
+
+# tb-prod-specific deps
+confy = "0.6"
+chrono-humanize = "0.2"
+html2text = "0.14"
+
+[dev-dependencies]
+http.workspace = true
+rvcr.workspace = true
