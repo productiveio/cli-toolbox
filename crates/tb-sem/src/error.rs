@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum SemiError {
+pub enum TbSemError {
     #[error("API error ({status}): {message}")]
     Api { status: u16, message: String },
 
@@ -27,4 +27,4 @@ pub enum SemiError {
     Other(String),
 }
 
-pub type Result<T> = std::result::Result<T, SemiError>;
+pub type Result<T> = std::result::Result<T, TbSemError>;

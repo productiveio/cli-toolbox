@@ -58,7 +58,7 @@ pub async fn run(
 
     let filtered: Vec<&str> = if let Some(pattern) = grep {
         let re = regex::Regex::new(pattern)
-            .map_err(|e| crate::error::SemiError::Other(format!("Invalid regex: {}", e)))?;
+            .map_err(|e| crate::error::TbSemError::Other(format!("Invalid regex: {}", e)))?;
         lines.into_iter().filter(|l| re.is_match(l)).collect()
     } else {
         lines

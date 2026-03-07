@@ -72,7 +72,7 @@ pub async fn run(
                 break;
             }
         }
-        found.ok_or_else(|| crate::error::SemiError::Other("No failed e2e runs found".into()))?
+        found.ok_or_else(|| crate::error::TbSemError::Other("No failed e2e runs found".into()))?
     };
 
     // Step 2: Pipeline details

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{SemiError, Result};
+use crate::error::{TbSemError, Result};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ProjectConfig {
@@ -29,7 +29,7 @@ impl Config {
     /// Standard config file path: ~/.config/tb-sem/config.toml
     pub fn config_path() -> Result<PathBuf> {
         let dir = dirs::config_dir()
-            .ok_or_else(|| SemiError::Config("cannot determine config directory".into()))?;
+            .ok_or_else(|| TbSemError::Config("cannot determine config directory".into()))?;
         Ok(dir.join("tb-sem/config.toml"))
     }
 
@@ -47,7 +47,7 @@ impl Config {
             let table: toml::Table = toml::from_str(&content)?;
             if let Some(section) = table.get("semaphore") {
                 config = Some(section.clone().try_into().map_err(|e: toml::de::Error| {
-                    SemiError::Config(format!("invalid [semaphore] section: {}", e))
+                    TbSemError::Config(format!("invalid [semaphore] section: {}", e))
                 })?);
             }
         }
@@ -62,7 +62,7 @@ impl Config {
         }
 
         let mut config = config.ok_or_else(|| {
-            SemiError::Config(
+            TbSemError::Config(
                 "No config found. Run `tb-sem config init --token <TOKEN>` or create ~/.config/tb-sem/config.toml".into(),
             )
         })?;
@@ -99,12 +99,12 @@ impl Config {
         // Check if it looks like a UUID (contains dashes, len >= 36)
         if name.contains('-') && name.len() >= 36 {
             // Raw UUID, no default branch
-            return Err(SemiError::Config(format!(
+            return Err(TbSemError::Config(format!(
                 "Project UUID '{}' not in config. Use `tb-sem config add` to register it.",
                 name
             )));
         }
-        Err(SemiError::Config(format!(
+        Err(TbSemError::Config(format!(
             "Unknown project '{}'. Available: {}",
             name,
             self.projects.keys().cloned().collect::<Vec<_>>().join(", ")

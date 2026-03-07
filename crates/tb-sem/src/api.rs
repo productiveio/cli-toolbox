@@ -4,7 +4,7 @@ use reqwest::Client;
 use serde::Deserialize;
 
 use crate::config::Config;
-use crate::error::{SemiError, Result};
+use crate::error::{TbSemError, Result};
 
 pub struct SemaphoreClient {
     client: Client,
@@ -253,7 +253,7 @@ impl SemaphoreClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            return Err(SemiError::Api {
+            return Err(TbSemError::Api {
                 status,
                 message: body,
             });
@@ -282,7 +282,7 @@ impl SemaphoreClient {
             if !resp.status().is_success() {
                 let status = resp.status().as_u16();
                 let body = resp.text().await.unwrap_or_default();
-                return Err(SemiError::Api {
+                return Err(TbSemError::Api {
                     status,
                     message: body,
                 });

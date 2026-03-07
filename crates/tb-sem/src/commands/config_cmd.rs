@@ -1,6 +1,6 @@
 use crate::api::SemaphoreClient;
 use crate::config::{Config, ProjectConfig};
-use crate::error::{SemiError, Result};
+use crate::error::{TbSemError, Result};
 
 
 pub async fn init_with_org(token: &str, org_id: &str) -> Result<()> {
@@ -85,7 +85,7 @@ pub async fn add(name: &str, branch: Option<&str>) -> Result<()> {
         .find(|p| p.metadata.name.eq_ignore_ascii_case(name));
 
     let Some(project) = found else {
-        return Err(SemiError::Config(format!(
+        return Err(TbSemError::Config(format!(
             "Project '{}' not found. Available: {}",
             name,
             projects
@@ -119,7 +119,7 @@ pub fn remove(name: &str) -> Result<()> {
     let mut config = Config::load()?;
 
     if config.projects.remove(name).is_none() {
-        return Err(SemiError::Config(format!("Project '{}' not in config.", name)));
+        return Err(TbSemError::Config(format!("Project '{}' not in config.", name)));
     }
 
     config.save()?;
