@@ -244,7 +244,7 @@ pub async fn run(
         println!("\n=== E2E TRIAGE REPORT ===\n");
         println!(
             "Pipeline: {} | {} | {}",
-            &result.pipeline_id[..8.min(result.pipeline_id.len())],
+            &result.pipeline_id,
             result.time_window,
             result.branch
         );

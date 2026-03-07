@@ -94,7 +94,7 @@ pub async fn run(
                     "  {:<24} {:<8}  {}",
                     j.name,
                     j.result,
-                    &j.job_id[..8.min(j.job_id.len())]
+                    &j.job_id
                 );
             }
         }

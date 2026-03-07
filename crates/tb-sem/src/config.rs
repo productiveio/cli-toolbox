@@ -36,6 +36,7 @@ impl Config {
     /// Load config from (first match wins):
     ///   1. secrets.toml [semaphore] section (monorepo root)
     ///   2. ~/.config/tb-sem/config.toml (standalone)
+    ///
     /// Token can be overridden by SEMAPHORE_API_TOKEN env var.
     pub fn load() -> Result<Self> {
         let mut config: Option<Config> = None;

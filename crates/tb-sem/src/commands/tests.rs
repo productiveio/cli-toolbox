@@ -86,7 +86,7 @@ pub async fn run(
     } else if summary_only {
         println!(
             "PIPELINE: {} | {} passed, {} failed | Total: {}",
-            &pipeline_id[..8.min(pipeline_id.len())],
+            pipeline_id,
             result.passed,
             result.failed,
             result.total
@@ -94,7 +94,7 @@ pub async fn run(
     } else {
         println!(
             "PIPELINE: {} | {} passed, {} failed\n",
-            &pipeline_id[..8.min(pipeline_id.len())],
+            pipeline_id,
             result.passed,
             result.failed
         );

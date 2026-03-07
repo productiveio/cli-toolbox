@@ -54,7 +54,7 @@ pub async fn run(
     };
 
     if !json {
-        eprintln!("Fetching logs for job: {} ({})", job.name, &job.job_id[..8]);
+        eprintln!("Fetching logs for job: {} ({})", job.name, &job.job_id);
     }
 
     let events = client.get_job_logs(&job.job_id).await?;

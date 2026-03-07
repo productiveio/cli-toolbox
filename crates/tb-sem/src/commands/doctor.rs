@@ -26,7 +26,7 @@ pub async fn run(config: &Config) -> Result<()> {
                 println!(
                     "  {:<20} {} ({})",
                     name,
-                    &proj_config.id[..8.min(proj_config.id.len())],
+                    &proj_config.id,
                     status
                 );
             }

@@ -45,7 +45,7 @@ pub async fn init_with_org(token: &str, org_id: &str) -> Result<()> {
     eprintln!("Config saved to {}", path.display());
     eprintln!("\nProjects:");
     for (name, proj) in &config.projects {
-        eprintln!("  {:<20} {} (branch: {})", name, &proj.id[..8], proj.branch);
+        eprintln!("  {:<20} {} (branch: {})", name, &proj.id, proj.branch);
     }
     eprintln!(
         "\nNote: Default branch is 'main' for all projects. \
@@ -67,7 +67,7 @@ pub fn show() -> Result<()> {
         println!(
             "  {:<20} {} (branch: {})",
             name,
-            &proj.id[..8.min(proj.id.len())],
+            &proj.id,
             proj.branch
         );
     }
@@ -99,7 +99,7 @@ pub async fn add(name: &str, branch: Option<&str>) -> Result<()> {
     let branch = branch.unwrap_or("main").to_string();
     println!(
         "Found project '{}' ({}). Branch: {}",
-        project.metadata.name, &project.metadata.id[..8], branch
+        project.metadata.name, &project.metadata.id, branch
     );
 
     config.projects.insert(
