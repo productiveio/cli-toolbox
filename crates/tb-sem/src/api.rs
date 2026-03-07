@@ -59,6 +59,7 @@ pub struct Pipeline {
     pub ppl_id: String,
     pub name: String,
     pub state: String,
+    #[serde(default)]
     pub result: String,
     #[serde(default)]
     pub result_reason: String,
@@ -154,6 +155,7 @@ pub struct PipelineListItem {
     pub ppl_id: String,
     pub name: String,
     pub state: String,
+    #[serde(default)]
     pub result: String,
     #[serde(default)]
     pub result_reason: String,
