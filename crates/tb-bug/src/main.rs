@@ -153,9 +153,9 @@ enum ConfigAction {
         /// Bugsnag auth token
         #[arg(long)]
         token: String,
-        /// Organization ID
+        /// Organization ID (auto-detected if omitted)
         #[arg(long)]
-        org: String,
+        org: Option<String>,
     },
     /// Display current config
     Show,
@@ -215,8 +215,9 @@ enum FetchTarget {
     },
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+toolbox_core::run_main!(run());
+
+async fn run() -> tb_bug::error::Result<()> {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(e) => {
@@ -241,14 +242,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tool_name: "tb-bug",
             content: include_str!("../SKILL.md"),
         };
-        toolbox_core::skill::run(&skill, action).map_err(|e| e.to_string())?;
+        toolbox_core::skill::run(&skill, action).map_err(tb_bug::error::TbBugError::Other)?;
         return Ok(());
     }
     if let Commands::Config {
         action: ConfigAction::Init { token, org },
     } = &cli.command
     {
-        commands::config_cmd::init(token, org)?;
+        commands::config_cmd::init(token, org.as_deref()).await?;
         return Ok(());
     }
 

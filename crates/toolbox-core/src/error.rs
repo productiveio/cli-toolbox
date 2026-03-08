@@ -41,6 +41,26 @@ macro_rules! define_error {
     };
 }
 
+/// Wrap an async `run()` function with consistent error display.
+///
+/// Usage:
+/// ```ignore
+/// toolbox_core::run_main!(run());
+/// ```
+#[macro_export]
+macro_rules! run_main {
+    ($run:expr) => {
+        #[tokio::main]
+        async fn main() {
+            if let Err(e) = $run.await {
+                use colored::Colorize;
+                eprintln!("{} {e}", "Error:".red().bold());
+                std::process::exit(1);
+            }
+        }
+    };
+}
+
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {

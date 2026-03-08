@@ -239,8 +239,9 @@ fn read_text_input(
     }
 }
 
-#[tokio::main]
-async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+toolbox_core::run_main!(run());
+
+async fn run() -> tb_prod::error::Result<()> {
     let cli = Cli::parse();
 
     // Commands that don't need a loaded config
@@ -249,7 +250,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             tool_name: "tb-prod",
             content: include_str!("../SKILL.md"),
         };
-        toolbox_core::skill::run(&skill, action).map_err(|e| e.to_string())?;
+        toolbox_core::skill::run(&skill, action).map_err(tb_prod::error::TbProdError::Other)?;
         return Ok(());
     }
     if let Commands::Config {
@@ -328,7 +329,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
                 if let Some(batch_file) = batch {
                     let content = std::fs::read_to_string(&batch_file)
-                        .map_err(|e| format!("Cannot read batch file '{}': {}", batch_file, e))?;
+                        .map_err(|e| tb_prod::error::TbProdError::Other(format!("Cannot read batch file '{}': {}", batch_file, e)))?;
                     commands::task_batch::run(&client, &cache, &content, dry_run, cli.json).await?;
                 } else {
                     let title = title.as_ref().unwrap();
@@ -389,7 +390,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 assignee,
             } => {
                 if status.is_none() && title.is_none() && assignee.is_none() {
-                    return Err("Provide at least one of --status, --title, or --assignee".into());
+                    return Err(tb_prod::error::TbProdError::Other("Provide at least one of --status, --title, or --assignee".into()));
                 }
 
                 let cache = Cache::new(client.org_id())?;
@@ -453,7 +454,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 title,
             } => {
                 if done.is_none() && title.is_none() {
-                    return Err("Provide at least one of --done or --title".into());
+                    return Err(tb_prod::error::TbProdError::Other("Provide at least one of --done or --title".into()));
                 }
                 commands::todos::update(&client, &todo_id, done, title.as_deref(), cli.json)
                     .await?;
@@ -468,7 +469,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             } => {
                 let resolved_body =
                     read_text_input(body.as_deref(), body_file.as_deref(), body_stdin)?
-                        .ok_or("Provide BODY, --body-file, or --body-stdin")?;
+                        .ok_or(tb_prod::error::TbProdError::Other("Provide BODY, --body-file, or --body-stdin".into()))?;
                 commands::task_comment::run(&client, &id, &resolved_body, cli.json).await?;
             }
         },

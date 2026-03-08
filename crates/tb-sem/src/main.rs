@@ -251,8 +251,9 @@ enum ConfigAction {
     },
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+toolbox_core::run_main!(run());
+
+async fn run() -> tb_sem::error::Result<()> {
     let cli = Cli::parse();
 
     // Commands that don't need a loaded config
@@ -261,7 +262,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tool_name: "tb-sem",
             content: include_str!("../SKILL.md"),
         };
-        toolbox_core::skill::run(&skill, action).map_err(|e| e.to_string())?;
+        toolbox_core::skill::run(&skill, action).map_err(tb_sem::error::TbSemError::Other)?;
         return Ok(());
     }
     if let Commands::Config { action } = &cli.command {

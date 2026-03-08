@@ -1920,6 +1920,7 @@ dependencies = [
  "assert_cmd",
  "chrono",
  "clap",
+ "colored",
  "http",
  "predicates",
  "reqwest",
@@ -1981,6 +1982,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
+ "colored",
  "dirs",
  "http",
  "iana-time-zone",
@@ -2195,6 +2197,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
+ "colored",
  "dirs",
  "reqwest",
  "serde",

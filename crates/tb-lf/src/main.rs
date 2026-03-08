@@ -1,6 +1,5 @@
 use clap::Parser;
 use colored::Colorize;
-
 use tb_lf::api::{DevPortalClient, PaginatedResponse};
 use tb_lf::cache::CacheTtl;
 use tb_lf::cli::{Pagination, TimeRange};
@@ -387,13 +386,7 @@ enum ConfigAction {
     Set { key: String, value: String },
 }
 
-#[tokio::main]
-async fn main() {
-    if let Err(e) = run().await {
-        eprintln!("{} {}", "Error:".red().bold(), e);
-        std::process::exit(1);
-    }
-}
+toolbox_core::run_main!(run());
 
 async fn run() -> tb_lf::error::Result<()> {
     let cli = Cli::parse();
