@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::DevPortalClient;
+use crate::api::{DevPortalClient, PaginatedResponse};
 use crate::cache::CacheTtl;
 use crate::error::{TbLfError, Result};
 use crate::types::Project;
@@ -81,7 +81,8 @@ pub async fn resolve_project(
     }
 
     // Fetch project list and match by name
-    let projects: Vec<Project> = client.get("/projects", CacheTtl::Long).await?;
+    let resp: PaginatedResponse<Project> = client.get("/projects", CacheTtl::Long).await?;
+    let projects = resp.data;
     let matches: Vec<&Project> = projects
         .iter()
         .filter(|p| p.name.eq_ignore_ascii_case(input))
