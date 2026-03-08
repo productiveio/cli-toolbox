@@ -328,8 +328,12 @@ async fn run() -> tb_prod::error::Result<()> {
                 cache.ensure_fresh(&client).await?;
 
                 if let Some(batch_file) = batch {
-                    let content = std::fs::read_to_string(&batch_file)
-                        .map_err(|e| tb_prod::error::TbProdError::Other(format!("Cannot read batch file '{}': {}", batch_file, e)))?;
+                    let content = std::fs::read_to_string(&batch_file).map_err(|e| {
+                        tb_prod::error::TbProdError::Other(format!(
+                            "Cannot read batch file '{}': {}",
+                            batch_file, e
+                        ))
+                    })?;
                     commands::task_batch::run(&client, &cache, &content, dry_run, cli.json).await?;
                 } else {
                     let title = title.as_ref().unwrap();
@@ -390,7 +394,9 @@ async fn run() -> tb_prod::error::Result<()> {
                 assignee,
             } => {
                 if status.is_none() && title.is_none() && assignee.is_none() {
-                    return Err(tb_prod::error::TbProdError::Other("Provide at least one of --status, --title, or --assignee".into()));
+                    return Err(tb_prod::error::TbProdError::Other(
+                        "Provide at least one of --status, --title, or --assignee".into(),
+                    ));
                 }
 
                 let cache = Cache::new(client.org_id())?;
@@ -454,7 +460,9 @@ async fn run() -> tb_prod::error::Result<()> {
                 title,
             } => {
                 if done.is_none() && title.is_none() {
-                    return Err(tb_prod::error::TbProdError::Other("Provide at least one of --done or --title".into()));
+                    return Err(tb_prod::error::TbProdError::Other(
+                        "Provide at least one of --done or --title".into(),
+                    ));
                 }
                 commands::todos::update(&client, &todo_id, done, title.as_deref(), cli.json)
                     .await?;
@@ -468,8 +476,11 @@ async fn run() -> tb_prod::error::Result<()> {
                 body_stdin,
             } => {
                 let resolved_body =
-                    read_text_input(body.as_deref(), body_file.as_deref(), body_stdin)?
-                        .ok_or(tb_prod::error::TbProdError::Other("Provide BODY, --body-file, or --body-stdin".into()))?;
+                    read_text_input(body.as_deref(), body_file.as_deref(), body_stdin)?.ok_or(
+                        tb_prod::error::TbProdError::Other(
+                            "Provide BODY, --body-file, or --body-stdin".into(),
+                        ),
+                    )?;
                 commands::task_comment::run(&client, &id, &resolved_body, cli.json).await?;
             }
         },

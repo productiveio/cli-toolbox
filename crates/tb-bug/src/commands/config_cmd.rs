@@ -15,9 +15,16 @@ pub async fn init(token: &str, org_id: Option<&str>) -> Result<()> {
             let client = BugsnagClient::new(&tmp_config, true)?;
             let orgs = client.list_organizations().await?;
             match orgs.len() {
-                0 => return Err(TbBugError::Config("No organizations found for this token".into())),
+                0 => {
+                    return Err(TbBugError::Config(
+                        "No organizations found for this token".into(),
+                    ));
+                }
                 1 => {
-                    println!("Auto-detected organization: {} ({})", orgs[0].name, orgs[0].id);
+                    println!(
+                        "Auto-detected organization: {} ({})",
+                        orgs[0].name, orgs[0].id
+                    );
                     orgs[0].id.clone()
                 }
                 _ => {
@@ -25,7 +32,9 @@ pub async fn init(token: &str, org_id: Option<&str>) -> Result<()> {
                     for o in &orgs {
                         eprintln!("  --org {}  ({})", o.id, o.name);
                     }
-                    return Err(TbBugError::Config("Multiple organizations found, --org is required".into()));
+                    return Err(TbBugError::Config(
+                        "Multiple organizations found, --org is required".into(),
+                    ));
                 }
             }
         }
