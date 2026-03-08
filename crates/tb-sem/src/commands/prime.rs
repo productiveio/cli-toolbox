@@ -1,59 +1,14 @@
 use crate::api::SemaphoreClient;
 use crate::config::Config;
 use crate::error::Result;
-use crate::output;
 
-pub async fn run(client: &SemaphoreClient, config: &Config, mcp: bool, utc: bool) -> Result<()> {
-    let tz = if utc {
-        chrono_tz::UTC
-    } else {
-        config.timezone()
-    };
-
-    // Fetch latest run for each project concurrently
-    let mut handles = Vec::new();
-    for (name, proj) in &config.projects {
-        let name = name.clone();
-        let proj_id = proj.id.clone();
-        let client = (*client).clone();
-        handles.push(tokio::spawn(async move {
-            let workflows = client
-                .list_workflows_pages(&proj_id, None, None, None, 1)
-                .await
-                .unwrap_or_default();
-            let ppl = if let Some(wf) = workflows.first() {
-                let result = client.get_pipeline(&wf.initial_ppl_id, false).await.ok();
-                Some((wf.created_at.seconds, result))
-            } else {
-                None
-            };
-            (name, ppl)
-        }));
-    }
-
-    let mut project_statuses = Vec::new();
-    for handle in handles {
-        if let Ok((name, Some((created_at, ppl)))) = handle.await {
-            let result = ppl
-                .as_ref()
-                .map(|p| p.result.to_uppercase())
-                .unwrap_or_else(|| "?".to_string());
-            let time = output::epoch_to_local(created_at, &tz);
-            project_statuses.push((name, time, result));
-        }
-    }
+pub async fn run(_client: &SemaphoreClient, config: &Config, mcp: bool, _utc: bool) -> Result<()> {
+    let names: Vec<&str> = config.projects.keys().map(|s| s.as_str()).collect();
 
     if mcp {
-        // Minimal output for hooks
         let mut parts = Vec::new();
         parts.push("# Semaphore CI Active".to_string());
-        let names: Vec<&str> = config.projects.keys().map(|s| s.as_str()).collect();
         parts.push(format!("Projects: {}", names.join(", ")));
-        for (name, time, result) in &project_statuses {
-            if result == "FAILED" {
-                parts.push(format!("Last {} run: {} -- {}", name, time, result));
-            }
-        }
         parts.push("Commands: `tb-sem triage`, `tb-sem runs <project> --failed`".to_string());
         println!("{}", parts.join("\n"));
     } else {
@@ -61,18 +16,18 @@ pub async fn run(client: &SemaphoreClient, config: &Config, mcp: bool, utc: bool
         println!("Organization: {}", config.org_id);
         println!("Timezone: {}\n", config.timezone);
 
-        println!("## Projects");
-        for (name, time, result) in &project_statuses {
-            println!("  {:<16} Last run: {} -- {}", name, time, result);
+        println!("## Projects\n");
+        for name in &names {
+            println!("- {}", name);
         }
 
-        println!("\n## Quick Commands");
+        println!("\n## Quick Commands\n");
         println!("- `tb-sem triage` - Full triage of latest failed e2e run");
         println!("- `tb-sem runs e2e-tests --failed --limit 5` - Recent failed runs");
         println!("- `tb-sem failures <pipeline-id>` - Parsed failure summary");
         println!("- `tb-sem deploys api --around <pipeline-id>` - Deploy overlap check");
 
-        println!("\n## E2E Triage Workflow");
+        println!("\n## E2E Triage Workflow\n");
         println!("1. `tb-sem runs e2e-tests --failed` -> find the run");
         println!("2. `tb-sem failures <pipeline-id>` -> see what failed and why");
         println!("3. `tb-sem deploys api --around <pipeline-id>` -> check deploy overlap");

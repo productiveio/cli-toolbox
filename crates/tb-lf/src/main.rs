@@ -1908,49 +1908,6 @@ async fn run() -> tb_lf::error::Result<()> {
                 Err(e) => println!("(could not fetch projects: {})", e),
             }
 
-            // Dashboard KPIs
-            if let Some(pid) = &pid {
-                println!("\n## Current KPIs (project {})\n", pid);
-                let path =
-                    DevPortalClient::build_path("/dashboard", &[("project_id", Some(pid.clone()))]);
-                if let Ok(dash) = client
-                    .get::<serde_json::Value>(&path, CacheTtl::Medium)
-                    .await
-                    && let Some(kpi) = dash.get("kpi")
-                {
-                    for key in [
-                        "sessions",
-                        "unique_users",
-                        "avg_cost",
-                        "satisfaction",
-                        "latency_p50",
-                    ] {
-                        if let Some(obj) = kpi.get(key) {
-                            let val = obj.get("value").and_then(|v| v.as_f64());
-                            if let Some(v) = val {
-                                println!("- {}: {:.2}", key, v);
-                            }
-                        }
-                    }
-                }
-
-                // Triage stats
-                println!("\n## Triage\n");
-                let path = DevPortalClient::build_path(
-                    "/triage_runs/stats",
-                    &[("project_id", Some(pid.clone()))],
-                );
-                if let Ok(stats) = client
-                    .get::<serde_json::Value>(&path, CacheTtl::Medium)
-                    .await
-                {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&stats).unwrap_or_default()
-                    );
-                }
-            }
-
             // Quick commands
             println!("\n## Quick commands\n");
             println!("- `tb-lf traces --limit 10` — recent traces");
