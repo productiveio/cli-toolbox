@@ -411,9 +411,3 @@ pub struct Feature {
 }
 
 // --- Tags ---
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct TraceName {
-    #[serde(default)]
-    pub name: Option<String>,
-}

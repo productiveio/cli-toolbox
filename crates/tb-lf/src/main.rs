@@ -84,8 +84,10 @@ enum Commands {
         pagination: Pagination,
     },
     /// Show all traces in a session
+    #[command(after_help = "Examples:\n  tb-lf session my-session-id\n  tb-lf session my-session-id --json")]
     Session { id: String },
     /// List observations
+    #[command(after_help = "Examples:\n  tb-lf observations --trace abc123\n  tb-lf observations --type GENERATION --model gpt-4\n  tb-lf observations --level ERROR")]
     Observations {
         #[arg(long)]
         trace: Option<String>,
@@ -99,6 +101,7 @@ enum Commands {
         env: Option<String>,
     },
     /// Fetch a single observation (Langfuse proxy)
+    #[command(after_help = "Examples:\n  tb-lf observation abc123 --project production\n  tb-lf observation abc123 --project production --json")]
     Observation { id: String },
     /// List scores
     #[command(after_help = "Examples:\n  tb-lf scores --trace abc123\n  tb-lf scores --name correctness --source EVAL\n  tb-lf scores --json | jq '.[] | select(.value < 0.5)'")]
@@ -113,6 +116,7 @@ enum Commands {
         env: Option<String>,
     },
     /// List comments
+    #[command(after_help = "Examples:\n  tb-lf comments --trace abc123\n  tb-lf comments --type trace\n  tb-lf comments --json")]
     Comments {
         #[arg(long)]
         trace: Option<String>,
@@ -139,6 +143,7 @@ enum Commands {
         time: TimeRange,
     },
     /// View daily report
+    #[command(after_help = "Examples:\n  tb-lf daily\n  tb-lf daily 2025-03-01\n  tb-lf daily --findings --severity high\n  tb-lf daily --findings --type anomaly")]
     Daily {
         /// Date (YYYY-MM-DD), defaults to latest
         date: Option<String>,
@@ -148,6 +153,9 @@ enum Commands {
         /// Filter findings by severity
         #[arg(long)]
         severity: Option<String>,
+        /// Filter findings by type
+        #[arg(long)]
+        r#type: Option<String>,
     },
     /// List triage queue items
     #[command(after_help = "Examples:\n  tb-lf queue --status pending_review\n  tb-lf queue --category bug --confidence high\n  tb-lf queue --full --limit 5")]
@@ -169,10 +177,13 @@ enum Commands {
         pagination: Pagination,
     },
     /// Triage queue statistics
+    #[command(after_help = "Examples:\n  tb-lf queue-stats\n  tb-lf queue-stats --json")]
     QueueStats,
     /// Show a single queue item
+    #[command(after_help = "Examples:\n  tb-lf queue-item 42\n  tb-lf queue-item 42 --json")]
     QueueItem { id: i64 },
     /// List triage runs
+    #[command(after_help = "Examples:\n  tb-lf triage-runs\n  tb-lf triage-runs --status completed --limit 5\n  tb-lf triage-runs --json")]
     TriageRuns {
         #[arg(long)]
         status: Option<String>,
@@ -180,6 +191,7 @@ enum Commands {
         limit: u32,
     },
     /// Triage run statistics
+    #[command(after_help = "Examples:\n  tb-lf triage-runs-stats\n  tb-lf triage-runs-stats --json")]
     TriageRunsStats,
     /// Eval runs and coverage
     Eval {
@@ -199,11 +211,13 @@ enum Commands {
         pagination: Pagination,
     },
     /// List distinct trace names
+    #[command(after_help = "Examples:\n  tb-lf tags\n  tb-lf tags --since 7d\n  tb-lf tags --json")]
     Tags {
         #[command(flatten)]
         time: TimeRange,
     },
     /// List tracked features
+    #[command(after_help = "Examples:\n  tb-lf features\n  tb-lf features --category billing --status active\n  tb-lf features --json")]
     Features {
         #[arg(long)]
         category: Option<String>,
@@ -213,26 +227,32 @@ enum Commands {
         status: Option<String>,
     },
     /// Queue items for a feature
+    #[command(after_help = "Examples:\n  tb-lf feature-items 5\n  tb-lf feature-items 5 --json")]
     FeatureItems { id: i64 },
     /// AI-optimized context block
+    #[command(after_help = "Examples:\n  tb-lf prime --project production\n  tb-lf prime --mcp\n  tb-lf prime --json")]
     Prime {
         /// Minimal output for MCP hook injection
         #[arg(long)]
         mcp: bool,
     },
     /// Cheat sheet for human users
+    #[command(after_help = "Examples:\n  tb-lf human")]
     Human,
     /// Domain knowledge reference
+    #[command(after_help = "Examples:\n  tb-lf explain traces\n  tb-lf explain evaluations\n  tb-lf explain --json")]
     Explain {
         /// Topic: entities, relationships, traces, scores, observations, sessions, evaluations, triage, features
         topic: Option<String>,
     },
     /// Configuration management
+    #[command(after_help = "Examples:\n  tb-lf config show\n  tb-lf config set url https://devportal.example.com\n  tb-lf config set project production")]
     Config {
         #[command(subcommand)]
         action: Option<ConfigAction>,
     },
     /// Health check
+    #[command(after_help = "Examples:\n  tb-lf doctor\n  tb-lf doctor --json")]
     Doctor,
 }
 
@@ -262,6 +282,7 @@ enum EvalAction {
         full: bool,
     },
     /// Score trends across git revisions
+    #[command(after_help = "Examples:\n  tb-lf eval revisions\n  tb-lf eval revisions --branch main --limit 10\n  tb-lf eval revisions --json")]
     Revisions {
         #[arg(long)]
         branch: Option<String>,
@@ -271,6 +292,7 @@ enum EvalAction {
         limit: u32,
     },
     /// Test suite coverage
+    #[command(after_help = "Examples:\n  tb-lf eval suites\n  tb-lf eval suites --mode regression\n  tb-lf eval suites --json")]
     Suites {
         #[arg(long)]
         mode: Option<String>,
@@ -278,6 +300,7 @@ enum EvalAction {
         branch: Option<String>,
     },
     /// Test case coverage
+    #[command(after_help = "Examples:\n  tb-lf eval cases\n  tb-lf eval cases --suite my-suite --limit 20\n  tb-lf eval cases --json")]
     Cases {
         #[arg(long)]
         suite: Option<String>,
@@ -289,6 +312,7 @@ enum EvalAction {
         limit: u32,
     },
     /// Flaky test detection
+    #[command(after_help = "Examples:\n  tb-lf eval flaky\n  tb-lf eval flaky --last-n 50\n  tb-lf eval flaky --branch main --json")]
     Flaky {
         /// Sample size for flaky detection
         #[arg(long, default_value = "20")]
@@ -319,7 +343,7 @@ async fn main() {
 async fn run() -> tb_lf::error::Result<()> {
     let cli = Cli::parse();
 
-    // Handle config commands (no API needed)
+    // Config commands don't need API access
     if let Commands::Config { ref action } = cli.command {
         return handle_config(action.as_ref());
     }
@@ -772,7 +796,7 @@ async fn run() -> tb_lf::error::Result<()> {
             }
         }
 
-        Commands::Daily { date, findings, severity } => {
+        Commands::Daily { date, findings, severity, r#type } => {
             let date_part = date.as_deref().unwrap_or("latest");
             let path = DevPortalClient::build_path(&format!("/reports/{}", date_part), &[
                 ("project_id", pid),
@@ -804,6 +828,11 @@ async fn run() -> tb_lf::error::Result<()> {
                     .filter(|f| {
                         severity.as_ref().is_none_or(|s| {
                             f.severity.as_deref().unwrap_or("").eq_ignore_ascii_case(s)
+                        })
+                    })
+                    .filter(|f| {
+                        r#type.as_ref().is_none_or(|t| {
+                            f.finding_type.as_deref().unwrap_or("").eq_ignore_ascii_case(t)
                         })
                     })
                     .collect();
@@ -1597,7 +1626,7 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("  {:<10} {} files, {}", "Cache:", count, size_str);
         }
 
-        Commands::Config { .. } => unreachable!(),
+        Commands::Config { .. } => {} // handled before client construction
     }
 
     Ok(())
