@@ -1,3 +1,5 @@
+use colored::Colorize;
+
 use crate::api::BugsnagClient;
 use crate::config::{Config, ProjectConfig};
 use crate::error::{Result, TbBugError};
@@ -91,5 +93,36 @@ pub fn show(config: &Config) {
             println!("  {:<20} {}", name, proj.id);
         }
     }
+}
+
+pub fn set(key: &str, value: &str) -> Result<()> {
+    let path = Config::config_path()?;
+    let mut table: toml::Table = if path.exists() {
+        let content =
+            std::fs::read_to_string(&path).map_err(|e| TbBugError::Config(e.to_string()))?;
+        toml::from_str(&content).map_err(|e| TbBugError::Config(e.to_string()))?
+    } else {
+        toml::Table::new()
+    };
+
+    match key {
+        "token" | "org_id" => {
+            table.insert(key.to_string(), toml::Value::String(value.to_string()));
+        }
+        _ => {
+            return Err(TbBugError::Config(format!(
+                "Unknown config key '{}'. Valid keys: token, org_id",
+                key
+            )));
+        }
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| TbBugError::Config(e.to_string()))?;
+    }
+    std::fs::write(&path, toml::to_string_pretty(&table).unwrap())
+        .map_err(|e| TbBugError::Config(e.to_string()))?;
+    println!("Set {} = {}", key.bold(), value);
+    Ok(())
 }
 

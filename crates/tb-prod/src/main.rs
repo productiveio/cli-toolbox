@@ -223,6 +223,13 @@ enum ConfigAction {
     },
     /// Show current config
     Show,
+    /// Set a config value
+    Set {
+        /// Config key (token, org_id, person_id, api_base_url)
+        key: String,
+        /// New value
+        value: String,
+    },
 }
 
 fn read_text_input(
@@ -517,6 +524,9 @@ async fn run() -> tb_prod::error::Result<()> {
             ConfigAction::Init { .. } => unreachable!(),
             ConfigAction::Show => {
                 commands::config_cmd::show(&config);
+            }
+            ConfigAction::Set { key, value } => {
+                commands::config_cmd::set(&key, &value)?;
             }
         },
         Commands::Skill { .. } => unreachable!(),

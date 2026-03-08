@@ -1,3 +1,5 @@
+use colored::Colorize;
+
 use crate::config::Config;
 use crate::error::{Result, TbProdError};
 
@@ -80,4 +82,35 @@ pub fn show(config: &Config) {
         config.person_id.as_deref().unwrap_or("(not set)")
     );
     println!("base_url:   {}", config.base_url());
+}
+
+pub fn set(key: &str, value: &str) -> Result<()> {
+    let path = Config::config_path()?;
+    let mut table: toml::Table = if path.exists() {
+        let content =
+            std::fs::read_to_string(&path).map_err(|e| TbProdError::Config(e.to_string()))?;
+        toml::from_str(&content).map_err(|e| TbProdError::Config(e.to_string()))?
+    } else {
+        toml::Table::new()
+    };
+
+    match key {
+        "token" | "org_id" | "person_id" | "api_base_url" => {
+            table.insert(key.to_string(), toml::Value::String(value.to_string()));
+        }
+        _ => {
+            return Err(TbProdError::Config(format!(
+                "Unknown config key '{}'. Valid keys: token, org_id, person_id, api_base_url",
+                key
+            )));
+        }
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| TbProdError::Config(e.to_string()))?;
+    }
+    std::fs::write(&path, toml::to_string_pretty(&table).unwrap())
+        .map_err(|e| TbProdError::Config(e.to_string()))?;
+    println!("Set {} = {}", key.bold(), value);
+    Ok(())
 }

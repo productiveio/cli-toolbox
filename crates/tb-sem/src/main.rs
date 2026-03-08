@@ -240,6 +240,13 @@ enum ConfigAction {
     },
     /// Show current configuration
     Show,
+    /// Set a config value
+    Set {
+        /// Config key (token, org_id, timezone)
+        key: String,
+        /// New value
+        value: String,
+    },
 }
 
 toolbox_core::run_main!(run());
@@ -273,6 +280,9 @@ async fn run() -> tb_sem::error::Result<()> {
             }
             ConfigAction::Show => {
                 commands::config_cmd::show()?;
+            }
+            ConfigAction::Set { key, value } => {
+                commands::config_cmd::set(&key, &value)?;
             }
         }
         return Ok(());
