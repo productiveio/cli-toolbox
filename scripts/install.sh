@@ -17,6 +17,8 @@ Usage: $0 [OPTIONS] <tool> [<tool>...]
 
 Install or update cli-toolbox binaries from GitHub releases.
 
+Requires: gh (GitHub CLI) — for authenticated access to the private repo.
+
 Options:
   --all          Install all tools ($ALL_TOOLS)
   --reinstall    Force download even if local version matches latest
@@ -46,6 +48,13 @@ if [[ ${#tools[@]} -eq 0 ]]; then
   echo "Error: specify at least one tool or use --all"
   echo ""
   usage
+fi
+
+# --- Prerequisites ---
+if ! command -v gh &>/dev/null; then
+  echo "Error: gh (GitHub CLI) is required but not installed"
+  echo "Install it: https://cli.github.com/"
+  exit 1
 fi
 
 # --- Platform detection ---
@@ -83,25 +92,19 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
   echo ""
 fi
 
-# --- GitHub API helpers ---
+# --- GitHub API helpers (using gh for auth) ---
 get_latest_release() {
   local tool="$1"
-  # List releases, find the latest tag matching this tool
-  curl -sS "https://api.github.com/repos/$REPO/releases" \
-    | grep -o "\"tag_name\": \"${tool}-v[^\"]*\"" \
-    | head -1 \
-    | sed "s/\"tag_name\": \"${tool}-v\(.*\)\"/\1/"
+  gh api "repos/$REPO/releases" --jq \
+    "[.[] | select(.tag_name | startswith(\"${tool}-v\")) | select(.draft == false) | select(.prerelease == false)] | .[0].tag_name // empty" \
+    2>/dev/null | sed "s/^${tool}-v//"
 }
 
-get_download_url() {
-  local tool="$1" version="$2" platform="$3"
+download_asset() {
+  local tool="$1" version="$2" platform="$3" dest="$4"
   local tag="${tool}-v${version}"
   local asset="${tool}-${platform}"
-  # Get the browser_download_url for the matching asset
-  curl -sS "https://api.github.com/repos/$REPO/releases/tags/$tag" \
-    | grep -o "\"browser_download_url\": \"[^\"]*${asset}\"" \
-    | head -1 \
-    | sed 's/"browser_download_url": "\(.*\)"/\1/'
+  gh release download "$tag" --repo "$REPO" --pattern "$asset" --output "$dest" --clobber
 }
 
 get_local_version() {
@@ -144,15 +147,8 @@ for tool in "${tools[@]}"; do
     continue
   fi
 
-  download_url="$(get_download_url "$tool" "$latest" "$PLATFORM")"
-  if [[ -z "$download_url" ]]; then
-    echo "[$tool] Error: no binary found for $PLATFORM in release $latest"
-    failed+=("$tool")
-    continue
-  fi
-
-  echo "[$tool] Downloading $download_url..."
-  if curl -fsSL "$download_url" -o "$INSTALL_DIR/$tool"; then
+  echo "[$tool] Downloading ${tool}-${PLATFORM} from release ${tool}-v${latest}..."
+  if download_asset "$tool" "$latest" "$PLATFORM" "$INSTALL_DIR/$tool"; then
     chmod +x "$INSTALL_DIR/$tool"
     echo "[$tool] Installed $latest to $INSTALL_DIR/$tool"
     installed+=("$tool")
