@@ -10,6 +10,11 @@
 - When encountering a broken behavior, investigate the root cause and offer to fix it. If it's quick, just fix it. If it's complex, propose a plan.
 - Don't waste time proving something is pre-existing — spend that time understanding and fixing it instead.
 
+## Communication
+
+- When asked to explain something, explain it — don't blindly change code.
+- Push back if a request doesn't make sense. It's better to challenge the instruction than to make a wrong change and then revert it.
+
 ## Feature Artifacts
 
 - When a feature is complete and there's nothing left to do, offer to delete the feature's `docs/features/<name>/` directory if the markdown files have no ongoing reference value. The spec/plan served their purpose during development — don't keep them around as clutter.
