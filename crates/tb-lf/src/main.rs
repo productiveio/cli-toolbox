@@ -8,10 +8,10 @@ use tb_lf::output;
 use tb_lf::types::*;
 
 #[derive(Parser)]
-#[command(name = "tb-lf", version, about = "Langfuse/DevPortal insights CLI")]
+#[command(name = "tb-lf", disable_version_flag = true, about = "Langfuse/DevPortal insights CLI")]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 
     /// Output as JSON
     #[arg(long, global = true)]
@@ -24,6 +24,10 @@ struct Cli {
     /// Bypass cache
     #[arg(long, global = true)]
     no_cache: bool,
+
+    /// Print version info
+    #[arg(short = 'V', long = "version")]
+    version: bool,
 }
 
 #[derive(clap::Subcommand)]
@@ -403,11 +407,21 @@ toolbox_core::run_main!(run());
 async fn run() -> tb_lf::error::Result<()> {
     let cli = Cli::parse();
 
+    if cli.version {
+        toolbox_core::version_check::print_version("tb-lf", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
+    let Some(command) = cli.command else {
+        Cli::parse_from(["tb-lf", "--help"]);
+        unreachable!()
+    };
+
     // Commands that don't need API access
-    if let Commands::Config { ref action } = cli.command {
+    if let Commands::Config { ref action } = command {
         return handle_config(action.as_ref()).await;
     }
-    if let Commands::Skill { ref action } = cli.command {
+    if let Commands::Skill { ref action } = command {
         let skill = toolbox_core::skill::SkillConfig {
             tool_name: "tb-lf",
             content: include_str!("../SKILL.md"),
@@ -422,7 +436,7 @@ async fn run() -> tb_lf::error::Result<()> {
         config::resolve_project(&client, cli.project.as_deref(), config.project.as_deref()).await?;
     let pid = project_id.map(|id| id.to_string());
 
-    match cli.command {
+    match command {
         Commands::Traces {
             name,
             user,
@@ -1945,7 +1959,7 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("- Triage: flagged=needs review, dismissed=noise, untouched=not yet triaged");
             println!("- Eval pass rate: >=0.90 healthy, <0.70 needs attention");
 
-            toolbox_core::version_check::check("tb-lf", env!("CARGO_PKG_VERSION")).await;
+            toolbox_core::version_check::print_update_hint("tb-lf", env!("CARGO_PKG_VERSION"));
         }
 
         Commands::Human => {
@@ -2109,6 +2123,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 format!("{} B", bytes)
             };
             println!("  {:<10} {} files, {}", "Cache:", count, size_str);
+            toolbox_core::version_check::print_update_hint("tb-lf", env!("CARGO_PKG_VERSION"));
         }
 
         Commands::Config { .. } | Commands::Skill { .. } => {} // handled before client construction

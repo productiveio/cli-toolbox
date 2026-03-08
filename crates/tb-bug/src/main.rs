@@ -5,14 +5,18 @@ use tb_bug::commands;
 use tb_bug::config::Config;
 
 #[derive(Parser)]
-#[command(name = "tb-bug", version, about = "Bugsnag insights CLI")]
+#[command(name = "tb-bug", disable_version_flag = true, about = "Bugsnag insights CLI")]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 
     /// Bypass response cache
     #[arg(long, global = true)]
     no_cache: bool,
+
+    /// Print version info
+    #[arg(short = 'V', long = "version")]
+    version: bool,
 }
 
 #[derive(clap::Subcommand)]
@@ -239,8 +243,18 @@ async fn run() -> tb_bug::error::Result<()> {
         }
     };
 
+    if cli.version {
+        toolbox_core::version_check::print_version("tb-bug", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
+    let Some(ref command) = cli.command else {
+        Cli::parse_from(["tb-bug", "--help"]);
+        unreachable!()
+    };
+
     // Commands that don't need a loaded config
-    if let Commands::Skill { action } = &cli.command {
+    if let Commands::Skill { action } = command {
         let skill = toolbox_core::skill::SkillConfig {
             tool_name: "tb-bug",
             content: include_str!("../SKILL.md"),
@@ -255,7 +269,7 @@ async fn run() -> tb_bug::error::Result<()> {
                 org,
                 projects,
             },
-    } = &cli.command
+    } = command
     {
         commands::config_cmd::init(token, org.as_deref(), projects.as_deref()).await?;
         return Ok(());
@@ -264,7 +278,7 @@ async fn run() -> tb_bug::error::Result<()> {
     let config = Config::load()?;
     let client = BugsnagClient::new(&config, cli.no_cache)?;
 
-    match &cli.command {
+    match command {
         Commands::Errors {
             project,
             status,
@@ -295,7 +309,7 @@ async fn run() -> tb_bug::error::Result<()> {
         }
         Commands::Prime { project } => {
             commands::prime::run(&client, &config, project.as_deref()).await?;
-            toolbox_core::version_check::check("tb-bug", env!("CARGO_PKG_VERSION")).await;
+            toolbox_core::version_check::print_update_hint("tb-bug", env!("CARGO_PKG_VERSION"));
         }
         Commands::Projects { json } => {
             commands::projects::run(&client, &config, *json).await?;
@@ -351,6 +365,7 @@ async fn run() -> tb_bug::error::Result<()> {
         }
         Commands::Doctor => {
             commands::doctor::run(&client, &config).await?;
+            toolbox_core::version_check::print_update_hint("tb-bug", env!("CARGO_PKG_VERSION"));
         }
         Commands::CacheClear => {
             client.clear_cache()?;

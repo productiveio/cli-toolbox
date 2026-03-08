@@ -10,16 +10,20 @@ use tb_prod::config::Config;
 #[derive(Parser)]
 #[command(
     name = "tb-prod",
-    version,
+    disable_version_flag = true,
     about = "Productive.io CLI — compact, AI-optimized"
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 
     /// JSON output for all commands
     #[arg(long, global = true)]
     json: bool,
+
+    /// Print version info
+    #[arg(short = 'V', long = "version")]
+    version: bool,
 }
 
 #[derive(clap::Subcommand)]
@@ -243,8 +247,18 @@ toolbox_core::run_main!(run());
 async fn run() -> tb_prod::error::Result<()> {
     let cli = Cli::parse();
 
+    if cli.version {
+        toolbox_core::version_check::print_version("tb-prod", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
+    let Some(command) = cli.command else {
+        Cli::parse_from(["tb-prod", "--help"]);
+        unreachable!()
+    };
+
     // Commands that don't need a loaded config
-    if let Commands::Skill { action } = &cli.command {
+    if let Commands::Skill { action } = &command {
         let skill = toolbox_core::skill::SkillConfig {
             tool_name: "tb-prod",
             content: include_str!("../SKILL.md"),
@@ -254,7 +268,7 @@ async fn run() -> tb_prod::error::Result<()> {
     }
     if let Commands::Config {
         action: ConfigAction::Init { token, org },
-    } = &cli.command
+    } = &command
     {
         commands::config_cmd::init(token, org.as_deref()).await?;
         return Ok(());
@@ -263,7 +277,7 @@ async fn run() -> tb_prod::error::Result<()> {
     let config = Config::load()?;
     let client = ProductiveClient::new(&config);
 
-    match cli.command {
+    match command {
         Commands::Task { action } => match action {
             TaskAction::List {
                 task_list,
@@ -485,7 +499,7 @@ async fn run() -> tb_prod::error::Result<()> {
         },
         Commands::Prime => {
             commands::prime::run(&client, &config).await?;
-            toolbox_core::version_check::check("tb-prod", env!("CARGO_PKG_VERSION")).await;
+            toolbox_core::version_check::print_update_hint("tb-prod", env!("CARGO_PKG_VERSION"));
         }
         Commands::Cache { action } => match action {
             CacheAction::Sync => {
@@ -497,6 +511,7 @@ async fn run() -> tb_prod::error::Result<()> {
         },
         Commands::Doctor => {
             commands::doctor::run(&client, &config).await?;
+            toolbox_core::version_check::print_update_hint("tb-prod", env!("CARGO_PKG_VERSION"));
         }
         Commands::Config { action } => match action {
             ConfigAction::Init { .. } => unreachable!(),

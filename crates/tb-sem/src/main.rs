@@ -15,12 +15,16 @@ fn parse_date_to_timestamp(s: &str) -> Option<i64> {
 #[derive(Parser)]
 #[command(
     name = "tb-sem",
-    version,
+    disable_version_flag = true,
     about = "Semaphore CI CLI for triage and investigation"
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
+
+    /// Print version info
+    #[arg(short = 'V', long = "version")]
+    version: bool,
 }
 
 #[derive(clap::Subcommand)]
@@ -256,8 +260,18 @@ toolbox_core::run_main!(run());
 async fn run() -> tb_sem::error::Result<()> {
     let cli = Cli::parse();
 
+    if cli.version {
+        toolbox_core::version_check::print_version("tb-sem", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
+    let Some(command) = cli.command else {
+        Cli::parse_from(["tb-sem", "--help"]);
+        unreachable!()
+    };
+
     // Commands that don't need a loaded config
-    if let Commands::Skill { action } = &cli.command {
+    if let Commands::Skill { action } = &command {
         let skill = toolbox_core::skill::SkillConfig {
             tool_name: "tb-sem",
             content: include_str!("../SKILL.md"),
@@ -265,7 +279,7 @@ async fn run() -> tb_sem::error::Result<()> {
         toolbox_core::skill::run(&skill, action).map_err(tb_sem::error::TbSemError::Other)?;
         return Ok(());
     }
-    if let Commands::Config { action } = &cli.command {
+    if let Commands::Config { action } = &command {
         match action {
             ConfigAction::Init { token, org } => {
                 commands::config_cmd::init_with_org(token, org).await?;
@@ -286,7 +300,7 @@ async fn run() -> tb_sem::error::Result<()> {
     let config = Config::load()?;
     let client = SemaphoreClient::new(&config);
 
-    match cli.command {
+    match command {
         Commands::Runs {
             project,
             branch,
@@ -410,10 +424,11 @@ async fn run() -> tb_sem::error::Result<()> {
         }
         Commands::Prime { mcp, utc } => {
             commands::prime::run(&client, &config, mcp, utc).await?;
-            toolbox_core::version_check::check("tb-sem", env!("CARGO_PKG_VERSION")).await;
+            toolbox_core::version_check::print_update_hint("tb-sem", env!("CARGO_PKG_VERSION"));
         }
         Commands::Doctor => {
             commands::doctor::run(&config).await?;
+            toolbox_core::version_check::print_update_hint("tb-sem", env!("CARGO_PKG_VERSION"));
         }
         Commands::Config { .. } | Commands::Skill { .. } => unreachable!(),
     }
