@@ -107,6 +107,9 @@ enum Commands {
     Deploys {
         /// Project name
         project: String,
+        /// Filter by branch
+        #[arg(long)]
+        branch: Option<String>,
         /// Show deploys around a pipeline's run window
         #[arg(long)]
         around: Option<String>,
@@ -121,6 +124,9 @@ enum Commands {
     Triage {
         /// Pipeline ID (defaults to latest failed e2e run)
         pipeline_id: Option<String>,
+        /// Filter by branch (only used when auto-finding latest failed run)
+        #[arg(long)]
+        branch: Option<String>,
         /// JSON output
         #[arg(long)]
         json: bool,
@@ -179,6 +185,9 @@ enum Commands {
         /// Project name (default: e2e-tests)
         #[arg(long, default_value = "e2e-tests")]
         project: String,
+        /// Filter by branch
+        #[arg(long)]
+        branch: Option<String>,
         /// Number of runs to check
         #[arg(long, default_value = "10")]
         limit: usize,
@@ -194,6 +203,9 @@ enum Commands {
         /// Project name (default: e2e-tests)
         #[arg(default_value = "e2e-tests")]
         project: String,
+        /// Filter by branch
+        #[arg(long)]
+        branch: Option<String>,
         /// Number of runs to check
         #[arg(long, default_value = "10")]
         limit: usize,
@@ -203,6 +215,11 @@ enum Commands {
         /// UTC timestamps
         #[arg(long)]
         utc: bool,
+    },
+    /// List branches with recent activity
+    Branches {
+        /// Project name
+        project: String,
     },
     /// AI-optimized context dump
     Prime {
@@ -366,19 +383,37 @@ async fn run() -> tb_sem::error::Result<()> {
         }
         Commands::Deploys {
             project,
+            branch,
             around,
             json,
             utc,
         } => {
-            commands::deploys::run(&client, &config, &project, around.as_deref(), json, utc)
-                .await?;
+            commands::deploys::run(
+                &client,
+                &config,
+                &project,
+                branch.as_deref(),
+                around.as_deref(),
+                json,
+                utc,
+            )
+            .await?;
         }
         Commands::Triage {
             pipeline_id,
+            branch,
             json,
             utc,
         } => {
-            commands::triage::run(&client, &config, pipeline_id.as_deref(), json, utc).await?;
+            commands::triage::run(
+                &client,
+                &config,
+                pipeline_id.as_deref(),
+                branch.as_deref(),
+                json,
+                utc,
+            )
+            .await?;
         }
         Commands::Tests {
             pipeline_id,
@@ -410,20 +445,35 @@ async fn run() -> tb_sem::error::Result<()> {
         Commands::History {
             test_name,
             project,
+            branch,
             limit,
             json,
             utc,
         } => {
-            commands::history::run(&client, &config, &test_name, &project, limit, json, utc)
-                .await?;
+            commands::history::run(
+                &client,
+                &config,
+                &test_name,
+                &project,
+                branch.as_deref(),
+                limit,
+                json,
+                utc,
+            )
+            .await?;
         }
         Commands::Flaky {
             project,
+            branch,
             limit,
             json,
             utc,
         } => {
-            commands::flaky::run(&client, &config, &project, limit, json, utc).await?;
+            commands::flaky::run(&client, &config, &project, branch.as_deref(), limit, json, utc)
+                .await?;
+        }
+        Commands::Branches { project } => {
+            commands::branches::run(&client, &config, &project).await?;
         }
         Commands::Prime { mcp, utc } => {
             commands::prime::run(&client, &config, mcp, utc).await?;

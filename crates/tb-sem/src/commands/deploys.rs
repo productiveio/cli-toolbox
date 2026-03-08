@@ -31,6 +31,7 @@ pub async fn run(
     client: &SemaphoreClient,
     config: &Config,
     project: &str,
+    branch: Option<&str>,
     around: Option<&str>,
     json: bool,
     utc: bool,
@@ -52,7 +53,7 @@ pub async fn run(
         (None, None)
     };
 
-    let workflows = client.list_workflows(project_id, None, None, None).await?;
+    let workflows = client.list_workflows(project_id, branch, None, None).await?;
 
     let mut deploys = Vec::new();
     let mut has_overlap = false;

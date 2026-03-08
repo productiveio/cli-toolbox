@@ -21,11 +21,13 @@ pub struct HistoryEntry {
     pub detail: Option<String>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     client: &SemaphoreClient,
     config: &Config,
     test_name: &str,
     project: &str,
+    branch: Option<&str>,
     limit: usize,
     json: bool,
     utc: bool,
@@ -37,7 +39,7 @@ pub async fn run(
     };
     let project_id = config.resolve_project(project)?;
 
-    let workflows = client.list_workflows(project_id, None, None, None).await?;
+    let workflows = client.list_workflows(project_id, branch, None, None).await?;
 
     let mut entries = Vec::new();
 

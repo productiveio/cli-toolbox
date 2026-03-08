@@ -48,6 +48,7 @@ pub async fn run(
     client: &SemaphoreClient,
     config: &Config,
     pipeline_id: Option<&str>,
+    branch: Option<&str>,
     json: bool,
     utc: bool,
 ) -> Result<()> {
@@ -67,7 +68,7 @@ pub async fn run(
         if !json {
             eprintln!("Finding latest failed e2e run...");
         }
-        let workflows = client.list_workflows(e2e_id, None, None, None).await?;
+        let workflows = client.list_workflows(e2e_id, branch, None, None).await?;
         let mut found = None;
         for wf in &workflows {
             let ppl = client.get_pipeline(&wf.initial_ppl_id, false).await?;

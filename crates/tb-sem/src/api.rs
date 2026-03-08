@@ -6,6 +6,7 @@ use serde::Deserialize;
 use crate::config::Config;
 use crate::error::{Result, TbSemError};
 
+#[derive(Clone)]
 pub struct SemaphoreClient {
     client: Client,
     base_url: String,
@@ -329,6 +330,18 @@ impl SemaphoreClient {
         created_after: Option<i64>,
         created_before: Option<i64>,
     ) -> Result<Vec<Workflow>> {
+        self.list_workflows_pages(project_id, branch, created_after, created_before, 10)
+            .await
+    }
+
+    pub async fn list_workflows_pages(
+        &self,
+        project_id: &str,
+        branch: Option<&str>,
+        created_after: Option<i64>,
+        created_before: Option<i64>,
+        max_pages: usize,
+    ) -> Result<Vec<Workflow>> {
         let mut path = format!("/plumber-workflows?project_id={}", project_id);
         if let Some(b) = branch {
             path.push_str(&format!("&branch_name={}", b));
@@ -339,7 +352,7 @@ impl SemaphoreClient {
         if let Some(ts) = created_before {
             path.push_str(&format!("&created_before={}", ts));
         }
-        self.get_paginated(&path, 10).await
+        self.get_paginated(&path, max_pages).await
     }
 
     pub async fn get_pipeline(&self, pipeline_id: &str, detailed: bool) -> Result<Pipeline> {

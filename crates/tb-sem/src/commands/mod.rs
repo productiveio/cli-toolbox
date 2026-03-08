@@ -1,3 +1,4 @@
+pub mod branches;
 pub mod compare;
 pub mod config_cmd;
 pub mod deploys;

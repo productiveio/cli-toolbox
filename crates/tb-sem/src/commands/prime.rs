@@ -10,22 +10,36 @@ pub async fn run(client: &SemaphoreClient, config: &Config, mcp: bool, utc: bool
         config.timezone()
     };
 
-    // Get latest run for each project
-    let mut project_statuses = Vec::new();
+    // Fetch latest run for each project concurrently
+    let mut handles = Vec::new();
     for (name, proj) in &config.projects {
-        let workflows = client
-            .list_workflows(&proj.id, None, None, None)
-            .await
-            .unwrap_or_default();
+        let name = name.clone();
+        let proj_id = proj.id.clone();
+        let client = (*client).clone();
+        handles.push(tokio::spawn(async move {
+            let workflows = client
+                .list_workflows_pages(&proj_id, None, None, None, 1)
+                .await
+                .unwrap_or_default();
+            let ppl = if let Some(wf) = workflows.first() {
+                let result = client.get_pipeline(&wf.initial_ppl_id, false).await.ok();
+                Some((wf.created_at.seconds, result))
+            } else {
+                None
+            };
+            (name, ppl)
+        }));
+    }
 
-        if let Some(wf) = workflows.first() {
-            let ppl = client.get_pipeline(&wf.initial_ppl_id, false).await.ok();
+    let mut project_statuses = Vec::new();
+    for handle in handles {
+        if let Ok((name, Some((created_at, ppl)))) = handle.await {
             let result = ppl
                 .as_ref()
                 .map(|p| p.result.to_uppercase())
                 .unwrap_or_else(|| "?".to_string());
-            let time = output::epoch_to_local(wf.created_at.seconds, &tz);
-            project_statuses.push((name.clone(), time, result));
+            let time = output::epoch_to_local(created_at, &tz);
+            project_statuses.push((name, time, result));
         }
     }
 
