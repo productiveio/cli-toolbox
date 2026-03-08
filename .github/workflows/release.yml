@@ -5,6 +5,11 @@ on:
     tags: ["tb-*-v*"]
   workflow_dispatch:
     inputs:
+      crate:
+        description: "Crate to build (e.g. tb-prod)"
+        type: choice
+        options: [tb-prod, tb-sem, tb-bug, tb-lf]
+        required: true
       dry_run:
         description: "Dry run (build but don't create release)"
         type: boolean
@@ -23,18 +28,17 @@ jobs:
     outputs:
       crate: ${{ steps.parse.outputs.crate }}
     steps:
-      - name: Extract crate name from tag
+      - name: Extract crate name from tag or input
         id: parse
         run: |
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             tag="${GITHUB_REF#refs/tags/}"
             crate="${tag%-v*}"
           else
-            echo "::error::Not a tag push — use workflow_dispatch with a crate input"
-            exit 1
+            crate="${{ inputs.crate }}"
           fi
           echo "crate=$crate" >> "$GITHUB_OUTPUT"
-          echo "Parsed crate: $crate from tag: $tag"
+          echo "Parsed crate: $crate"
 
   check:
     name: Check, Fmt, Clippy, Test

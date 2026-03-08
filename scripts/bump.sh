@@ -43,8 +43,9 @@ fi
 current=$(grep '^version = ' "$cargo_toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
 echo "Bumping $tool: $current → $version"
 
-# Update version in Cargo.toml
-sed -i '' "s/^version = \"$current\"/version = \"$version\"/" "$cargo_toml"
+# Update version in Cargo.toml (portable across macOS and Linux)
+sed -i.bak "s/^version = \"$current\"/version = \"$version\"/" "$cargo_toml"
+rm -f "$cargo_toml.bak"
 
 # Verify it compiles and update Cargo.lock
 echo "Running cargo check..."

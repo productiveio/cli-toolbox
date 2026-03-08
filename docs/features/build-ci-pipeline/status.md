@@ -1,5 +1,5 @@
 # Feature: build-ci-pipeline
-**Current phase:** Execute
+**Current phase:** Execute (complete)
 **Started:** 2026-03-08
 
 ## Progress
@@ -8,5 +8,5 @@
 - [ ] Prototype — skipped
 - [x] Spec — 6 requirements: GH Actions workflow, rust-toolchain.toml, install script, bump script, runtime version check, fmt in CI
 - [x] Plan — 7 tasks
-- [x] Execute — tasks 1-6 complete, pending e2e test after push
+- [x] Execute — all 7 tasks complete, e2e verified with tb-prod-v0.1.1
 - [ ] QA

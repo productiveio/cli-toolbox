@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -23,7 +23,7 @@ pub async fn check(tool_name: &str, current_version: &str) {
 }
 
 async fn check_inner(tool_name: &str, current_version: &str) -> Option<()> {
-    let cache_path = cache_path(tool_name)?;
+    let cache_path = cache_path(tool_name);
     let cached = read_cache(&cache_path);
 
     let latest = if let Some(ref c) = cached {
@@ -47,7 +47,7 @@ async fn check_inner(tool_name: &str, current_version: &str) -> Option<()> {
     Some(())
 }
 
-async fn fetch_and_cache(tool_name: &str, cache_path: &PathBuf) -> Option<String> {
+async fn fetch_and_cache(tool_name: &str, cache_path: &Path) -> Option<String> {
     let url = format!("https://api.github.com/repos/{}/releases", REPO);
 
     let client = reqwest::Client::builder()
@@ -78,16 +78,16 @@ async fn fetch_and_cache(tool_name: &str, cache_path: &PathBuf) -> Option<String
     Some(version)
 }
 
-fn read_cache(path: &PathBuf) -> Option<CachedCheck> {
+fn read_cache(path: &Path) -> Option<CachedCheck> {
     let content = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&content).ok()
 }
 
-fn cache_path(tool_name: &str) -> Option<PathBuf> {
+fn cache_path(tool_name: &str) -> PathBuf {
     let dir = dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from("/tmp"))
         .join(tool_name);
-    Some(dir.join("version-check.json"))
+    dir.join("version-check.json")
 }
 
 /// Simple semver comparison: returns true if `latest` > `current`.

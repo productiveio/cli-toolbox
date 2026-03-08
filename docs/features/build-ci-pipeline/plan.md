@@ -8,4 +8,4 @@
 4. [x] Create install script (`scripts/install.sh`)
 5. [x] Add version check module to toolbox-core
 6. [x] Wire version check into all 4 binaries
-7. [ ] End-to-end test: tag, push, verify release
+7. [x] End-to-end test: tag, push, verify release — tb-prod-v0.1.1 released successfully
