@@ -48,7 +48,7 @@ impl Config {
                 toolbox_core::config::load_standalone(&path)
                     .map_err(|e| TbSemError::Config(e.to_string()))?
                     .ok_or_else(|| TbSemError::Config(
-                        "No config found. Run `tb-sem config init --token <TOKEN> --org <ORG>` or create ~/.config/tb-sem/config.toml".into(),
+                        "No config found. Run `tb-sem config init --token <TOKEN>` or create ~/.config/tb-sem/config.toml".into(),
                     ))?
             }
         };
