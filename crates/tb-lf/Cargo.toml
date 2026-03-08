@@ -12,6 +12,7 @@ path = "src/main.rs"
 doctest = false
 
 [dependencies]
+toolbox-core = { workspace = true, features = ["cache"] }
 clap.workspace = true
 tokio.workspace = true
 reqwest.workspace = true
@@ -21,4 +22,3 @@ toml.workspace = true
 chrono.workspace = true
 colored.workspace = true
 thiserror.workspace = true
-dirs = "6"

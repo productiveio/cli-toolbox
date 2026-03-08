@@ -26,11 +26,9 @@ pub fn default_timezone() -> String {
 }
 
 impl Config {
-    /// Standard config file path: ~/.config/tb-sem/config.toml
     pub fn config_path() -> Result<PathBuf> {
-        let dir = dirs::config_dir()
-            .ok_or_else(|| TbSemError::Config("cannot determine config directory".into()))?;
-        Ok(dir.join("tb-sem/config.toml"))
+        toolbox_core::config::config_path("tb-sem")
+            .map_err(|e| TbSemError::Config(e.to_string()))
     }
 
     /// Load config from (first match wins):
@@ -39,36 +37,25 @@ impl Config {
     ///
     /// Token can be overridden by SEMAPHORE_API_TOKEN env var.
     pub fn load() -> Result<Self> {
-        let mut config: Option<Config> = None;
+        // 1. Try secrets.toml [semaphore] section
+        let config: Option<Config> = toolbox_core::config::load_secrets_section("semaphore")
+            .map_err(|e| TbSemError::Config(e.to_string()))?;
 
-        // Try monorepo secrets.toml with [semaphore] section
-        let secrets_path = PathBuf::from("secrets.toml");
-        if secrets_path.exists() {
-            let content = std::fs::read_to_string(&secrets_path)?;
-            let table: toml::Table = toml::from_str(&content)?;
-            if let Some(section) = table.get("semaphore") {
-                config = Some(section.clone().try_into().map_err(|e: toml::de::Error| {
-                    TbSemError::Config(format!("invalid [semaphore] section: {}", e))
-                })?);
+        // 2. Fall back to standalone config
+        let config = match config {
+            Some(c) => c,
+            None => {
+                let path = Self::config_path()?;
+                toolbox_core::config::load_standalone(&path)
+                    .map_err(|e| TbSemError::Config(e.to_string()))?
+                    .ok_or_else(|| TbSemError::Config(
+                        "No config found. Run `tb-sem config init --token <TOKEN>` or create ~/.config/tb-sem/config.toml".into(),
+                    ))?
             }
-        }
+        };
 
-        // Fall back to standalone config
-        if config.is_none() {
-            let path = Self::config_path().unwrap_or_default();
-            if path.exists() {
-                let content = std::fs::read_to_string(&path)?;
-                config = Some(toml::from_str(&content)?);
-            }
-        }
-
-        let mut config = config.ok_or_else(|| {
-            TbSemError::Config(
-                "No config found. Run `tb-sem config init --token <TOKEN>` or create ~/.config/tb-sem/config.toml".into(),
-            )
-        })?;
-
-        // Env var overrides file token
+        // 3. Env var override
+        let mut config = config;
         if let Ok(token) = std::env::var("SEMAPHORE_API_TOKEN") {
             config.token = token;
         }
@@ -76,15 +63,10 @@ impl Config {
         Ok(config)
     }
 
-    /// Save config to the standard config path.
     pub fn save(&self) -> Result<()> {
         let path = Self::config_path()?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let content = toml::to_string_pretty(self)?;
-        std::fs::write(&path, content)?;
-        Ok(())
+        toolbox_core::config::save_config(&path, self)
+            .map_err(|e| TbSemError::Config(e.to_string()))
     }
 
     pub fn base_url(&self) -> String {
@@ -99,7 +81,6 @@ impl Config {
         }
         // Check if it looks like a UUID (contains dashes, len >= 36)
         if name.contains('-') && name.len() >= 36 {
-            // Raw UUID, no default branch
             return Err(TbSemError::Config(format!(
                 "Project UUID '{}' not in config. Use `tb-sem config add` to register it.",
                 name
@@ -113,11 +94,7 @@ impl Config {
     }
 
     pub fn masked_token(&self) -> String {
-        if self.token.len() > 8 {
-            format!("****...{}", &self.token[self.token.len() - 4..])
-        } else {
-            "****".to_string()
-        }
+        toolbox_core::config::masked_token(&self.token)
     }
 
     pub fn timezone(&self) -> chrono_tz::Tz {

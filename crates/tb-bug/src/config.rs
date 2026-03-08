@@ -20,9 +20,8 @@ pub struct Config {
 
 impl Config {
     pub fn config_path() -> Result<PathBuf> {
-        let dir = dirs::config_dir()
-            .ok_or_else(|| TbBugError::Config("cannot determine config directory".into()))?;
-        Ok(dir.join("tb-bug/config.toml"))
+        toolbox_core::config::config_path("tb-bug")
+            .map_err(|e| TbBugError::Config(e.to_string()))
     }
 
     /// Load config from (first match wins):
@@ -31,36 +30,25 @@ impl Config {
     ///
     /// Token can be overridden by BUGSNAG_AUTH_TOKEN env var.
     pub fn load() -> Result<Self> {
-        let mut config: Option<Config> = None;
+        // 1. Try secrets.toml [bugsnag] section
+        let config: Option<Config> = toolbox_core::config::load_secrets_section("bugsnag")
+            .map_err(|e| TbBugError::Config(e.to_string()))?;
 
-        // Try monorepo secrets.toml with [bugsnag] section
-        let secrets_path = PathBuf::from("secrets.toml");
-        if secrets_path.exists() {
-            let content = std::fs::read_to_string(&secrets_path)?;
-            let table: toml::Table = toml::from_str(&content)?;
-            if let Some(section) = table.get("bugsnag") {
-                config = Some(section.clone().try_into().map_err(|e: toml::de::Error| {
-                    TbBugError::Config(format!("invalid [bugsnag] section: {}", e))
-                })?);
+        // 2. Fall back to standalone config
+        let config = match config {
+            Some(c) => c,
+            None => {
+                let path = Self::config_path()?;
+                toolbox_core::config::load_standalone(&path)
+                    .map_err(|e| TbBugError::Config(e.to_string()))?
+                    .ok_or_else(|| TbBugError::Config(
+                        "No config found. Run `tb-bug config init --token <TOKEN> --org <ORG_ID>` or create ~/.config/tb-bug/config.toml".into(),
+                    ))?
             }
-        }
+        };
 
-        // Fall back to standalone config
-        if config.is_none() {
-            let path = Self::config_path().unwrap_or_default();
-            if path.exists() {
-                let content = std::fs::read_to_string(&path)?;
-                config = Some(toml::from_str(&content)?);
-            }
-        }
-
-        let mut config = config.ok_or_else(|| {
-            TbBugError::Config(
-                "No config found. Run `tb-bug config init --token <TOKEN> --org <ORG_ID>` or create ~/.config/tb-bug/config.toml".into(),
-            )
-        })?;
-
-        // Env var overrides file token
+        // 3. Env var override
+        let mut config = config;
         if let Ok(token) = std::env::var("BUGSNAG_AUTH_TOKEN") {
             config.token = token;
         }
@@ -70,12 +58,8 @@ impl Config {
 
     pub fn save(&self) -> Result<()> {
         let path = Self::config_path()?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let content = toml::to_string_pretty(self)?;
-        std::fs::write(&path, content)?;
-        Ok(())
+        toolbox_core::config::save_config(&path, self)
+            .map_err(|e| TbBugError::Config(e.to_string()))
     }
 
     pub fn resolve_project<'a>(&'a self, name: &'a str) -> Result<&'a str> {
@@ -98,10 +82,6 @@ impl Config {
     }
 
     pub fn masked_token(&self) -> String {
-        if self.token.len() > 8 {
-            format!("****...{}", &self.token[self.token.len() - 4..])
-        } else {
-            "****".to_string()
-        }
+        toolbox_core::config::masked_token(&self.token)
     }
 }

@@ -176,7 +176,7 @@ impl BugsnagClient {
         Ok(Self {
             client: Client::new(),
             token: config.token.clone(),
-            cache: Cache::new()?,
+            cache: Cache::new("tb-bug")?,
             no_cache,
         })
     }
@@ -456,6 +456,7 @@ impl BugsnagClient {
     }
 
     pub fn clear_cache(&self) -> Result<()> {
-        self.cache.clear()
+        self.cache.clear()?;
+        Ok(())
     }
 }

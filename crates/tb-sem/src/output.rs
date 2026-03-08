@@ -1,6 +1,8 @@
+// Re-export shared output function from toolbox-core
+pub use toolbox_core::output::render_json;
+
 use chrono::{DateTime, TimeZone, Utc};
 use chrono_tz::Tz;
-use serde::Serialize;
 
 /// Format a UTC epoch timestamp to local time string.
 pub fn epoch_to_local(seconds: i64, tz: &Tz) -> String {
@@ -37,11 +39,6 @@ pub fn format_duration_secs(total_secs: i64) -> String {
     } else {
         format!("{}s", secs)
     }
-}
-
-/// Render a result as pretty-printed JSON.
-pub fn render_json<T: Serialize>(value: &T) -> String {
-    serde_json::to_string_pretty(value).unwrap_or_else(|e| format!("JSON error: {}", e))
 }
 
 /// Strip ANSI escape codes from text.

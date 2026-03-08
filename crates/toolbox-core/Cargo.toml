@@ -7,16 +7,15 @@ description = "Shared infrastructure for cli-toolbox crates"
 [lib]
 doctest = false
 
+[features]
+default = []
+cache = ["dirs"]
+
 [dependencies]
-clap.workspace = true
-tokio.workspace = true
-reqwest.workspace = true
-reqwest-middleware.workspace = true
+thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 chrono.workspace = true
-colored.workspace = true
-indicatif.workspace = true
-rusqlite.workspace = true
-thiserror.workspace = true
+reqwest.workspace = true
+dirs = { version = "6", optional = true }

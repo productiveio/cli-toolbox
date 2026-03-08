@@ -32,7 +32,7 @@ impl DevPortalClient {
             client: Client::new(),
             base_url: config.base_api_url(),
             token: config.token.clone(),
-            cache: Cache::new()?,
+            cache: Cache::new("tb-lf")?,
             no_cache,
         })
     }

@@ -12,7 +12,7 @@ path = "src/main.rs"
 doctest = false
 
 [dependencies]
-toolbox-core.workspace = true
+toolbox-core = { workspace = true, features = ["cache"] }
 clap.workspace = true
 tokio.workspace = true
 reqwest.workspace = true
@@ -23,7 +23,6 @@ chrono.workspace = true
 thiserror.workspace = true
 
 # tb-bug-specific deps
-dirs = "6"
 urlencoding = "2.1"
 
 [dev-dependencies]

@@ -17,36 +17,25 @@ pub struct Config {
 
 impl Config {
     pub fn load() -> Result<Self> {
-        let mut config: Option<Config> = None;
+        // 1. Try secrets.toml [devportal] section
+        let config: Option<Config> = toolbox_core::config::load_secrets_section("devportal")
+            .map_err(|e| TbLfError::Config(e.to_string()))?;
 
-        // Try secrets.toml [devportal] section
-        let secrets_path = PathBuf::from("secrets.toml");
-        if secrets_path.exists() {
-            let content = std::fs::read_to_string(&secrets_path)?;
-            let table: toml::Table = toml::from_str(&content)?;
-            if let Some(section) = table.get("devportal") {
-                config = Some(section.clone().try_into().map_err(|e: toml::de::Error| {
-                    TbLfError::Config(format!("invalid [devportal] section: {}", e))
-                })?);
+        // 2. Fall back to ~/.config/tb-lf/config.toml
+        let config = match config {
+            Some(c) => c,
+            None => {
+                let path = Self::config_path()?;
+                toolbox_core::config::load_standalone(&path)
+                    .map_err(|e| TbLfError::Config(e.to_string()))?
+                    .ok_or_else(|| TbLfError::Config(
+                        "No config found. Add [devportal] to secrets.toml or create ~/.config/tb-lf/config.toml".into(),
+                    ))?
             }
-        }
+        };
 
-        // Fall back to ~/.config/tb-lf/config.toml
-        if config.is_none() {
-            let path = Self::config_path()?;
-            if path.exists() {
-                let content = std::fs::read_to_string(&path)?;
-                config = Some(toml::from_str(&content)?);
-            }
-        }
-
-        let mut config = config.ok_or_else(|| {
-            TbLfError::Config(
-                "No config found. Add [devportal] to secrets.toml or create ~/.config/tb-lf/config.toml".into(),
-            )
-        })?;
-
-        // Env var overrides
+        // 3. Env var overrides
+        let mut config = config;
         if let Ok(url) = std::env::var("DEVPORTAL_URL") {
             config.url = url;
         }
@@ -61,9 +50,8 @@ impl Config {
     }
 
     pub fn config_path() -> Result<PathBuf> {
-        let dir = dirs::config_dir()
-            .ok_or_else(|| TbLfError::Config("cannot determine config directory".into()))?;
-        Ok(dir.join("tb-lf/config.toml"))
+        toolbox_core::config::config_path("tb-lf")
+            .map_err(|e| TbLfError::Config(e.to_string()))
     }
 
     pub fn base_api_url(&self) -> String {
@@ -71,11 +59,7 @@ impl Config {
     }
 
     pub fn masked_token(&self) -> String {
-        if self.token.len() > 8 {
-            format!("****...{}", &self.token[self.token.len() - 4..])
-        } else {
-            "****".to_string()
-        }
+        toolbox_core::config::masked_token(&self.token)
     }
 }
 
