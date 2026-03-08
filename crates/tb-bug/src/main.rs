@@ -156,6 +156,9 @@ enum ConfigAction {
         /// Organization ID (auto-detected if omitted)
         #[arg(long)]
         org: Option<String>,
+        /// Project slugs to add (comma-separated, e.g. "api,app,ai-agent")
+        #[arg(long)]
+        projects: Option<String>,
     },
     /// Display current config
     Show,
@@ -246,10 +249,15 @@ async fn run() -> tb_bug::error::Result<()> {
         return Ok(());
     }
     if let Commands::Config {
-        action: ConfigAction::Init { token, org },
+        action:
+            ConfigAction::Init {
+                token,
+                org,
+                projects,
+            },
     } = &cli.command
     {
-        commands::config_cmd::init(token, org.as_deref()).await?;
+        commands::config_cmd::init(token, org.as_deref(), projects.as_deref()).await?;
         return Ok(());
     }
 

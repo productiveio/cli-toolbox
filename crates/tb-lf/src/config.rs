@@ -29,7 +29,7 @@ impl Config {
                 toolbox_core::config::load_standalone(&path)
                     .map_err(|e| TbLfError::Config(e.to_string()))?
                     .ok_or_else(|| TbLfError::Config(
-                        "No config found. Add [devportal] to secrets.toml or create ~/.config/tb-lf/config.toml".into(),
+                        "No config found. Run `tb-lf config init --url <URL> --token <TOKEN>` or create ~/.config/tb-lf/config.toml".into(),
                     ))?
             }
         };

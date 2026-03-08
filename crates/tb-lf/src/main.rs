@@ -380,6 +380,18 @@ enum EvalAction {
 
 #[derive(clap::Subcommand)]
 enum ConfigAction {
+    /// Initialize configuration
+    Init {
+        /// DevPortal base URL
+        #[arg(long)]
+        url: String,
+        /// API token
+        #[arg(long)]
+        token: String,
+        /// Default project name or ID
+        #[arg(long)]
+        project: Option<String>,
+    },
     /// Show current configuration
     Show,
     /// Set a config value
@@ -393,7 +405,7 @@ async fn run() -> tb_lf::error::Result<()> {
 
     // Commands that don't need API access
     if let Commands::Config { ref action } = cli.command {
-        return handle_config(action.as_ref());
+        return handle_config(action.as_ref()).await;
     }
     if let Commands::Skill { ref action } = cli.command {
         let skill = toolbox_core::skill::SkillConfig {
@@ -2105,8 +2117,69 @@ async fn run() -> tb_lf::error::Result<()> {
     Ok(())
 }
 
-fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()> {
+async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()> {
     match action {
+        Some(ConfigAction::Init {
+            url,
+            token,
+            project,
+        }) => {
+            let url = url.trim_end_matches('/').to_string();
+
+            // Validate by making a test API call
+            let config = tb_lf::config::Config {
+                url: url.clone(),
+                token: token.clone(),
+                project: None,
+            };
+            let client = tb_lf::api::DevPortalClient::new(&config, true)?;
+            let resp: tb_lf::api::PaginatedResponse<tb_lf::types::Project> = client
+                .get("/projects", tb_lf::cache::CacheTtl::Short)
+                .await?;
+            println!("Connected! Found {} projects.", resp.data.len());
+
+            // Resolve project if provided
+            let project = if let Some(p) = project {
+                let matched = resp
+                    .data
+                    .iter()
+                    .find(|proj| proj.name.eq_ignore_ascii_case(p) || proj.id.to_string() == *p);
+                match matched {
+                    Some(proj) => {
+                        println!("Default project: {} (id: {})", proj.name, proj.id);
+                        Some(proj.name.clone())
+                    }
+                    None => {
+                        eprintln!("Warning: project '{}' not found, skipping", p);
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            let path = tb_lf::config::Config::config_path()?;
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let config = tb_lf::config::Config {
+                url,
+                token: token.clone(),
+                project,
+            };
+            let content = toml::to_string_pretty(&config).unwrap();
+            std::fs::write(&path, content)?;
+            println!("Config saved to {}", path.display());
+
+            if resp.data.is_empty() {
+                println!("\nNo projects found.");
+            } else if config.project.is_none() {
+                println!("\nAvailable projects (pass --project to set default):");
+                for p in &resp.data {
+                    println!("  {} (id: {})", p.name, p.id);
+                }
+            }
+        }
         None | Some(ConfigAction::Show) => {
             let config = Config::load()?;
             println!("{}", "DevPortal Configuration".bold());

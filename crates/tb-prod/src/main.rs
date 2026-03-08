@@ -213,10 +213,9 @@ enum ConfigAction {
     Init {
         #[arg(long)]
         token: String,
+        /// Organization ID (auto-detected if omitted)
         #[arg(long)]
-        org: String,
-        #[arg(long)]
-        person_id: Option<String>,
+        org: Option<String>,
     },
     /// Show current config
     Show,
@@ -254,15 +253,10 @@ async fn run() -> tb_prod::error::Result<()> {
         return Ok(());
     }
     if let Commands::Config {
-        action:
-            ConfigAction::Init {
-                token,
-                org,
-                person_id,
-            },
+        action: ConfigAction::Init { token, org },
     } = &cli.command
     {
-        commands::config_cmd::init(token, org, person_id.as_deref())?;
+        commands::config_cmd::init(token, org.as_deref()).await?;
         return Ok(());
     }
 

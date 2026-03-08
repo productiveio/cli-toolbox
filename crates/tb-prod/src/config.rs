@@ -34,7 +34,7 @@ impl Config {
                 toolbox_core::config::load_standalone(&path)
                     .map_err(|e| TbProdError::Config(e.to_string()))?
                     .ok_or_else(|| TbProdError::Config(
-                        "No config found. Run `tb-prod config init` or create secrets.toml with [productive] section".into(),
+                        "No config found. Run `tb-prod config init --token <TOKEN>` or create secrets.toml with [productive] section".into(),
                     ))?
             }
         };

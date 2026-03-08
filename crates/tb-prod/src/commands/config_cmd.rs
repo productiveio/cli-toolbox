@@ -1,11 +1,70 @@
 use crate::config::Config;
-use crate::error::Result;
+use crate::error::{Result, TbProdError};
 
-pub fn init(token: &str, org_id: &str, person_id: Option<&str>) -> Result<()> {
+pub async fn init(token: &str, org_id: Option<&str>) -> Result<()> {
+    let (org_id, person_id) = match org_id {
+        Some(id) => (id.to_string(), None),
+        None => {
+            // Auto-detect org and person via organization_memberships
+            let client = reqwest::Client::new();
+            let resp = client
+                .get("https://api.productive.io/api/v2/organization_memberships?include=organization,person")
+                .header("Content-Type", "application/vnd.api+json")
+                .header("X-Auth-Token", token)
+                .send()
+                .await?;
+
+            if !resp.status().is_success() {
+                let status = resp.status().as_u16();
+                let body = resp.text().await.unwrap_or_default();
+                return Err(TbProdError::Api {
+                    status,
+                    message: body,
+                });
+            }
+
+            let json: serde_json::Value = resp.json().await?;
+            let included = json["included"].as_array();
+
+            // Find the organization
+            let org = included
+                .and_then(|items| {
+                    items
+                        .iter()
+                        .find(|i| i["type"].as_str() == Some("organizations"))
+                })
+                .ok_or_else(|| {
+                    TbProdError::Config("No organization found for this token".into())
+                })?;
+
+            let org_id = org["id"]
+                .as_str()
+                .ok_or_else(|| TbProdError::Config("Organization has no id".into()))?;
+            let org_name = org["attributes"]["name"].as_str().unwrap_or("?");
+            println!("Organization: {} (id: {})", org_name, org_id);
+
+            // Find the person
+            let person = included
+                .and_then(|items| items.iter().find(|i| i["type"].as_str() == Some("people")));
+
+            let person_id = if let Some(p) = person {
+                let pid = p["id"].as_str().unwrap_or("?");
+                let first = p["attributes"]["first_name"].as_str().unwrap_or("");
+                let last = p["attributes"]["last_name"].as_str().unwrap_or("");
+                println!("Person: {} {} (id: {})", first, last, pid);
+                Some(pid.to_string())
+            } else {
+                None
+            };
+
+            (org_id.to_string(), person_id)
+        }
+    };
+
     let config = Config {
         token: token.to_string(),
-        org_id: org_id.to_string(),
-        person_id: person_id.map(|s| s.to_string()),
+        org_id,
+        person_id,
         api_base_url: None,
     };
     config.save()?;
