@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::{DevPortalClient, PaginatedResponse};
 use crate::cache::CacheTtl;
-use crate::error::{TbLfError, Result};
+use crate::error::{Result, TbLfError};
 use crate::types::Project;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -50,8 +50,7 @@ impl Config {
     }
 
     pub fn config_path() -> Result<PathBuf> {
-        toolbox_core::config::config_path("tb-lf")
-            .map_err(|e| TbLfError::Config(e.to_string()))
+        toolbox_core::config::config_path("tb-lf").map_err(|e| TbLfError::Config(e.to_string()))
     }
 
     pub fn base_api_url(&self) -> String {
@@ -91,7 +90,10 @@ pub async fn resolve_project(
     match matches.len() {
         1 => Ok(Some(matches[0].id)),
         0 => {
-            let names: Vec<String> = projects.iter().map(|p| format!("  {} (id: {})", p.name, p.id)).collect();
+            let names: Vec<String> = projects
+                .iter()
+                .map(|p| format!("  {} (id: {})", p.name, p.id))
+                .collect();
             Err(TbLfError::Config(format!(
                 "Project '{}' not found. Available projects:\n{}",
                 input,
@@ -99,7 +101,10 @@ pub async fn resolve_project(
             )))
         }
         _ => {
-            let names: Vec<String> = matches.iter().map(|p| format!("  {} (id: {})", p.name, p.id)).collect();
+            let names: Vec<String> = matches
+                .iter()
+                .map(|p| format!("  {} (id: {})", p.name, p.id))
+                .collect();
             Err(TbLfError::Config(format!(
                 "Ambiguous project '{}'. Matches:\n{}\nUse numeric ID to disambiguate.",
                 input,

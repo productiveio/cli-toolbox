@@ -86,17 +86,12 @@ pub async fn run(
     } else if summary_only {
         println!(
             "PIPELINE: {} | {} passed, {} failed | Total: {}",
-            pipeline_id,
-            result.passed,
-            result.failed,
-            result.total
+            pipeline_id, result.passed, result.failed, result.total
         );
     } else {
         println!(
             "PIPELINE: {} | {} passed, {} failed\n",
-            pipeline_id,
-            result.passed,
-            result.failed
+            pipeline_id, result.passed, result.failed
         );
 
         if result.scenarios.is_empty() {

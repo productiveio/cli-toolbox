@@ -1,6 +1,6 @@
 // Re-export shared output functions from toolbox-core
 pub use toolbox_core::output::{
-    render_json, relative_time, truncate, pagination_hint, empty_hint, fmt_cost,
+    empty_hint, fmt_cost, pagination_hint, relative_time, render_json, truncate,
 };
 
 use colored::Colorize;

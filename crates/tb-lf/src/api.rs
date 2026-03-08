@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use crate::cache::{Cache, CacheTtl};
 use crate::config::Config;
-use crate::error::{TbLfError, Result};
+use crate::error::{Result, TbLfError};
 
 pub struct DevPortalClient {
     client: Client,
@@ -41,9 +41,10 @@ impl DevPortalClient {
         let url = format!("{}{}", self.base_url, path);
 
         if !self.no_cache
-            && let Some(cached) = self.cache.get(&url, &ttl) {
-                return Ok(cached);
-            }
+            && let Some(cached) = self.cache.get(&url, &ttl)
+        {
+            return Ok(cached);
+        }
 
         let resp = self
             .client
@@ -70,7 +71,11 @@ impl DevPortalClient {
         Ok(body)
     }
 
-    pub async fn get<T: serde::de::DeserializeOwned>(&self, path: &str, ttl: CacheTtl) -> Result<T> {
+    pub async fn get<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        ttl: CacheTtl,
+    ) -> Result<T> {
         let body = self.get_raw(path, ttl).await?;
         Ok(serde_json::from_str(&body)?)
     }

@@ -3,11 +3,7 @@ use crate::config::Config;
 use crate::error::Result;
 use crate::output;
 
-pub async fn run(
-    client: &BugsnagClient,
-    config: &Config,
-    project: Option<&str>,
-) -> Result<()> {
+pub async fn run(client: &BugsnagClient, config: &Config, project: Option<&str>) -> Result<()> {
     match project {
         Some(name) => run_project(client, config, name).await,
         None => run_overview(config).await,
@@ -19,7 +15,9 @@ async fn run_overview(config: &Config) -> Result<()> {
 
     println!("## Configured Projects\n");
     if config.projects.is_empty() {
-        println!("  No projects configured. Use `tb-bug config add-project <name> <id>` to add one.\n");
+        println!(
+            "  No projects configured. Use `tb-bug config add-project <name> <id>` to add one.\n"
+        );
     } else {
         for name in config.projects.keys() {
             println!("  - **{}** — `tb-bug prime --project {}`", name, name);
@@ -28,7 +26,9 @@ async fn run_overview(config: &Config) -> Result<()> {
     }
 
     println!("## Quick Commands");
-    println!("- `tb-bug prime --project <name>` — detailed project context (errors, stability, releases)");
+    println!(
+        "- `tb-bug prime --project <name>` — detailed project context (errors, stability, releases)"
+    );
     println!("- `tb-bug errors --project <name> --since 1d --status open` — today's open errors");
     println!("- `tb-bug report dashboard --project <name>` — full dashboard overview");
     println!("- `tb-bug search --project <name> <query>` — search error classes and messages");
@@ -36,11 +36,7 @@ async fn run_overview(config: &Config) -> Result<()> {
     Ok(())
 }
 
-async fn run_project(
-    client: &BugsnagClient,
-    config: &Config,
-    project: &str,
-) -> Result<()> {
+async fn run_project(client: &BugsnagClient, config: &Config, project: &str) -> Result<()> {
     let project_id = config.resolve_project(project)?;
 
     // Fetch open errors from last 24h, sorted by events desc
@@ -55,7 +51,11 @@ async fn run_project(
         .await?;
 
     let stability = client.get_stability(project_id).await.ok();
-    let latest_release = client.get_latest_release(project_id, "production").await.ok().flatten();
+    let latest_release = client
+        .get_latest_release(project_id, "production")
+        .await
+        .ok()
+        .flatten();
 
     println!("# Bugsnag: {}\n", project);
 
@@ -84,12 +84,7 @@ async fn run_project(
     } else {
         for (i, e) in errors_resp.items.iter().take(10).enumerate() {
             let msg = output::truncate(&e.message, 60);
-            println!(
-                "  {}. {} — {}",
-                i + 1,
-                e.error_class,
-                msg,
-            );
+            println!("  {}. {} — {}", i + 1, e.error_class, msg,);
             println!(
                 "     {} events  {} users  last seen {}",
                 output::fmt_count(e.events),
@@ -108,10 +103,7 @@ async fn run_project(
             .as_deref()
             .map(output::relative_time)
             .unwrap_or_else(|| "?".to_string());
-        println!(
-            "  {} ({})",
-            release.app_version, release_time,
-        );
+        println!("  {} ({})", release.app_version, release_time,);
         println!(
             "  New errors: {}  Seen errors: {}  Sessions: {}",
             release.errors_introduced_count,
@@ -122,9 +114,18 @@ async fn run_project(
     }
 
     println!("## Quick Commands");
-    println!("- `tb-bug errors --project {} --since 1d --status open` — today's open errors", project);
-    println!("- `tb-bug errors --project {} --sort events` — errors by frequency", project);
-    println!("- `tb-bug errors --project {} --stage production --severity error` — production errors only", project);
+    println!(
+        "- `tb-bug errors --project {} --since 1d --status open` — today's open errors",
+        project
+    );
+    println!(
+        "- `tb-bug errors --project {} --sort events` — errors by frequency",
+        project
+    );
+    println!(
+        "- `tb-bug errors --project {} --stage production --severity error` — production errors only",
+        project
+    );
 
     Ok(())
 }

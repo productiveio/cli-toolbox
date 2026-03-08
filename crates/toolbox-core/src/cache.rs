@@ -37,7 +37,9 @@ impl Cache {
     }
 
     fn evict_stale(&self) {
-        let Ok(entries) = std::fs::read_dir(&self.dir) else { return };
+        let Ok(entries) = std::fs::read_dir(&self.dir) else {
+            return;
+        };
         for entry in entries.flatten() {
             let is_stale = entry
                 .metadata()

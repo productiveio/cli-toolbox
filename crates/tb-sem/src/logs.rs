@@ -118,7 +118,8 @@ pub fn parse_all_scenarios(events: &[LogEvent]) -> Vec<ScenarioResult> {
     let lines: Vec<&str> = text.lines().collect();
 
     // Track all scenario appearances: name -> list of (passed/failed, error_text)
-    let mut scenario_attempts: HashMap<String, Vec<(bool, String, Option<String>)>> = HashMap::new();
+    let mut scenario_attempts: HashMap<String, Vec<(bool, String, Option<String>)>> =
+        HashMap::new();
 
     let mut i = 0;
     while i < lines.len() {
@@ -147,10 +148,11 @@ pub fn parse_all_scenarios(events: &[LogEvent]) -> Vec<ScenarioResult> {
                     j += 1;
                 }
 
-                scenario_attempts
-                    .entry(name)
-                    .or_default()
-                    .push((found_failure, error_text, feature_file));
+                scenario_attempts.entry(name).or_default().push((
+                    found_failure,
+                    error_text,
+                    feature_file,
+                ));
 
                 i = j;
                 continue;
@@ -217,10 +219,7 @@ pub fn parse_failures(events: &[LogEvent]) -> FailureSummary {
         .map(|s| FailedScenario {
             name: s.name.clone(),
             error_class: s.error_class.clone().unwrap_or(ErrorClass::Unknown),
-            error_detail: s
-                .error_detail
-                .clone()
-                .unwrap_or_default(),
+            error_detail: s.error_detail.clone().unwrap_or_default(),
         })
         .collect();
 
@@ -236,8 +235,7 @@ pub fn parse_failures(events: &[LogEvent]) -> FailureSummary {
 fn is_summary_line(line: &str) -> bool {
     let trimmed = line.trim();
     // Summary lines start with "N) Scenario:" where N is a number
-    trimmed.starts_with(|c: char| c.is_ascii_digit())
-        && trimmed.contains(") Scenario:")
+    trimmed.starts_with(|c: char| c.is_ascii_digit()) && trimmed.contains(") Scenario:")
 }
 
 /// Parse scenario name and optional feature file from a "Scenario:" line.
@@ -268,7 +266,9 @@ pub struct CucumberSummaryScenario {
 /// The summary section looks like:
 ///   1) Scenario: Name (attempt 6) # features/file.feature:31
 ///   2) Scenario: Name (attempt 1, retried) # features/file.feature:5
-pub fn parse_cucumber_scenario_list(text: &str) -> Option<(Vec<CucumberSummaryScenario>, Vec<CucumberSummaryScenario>)> {
+pub fn parse_cucumber_scenario_list(
+    text: &str,
+) -> Option<(Vec<CucumberSummaryScenario>, Vec<CucumberSummaryScenario>)> {
     let re = Regex::new(r"^\s*\d+\)\s+Scenario:\s+(.+)$").unwrap();
     let attempt_re = Regex::new(r"\(attempt (\d+)(?:, retried)?\)\s*$").unwrap();
 
@@ -328,7 +328,9 @@ pub fn parse_cucumber_scenario_list(text: &str) -> Option<(Vec<CucumberSummarySc
 
 /// Build an error classification map by scanning inline scenario output.
 /// This gives us error details even for scenarios that eventually passed on retry.
-fn build_error_map_from_inline(events: &[LogEvent]) -> HashMap<String, (Option<ErrorClass>, Option<String>)> {
+fn build_error_map_from_inline(
+    events: &[LogEvent],
+) -> HashMap<String, (Option<ErrorClass>, Option<String>)> {
     let text = flatten_log(events);
     let lines: Vec<&str> = text.lines().collect();
     let mut map: HashMap<String, (Option<ErrorClass>, Option<String>)> = HashMap::new();

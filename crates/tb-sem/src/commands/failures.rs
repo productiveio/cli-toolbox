@@ -35,11 +35,7 @@ pub struct ErrorDistEntry {
     pub count: usize,
 }
 
-pub async fn run(
-    client: &SemaphoreClient,
-    pipeline_id: &str,
-    json: bool,
-) -> Result<()> {
+pub async fn run(client: &SemaphoreClient, pipeline_id: &str, json: bool) -> Result<()> {
     let ppl = client.get_pipeline(pipeline_id, true).await?;
 
     let failed_job = ppl
@@ -72,7 +68,11 @@ pub async fn run(
     for s in &all_scenarios {
         let entry = FailureEntry {
             name: s.name.clone(),
-            error_class: s.error_class.as_ref().map(|c| c.to_string()).unwrap_or_default(),
+            error_class: s
+                .error_class
+                .as_ref()
+                .map(|c| c.to_string())
+                .unwrap_or_default(),
             error_detail: s.error_detail.clone().unwrap_or_default(),
             attempts: s.attempts,
         };
@@ -128,7 +128,9 @@ pub async fn run(
         } else {
             println!(
                 "FAILED ({}):{:<38} {:<10} DETAIL",
-                result.failures.len(), "", "CLASS"
+                result.failures.len(),
+                "",
+                "CLASS"
             );
             for f in &result.failures {
                 let name = if f.name.len() > 48 {
@@ -162,10 +164,7 @@ pub async fn run(
                 } else {
                     f.name.clone()
                 };
-                println!(
-                    "  {:<48} ({} attempts, passed on retry)",
-                    name, f.attempts
-                );
+                println!("  {:<48} ({} attempts, passed on retry)", name, f.attempts);
             }
         }
 

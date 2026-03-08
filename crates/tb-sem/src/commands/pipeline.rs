@@ -35,7 +35,11 @@ pub async fn run(
     json: bool,
     utc: bool,
 ) -> Result<()> {
-    let tz = if utc { chrono_tz::UTC } else { config.timezone() };
+    let tz = if utc {
+        chrono_tz::UTC
+    } else {
+        config.timezone()
+    };
     let ppl = client.get_pipeline(pipeline_id, true).await?;
 
     let started = output::iso_to_local(&ppl.created_at, &tz);
@@ -90,12 +94,7 @@ pub async fn run(
         if !result.jobs.is_empty() {
             println!("\nJOBS:");
             for j in &result.jobs {
-                println!(
-                    "  {:<24} {:<8}  {}",
-                    j.name,
-                    j.result,
-                    &j.job_id
-                );
+                println!("  {:<24} {:<8}  {}", j.name, j.result, &j.job_id);
             }
         }
     }

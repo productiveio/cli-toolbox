@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{TbBugError, Result};
+use crate::error::{Result, TbBugError};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ProjectConfig {
@@ -20,8 +20,7 @@ pub struct Config {
 
 impl Config {
     pub fn config_path() -> Result<PathBuf> {
-        toolbox_core::config::config_path("tb-bug")
-            .map_err(|e| TbBugError::Config(e.to_string()))
+        toolbox_core::config::config_path("tb-bug").map_err(|e| TbBugError::Config(e.to_string()))
     }
 
     /// Load config from (first match wins):

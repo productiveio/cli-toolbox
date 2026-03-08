@@ -28,7 +28,11 @@ pub async fn run(
     json: bool,
     utc: bool,
 ) -> Result<()> {
-    let tz = if utc { chrono_tz::UTC } else { config.timezone() };
+    let tz = if utc {
+        chrono_tz::UTC
+    } else {
+        config.timezone()
+    };
 
     // Resolve workflow from the pipeline, then list all promotion pipelines
     let ppl = client.get_pipeline(pipeline_id, false).await?;

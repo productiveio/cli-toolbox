@@ -30,7 +30,11 @@ pub async fn run(
     json: bool,
     utc: bool,
 ) -> Result<()> {
-    let tz = if utc { chrono_tz::UTC } else { config.timezone() };
+    let tz = if utc {
+        chrono_tz::UTC
+    } else {
+        config.timezone()
+    };
     let (project_id, default_branch) = config.resolve_project(project)?;
 
     let workflows = client
@@ -46,9 +50,9 @@ pub async fn run(
         let (result, detail) = if let Some(job) = ppl.find_test_job() {
             let events = client.get_job_logs(&job.job_id).await?;
             let scenarios = logs::parse_scenarios_best(&events);
-            let found = scenarios.iter().find(|s| {
-                s.name.to_lowercase().contains(&test_name.to_lowercase())
-            });
+            let found = scenarios
+                .iter()
+                .find(|s| s.name.to_lowercase().contains(&test_name.to_lowercase()));
 
             match found {
                 Some(s) => {
@@ -99,12 +103,7 @@ pub async fn run(
         println!("{:<20} {:<12} DETAIL", "TIME", "RESULT");
         for e in &result.entries {
             let detail = e.detail.as_deref().unwrap_or("");
-            println!(
-                "{:<20} {:<12} {}",
-                e.time,
-                e.result,
-                detail
-            );
+            println!("{:<20} {:<12} {}", e.time, e.result, detail);
         }
         println!("\nVERDICT: {}", result.verdict);
     }

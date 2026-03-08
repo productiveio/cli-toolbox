@@ -5,7 +5,10 @@ use crate::error::Result;
 pub async fn run(client: &ProductiveClient, config: &Config) -> Result<()> {
     println!("tb-prod doctor");
     println!("  org_id:    {}", config.org_id);
-    println!("  person_id: {}", config.person_id.as_deref().unwrap_or("(not set)"));
+    println!(
+        "  person_id: {}",
+        config.person_id.as_deref().unwrap_or("(not set)")
+    );
     println!("  token:     {}", config.masked_token());
     println!("  base_url:  {}", config.base_url());
 

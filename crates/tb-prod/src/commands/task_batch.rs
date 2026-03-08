@@ -55,32 +55,41 @@ pub async fn run(
         .map_err(|e| crate::error::TbProdError::Other(format!("Invalid batch JSON: {}", e)))?;
 
     if inputs.is_empty() {
-        return Err(crate::error::TbProdError::Other("Batch file contains no tasks".into()));
+        return Err(crate::error::TbProdError::Other(
+            "Batch file contains no tasks".into(),
+        ));
     }
 
     if inputs.len() > 50 {
-        return Err(crate::error::TbProdError::Other(
-            format!("Batch limited to 50 tasks, got {}", inputs.len()),
-        ));
+        return Err(crate::error::TbProdError::Other(format!(
+            "Batch limited to 50 tasks, got {}",
+            inputs.len()
+        )));
     }
 
     // Resolve all names to IDs
     let mut resolved = Vec::with_capacity(inputs.len());
     for (i, input) in inputs.iter().enumerate() {
-        let project_id = cache.resolve_project(&input.project)
+        let project_id = cache
+            .resolve_project(&input.project)
             .map_err(|e| crate::error::TbProdError::Other(format!("Task {}: {}", i + 1, e)))?;
 
         let workflow_id = cache.workflow_id_for_project(&project_id)?;
 
-        let task_list_id = cache::resolve_task_list(client, &input.task_list, Some(&project_id)).await
+        let task_list_id = cache::resolve_task_list(client, &input.task_list, Some(&project_id))
+            .await
             .map_err(|e| crate::error::TbProdError::Other(format!("Task {}: {}", i + 1, e)))?;
 
-        let status_id = input.status.as_deref()
+        let status_id = input
+            .status
+            .as_deref()
             .map(|s| cache.resolve_workflow_status(s, workflow_id.as_deref()))
             .transpose()
             .map_err(|e| crate::error::TbProdError::Other(format!("Task {}: {}", i + 1, e)))?;
 
-        let assignee_id = input.assignee.as_deref()
+        let assignee_id = input
+            .assignee
+            .as_deref()
             .map(|a| cache.resolve_person(a))
             .transpose()
             .map_err(|e| crate::error::TbProdError::Other(format!("Task {}: {}", i + 1, e)))?;
@@ -98,38 +107,46 @@ pub async fn run(
 
     if dry_run {
         println!("{}", serde_json::to_string_pretty(&resolved)?);
-        eprintln!("Dry run — {} tasks validated, none created.", resolved.len());
+        eprintln!(
+            "Dry run — {} tasks validated, none created.",
+            resolved.len()
+        );
         return Ok(());
     }
 
     // Build bulk payload — Productive bulk create uses attributes for IDs
-    let data: Vec<serde_json::Value> = resolved.iter().map(|t| {
-        let mut attrs = json!({
-            "title": t.title,
-            "project_id": t.project_id,
-            "task_list_id": t.task_list_id,
-            "private": false,
-        });
-        if let Some(ref sid) = t.workflow_status_id {
-            attrs["workflow_status_id"] = json!(sid);
-        }
-        if let Some(ref aid) = t.assignee_id {
-            attrs["assignee_id"] = json!(aid);
-        }
-        if let Some(ref desc) = t.description {
-            attrs["description"] = json!(desc);
-        }
-        if let Some(ref dd) = t.due_date {
-            attrs["due_date"] = json!(dd);
-        }
-        json!({ "type": "tasks", "attributes": attrs })
-    }).collect();
+    let data: Vec<serde_json::Value> = resolved
+        .iter()
+        .map(|t| {
+            let mut attrs = json!({
+                "title": t.title,
+                "project_id": t.project_id,
+                "task_list_id": t.task_list_id,
+                "private": false,
+            });
+            if let Some(ref sid) = t.workflow_status_id {
+                attrs["workflow_status_id"] = json!(sid);
+            }
+            if let Some(ref aid) = t.assignee_id {
+                attrs["assignee_id"] = json!(aid);
+            }
+            if let Some(ref desc) = t.description {
+                attrs["description"] = json!(desc);
+            }
+            if let Some(ref dd) = t.due_date {
+                attrs["due_date"] = json!(dd);
+            }
+            json!({ "type": "tasks", "attributes": attrs })
+        })
+        .collect();
 
     let payload = json!({ "data": data });
     let resp = client.bulk_create_tasks(&payload).await?;
 
-    let created: Vec<CreatedTask> = resp.data.iter().map(|task| {
-        CreatedTask {
+    let created: Vec<CreatedTask> = resp
+        .data
+        .iter()
+        .map(|task| CreatedTask {
             id: task.id.clone(),
             number: task.attr_str("number").to_string(),
             title: task.attr_str("title").to_string(),
@@ -138,8 +155,8 @@ pub async fn run(
                 client.org_id(),
                 task.id
             ),
-        }
-    }).collect();
+        })
+        .collect();
 
     if json_output {
         println!("{}", output::render_json(&created));

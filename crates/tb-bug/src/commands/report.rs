@@ -3,11 +3,7 @@ use crate::config::Config;
 use crate::error::Result;
 use crate::output;
 
-pub async fn run_dashboard(
-    client: &BugsnagClient,
-    config: &Config,
-    project: &str,
-) -> Result<()> {
+pub async fn run_dashboard(client: &BugsnagClient, config: &Config, project: &str) -> Result<()> {
     let project_id = config.resolve_project(project)?;
 
     // Fetch stability, errors, and latest release in parallel-ish
@@ -48,7 +44,11 @@ pub async fn run_dashboard(
                 output::fmt_count(total_sessions),
                 output::fmt_count(total_unhandled),
             );
-            let recent = if points.len() > 7 { &points[points.len() - 7..] } else { points };
+            let recent = if points.len() > 7 {
+                &points[points.len() - 7..]
+            } else {
+                points
+            };
             for b in recent {
                 let crash_free = (1.0 - b.unhandled_rate) * 100.0;
                 println!(
@@ -138,7 +138,12 @@ pub async fn run_open(
         println!("{}", output::render_json(&errors.items));
     } else {
         if let Some(total) = errors.total_count {
-            println!("Open errors for '{}' (showing {} of {})\n", project, errors.items.len(), total);
+            println!(
+                "Open errors for '{}' (showing {} of {})\n",
+                project,
+                errors.items.len(),
+                total
+            );
         }
         println!(
             "{:<8} {:>7} {:>6} {:>10}  {:<13} ERROR CLASS",

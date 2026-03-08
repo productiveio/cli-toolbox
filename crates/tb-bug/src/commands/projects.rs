@@ -9,7 +9,10 @@ pub async fn run(client: &BugsnagClient, config: &Config, json: bool) -> Result<
     if json {
         println!("{}", output::render_json(&projects));
     } else {
-        println!("{:<30} {:<20} {:<12} {:>8}", "NAME", "SLUG", "LANGUAGE", "OPEN");
+        println!(
+            "{:<30} {:<20} {:<12} {:>8}",
+            "NAME", "SLUG", "LANGUAGE", "OPEN"
+        );
         for p in &projects {
             println!(
                 "{:<30} {:<20} {:<12} {:>8}",

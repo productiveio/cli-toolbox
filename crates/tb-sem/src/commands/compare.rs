@@ -32,7 +32,11 @@ pub async fn run(
     json: bool,
     utc: bool,
 ) -> Result<()> {
-    let tz = if utc { chrono_tz::UTC } else { config.timezone() };
+    let tz = if utc {
+        chrono_tz::UTC
+    } else {
+        config.timezone()
+    };
 
     // Fetch both pipelines and their test results
     let (scenarios1, ppl1) = fetch_scenarios(client, pipeline_id_1).await?;
@@ -75,10 +79,22 @@ pub async fn run(
     let time1 = output::iso_to_local(&ppl1.created_at, &tz);
     let time2 = output::iso_to_local(&ppl2.created_at, &tz);
 
-    let passed1 = scenarios1.iter().filter(|s| s.result != logs::ScenarioOutcome::Failed).count();
-    let failed1 = scenarios1.iter().filter(|s| s.result == logs::ScenarioOutcome::Failed).count();
-    let passed2 = scenarios2.iter().filter(|s| s.result != logs::ScenarioOutcome::Failed).count();
-    let failed2 = scenarios2.iter().filter(|s| s.result == logs::ScenarioOutcome::Failed).count();
+    let passed1 = scenarios1
+        .iter()
+        .filter(|s| s.result != logs::ScenarioOutcome::Failed)
+        .count();
+    let failed1 = scenarios1
+        .iter()
+        .filter(|s| s.result == logs::ScenarioOutcome::Failed)
+        .count();
+    let passed2 = scenarios2
+        .iter()
+        .filter(|s| s.result != logs::ScenarioOutcome::Failed)
+        .count();
+    let failed2 = scenarios2
+        .iter()
+        .filter(|s| s.result == logs::ScenarioOutcome::Failed)
+        .count();
 
     let result = CompareOutput {
         run1: RunSummary {
@@ -102,17 +118,11 @@ pub async fn run(
     } else {
         println!(
             "RUN 1: {} {} -- {} passed, {} failed",
-            &result.run1.pipeline_id,
-            result.run1.time,
-            result.run1.passed,
-            result.run1.failed
+            &result.run1.pipeline_id, result.run1.time, result.run1.passed, result.run1.failed
         );
         println!(
             "RUN 2: {} {} -- {} passed, {} failed\n",
-            &result.run2.pipeline_id,
-            result.run2.time,
-            result.run2.passed,
-            result.run2.failed
+            &result.run2.pipeline_id, result.run2.time, result.run2.passed, result.run2.failed
         );
 
         println!("NEW FAILURES ({}):", result.new_failures.len());

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cache::{Cache, CacheTtl};
 use crate::config::Config;
-use crate::error::{TbBugError, Result};
+use crate::error::{Result, TbBugError};
 
 pub struct BugsnagClient {
     client: Client,
@@ -149,7 +149,6 @@ pub struct ReleaseStage {
     pub name: String,
 }
 
-
 /// Response metadata from paginated requests.
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
@@ -214,19 +213,26 @@ impl BugsnagClient {
 
     async fn get_raw(&self, url: &str, ttl: CacheTtl) -> Result<String> {
         if !self.no_cache
-            && let Some(cached) = self.cache.get(url, &ttl) {
-                return Ok(cached);
-            }
+            && let Some(cached) = self.cache.get(url, &ttl)
+        {
+            return Ok(cached);
+        }
 
         let resp = self.send_with_retry(url).await?;
 
         let status = resp.status().as_u16();
         if status == 204 {
-            return Err(TbBugError::Api { status, message: "No content".into() });
+            return Err(TbBugError::Api {
+                status,
+                message: "No content".into(),
+            });
         }
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(TbBugError::Api { status, message: body });
+            return Err(TbBugError::Api {
+                status,
+                message: body,
+            });
         }
 
         let body = resp.text().await?;
@@ -250,10 +256,14 @@ impl BugsnagClient {
 
         // Check cache for the full merged result (keyed on initial URL)
         if !self.no_cache
-            && let Some(cached) = self.cache.get(&initial_url, &ttl) {
-                let items: Vec<T> = serde_json::from_str(&cached)?;
-                return Ok(PaginatedResponse { items, total_count: None });
-            }
+            && let Some(cached) = self.cache.get(&initial_url, &ttl)
+        {
+            let items: Vec<T> = serde_json::from_str(&cached)?;
+            return Ok(PaginatedResponse {
+                items,
+                total_count: None,
+            });
+        }
 
         let mut all_items: Vec<T> = Vec::new();
         let mut url = initial_url.clone();
@@ -265,7 +275,10 @@ impl BugsnagClient {
             if !resp.status().is_success() {
                 let status = resp.status().as_u16();
                 let body = resp.text().await.unwrap_or_default();
-                return Err(TbBugError::Api { status, message: body });
+                return Err(TbBugError::Api {
+                    status,
+                    message: body,
+                });
             }
 
             if total_count.is_none() {

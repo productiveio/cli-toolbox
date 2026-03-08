@@ -15,10 +15,16 @@ pub async fn run(
     let mut attributes = serde_json::Map::new();
 
     if let Some(status_id) = workflow_status_id {
-        relationships.insert("workflow_status".into(), json!({ "data": { "type": "workflow_statuses", "id": status_id } }));
+        relationships.insert(
+            "workflow_status".into(),
+            json!({ "data": { "type": "workflow_statuses", "id": status_id } }),
+        );
     }
     if let Some(aid) = assignee_id {
-        relationships.insert("assignee".into(), json!({ "data": { "type": "people", "id": aid } }));
+        relationships.insert(
+            "assignee".into(),
+            json!({ "data": { "type": "people", "id": aid } }),
+        );
     }
     if let Some(t) = title {
         attributes.insert("title".into(), json!(t));

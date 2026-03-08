@@ -35,7 +35,11 @@ pub async fn run(
     json: bool,
     utc: bool,
 ) -> Result<()> {
-    let tz = if utc { chrono_tz::UTC } else { config.timezone() };
+    let tz = if utc {
+        chrono_tz::UTC
+    } else {
+        config.timezone()
+    };
     let (project_id, default_branch) = config.resolve_project(project)?;
 
     // If --around, get the reference pipeline's time window
@@ -118,11 +122,18 @@ pub async fn run(
         }
 
         if result.deploys.is_empty() {
-            println!("No deploys found for {} (branch: {})", project, default_branch);
+            println!(
+                "No deploys found for {} (branch: {})",
+                project, default_branch
+            );
         } else {
             println!("{} DEPLOYS:", project.to_uppercase());
             for d in &result.deploys {
-                let status = if d.overlaps { "!! OVERLAP" } else { "no overlap" };
+                let status = if d.overlaps {
+                    "!! OVERLAP"
+                } else {
+                    "no overlap"
+                };
                 println!("  {} -- {} {} ({})", d.start, d.end, d.name, status);
             }
         }

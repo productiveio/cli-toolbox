@@ -69,7 +69,9 @@ pub async fn run(
         if let Some(total) = resp.total_count {
             println!(
                 "Showing {} of {} errors for '{}'\n",
-                resp.items.len(), total, project
+                resp.items.len(),
+                total,
+                project
             );
         }
 

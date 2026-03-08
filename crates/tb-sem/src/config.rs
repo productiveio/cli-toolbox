@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{TbSemError, Result};
+use crate::error::{Result, TbSemError};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ProjectConfig {
@@ -27,8 +27,7 @@ pub fn default_timezone() -> String {
 
 impl Config {
     pub fn config_path() -> Result<PathBuf> {
-        toolbox_core::config::config_path("tb-sem")
-            .map_err(|e| TbSemError::Config(e.to_string()))
+        toolbox_core::config::config_path("tb-sem").map_err(|e| TbSemError::Config(e.to_string()))
     }
 
     /// Load config from (first match wins):

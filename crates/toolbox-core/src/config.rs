@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 /// Load a named section from `secrets.toml` in the current directory.
 /// Returns `Ok(None)` if the file doesn't exist or the section is missing.
@@ -17,8 +17,9 @@ pub fn load_secrets_section<T: DeserializeOwned>(section: &str) -> std::io::Resu
 
     match table.get(section) {
         Some(value) => {
-            let config: T = value.clone().try_into()
-                .map_err(|e: toml::de::Error| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let config: T = value.clone().try_into().map_err(|e: toml::de::Error| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+            })?;
             Ok(Some(config))
         }
         None => Ok(None),
@@ -40,11 +41,12 @@ pub fn load_standalone<T: DeserializeOwned>(path: &Path) -> std::io::Result<Opti
 
 /// Standard config directory path: `~/.config/{tool_name}/config.toml`.
 pub fn config_path(tool_name: &str) -> std::io::Result<PathBuf> {
-    let dir = dirs::config_dir()
-        .ok_or_else(|| std::io::Error::new(
+    let dir = dirs::config_dir().ok_or_else(|| {
+        std::io::Error::new(
             std::io::ErrorKind::NotFound,
             "cannot determine config directory",
-        ))?;
+        )
+    })?;
     Ok(dir.join(tool_name).join("config.toml"))
 }
 

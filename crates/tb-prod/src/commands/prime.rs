@@ -26,9 +26,13 @@ pub async fn run(client: &ProductiveClient, config: &Config) -> Result<()> {
     println!("- `tb-prod project show \"X\"` — project context (statuses, task lists)");
     println!("- `tb-prod task list` — my open tasks");
     println!("- `tb-prod task list --project \"X\" --category all` — all tasks in project");
-    println!("- `tb-prod task list --task-list ID --category all --search \"keyword\"` — search in task list");
+    println!(
+        "- `tb-prod task list --task-list ID --category all --search \"keyword\"` — search in task list"
+    );
     println!("- `tb-prod task show ID` — task detail with subtasks, todos, comments");
-    println!("- `tb-prod task create --title \"...\" --project \"X\" --task-list \"Y\"` — create task");
+    println!(
+        "- `tb-prod task create --title \"...\" --project \"X\" --task-list \"Y\"` — create task"
+    );
     println!("- `tb-prod task update ID --status \"Done\"` — update status");
     println!("- `tb-prod task update ID --title \"...\" --assignee \"Name\"` — update fields");
     println!("- `tb-prod comment add ID \"message\"` — add comment");
@@ -39,7 +43,9 @@ pub async fn run(client: &ProductiveClient, config: &Config) -> Result<()> {
 
     println!("## Notes");
     println!("- `--project`, `--status`, `--assignee`, `--task-list` accept names (fuzzy matched)");
-    println!("- Ambiguous or wrong names show available options — just guess and the CLI will help");
+    println!(
+        "- Ambiguous or wrong names show available options — just guess and the CLI will help"
+    );
     println!("- `tb-prod cache sync` to refresh cached data");
 
     Ok(())

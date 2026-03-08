@@ -48,7 +48,10 @@ mod tests {
 
     #[test]
     fn api_error_display() {
-        let e = TestError::Api { status: 404, message: "not found".into() };
+        let e = TestError::Api {
+            status: 404,
+            message: "not found".into(),
+        };
         assert_eq!(e.to_string(), "API error (404): not found");
     }
 

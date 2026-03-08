@@ -18,8 +18,7 @@ pub struct Config {
 
 impl Config {
     pub fn config_path() -> Result<PathBuf> {
-        toolbox_core::config::config_path("tb-prod")
-            .map_err(|e| TbProdError::Config(e.to_string()))
+        toolbox_core::config::config_path("tb-prod").map_err(|e| TbProdError::Config(e.to_string()))
     }
 
     pub fn load() -> Result<Self> {

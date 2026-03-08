@@ -51,7 +51,11 @@ pub async fn run(
     json: bool,
     utc: bool,
 ) -> Result<()> {
-    let tz = if utc { chrono_tz::UTC } else { config.timezone() };
+    let tz = if utc {
+        chrono_tz::UTC
+    } else {
+        config.timezone()
+    };
 
     // Default to e2e-tests project
     let (e2e_id, e2e_branch) = config.resolve_project("e2e-tests")?;
@@ -63,7 +67,9 @@ pub async fn run(
         if !json {
             eprintln!("Finding latest failed e2e run...");
         }
-        let workflows = client.list_workflows(e2e_id, Some(e2e_branch), None, None).await?;
+        let workflows = client
+            .list_workflows(e2e_id, Some(e2e_branch), None, None)
+            .await?;
         let mut found = None;
         for wf in &workflows {
             let ppl = client.get_pipeline(&wf.initial_ppl_id, false).await?;
@@ -108,7 +114,8 @@ pub async fn run(
 
         // Cucumber summary for ground truth counts
         let text = logs::flatten_log(&events);
-        let (cucumber_failed, cucumber_passed) = logs::parse_cucumber_summary(&text).unwrap_or((0, 0));
+        let (cucumber_failed, cucumber_passed) =
+            logs::parse_cucumber_summary(&text).unwrap_or((0, 0));
         total_scenarios = cucumber_failed + cucumber_passed;
         passed = cucumber_passed;
         failed = cucumber_failed;
@@ -120,7 +127,11 @@ pub async fn run(
                 logs::ScenarioOutcome::Failed => {
                     failures.push(TriageFailure {
                         name: s.name.clone(),
-                        error_class: s.error_class.as_ref().map(|c| c.to_string()).unwrap_or_default(),
+                        error_class: s
+                            .error_class
+                            .as_ref()
+                            .map(|c| c.to_string())
+                            .unwrap_or_default(),
                         error_detail: s.error_detail.clone().unwrap_or_default(),
                     });
                 }
@@ -218,7 +229,11 @@ pub async fn run(
                 overlap_str
             )
         } else {
-            format!("{} failures across multiple categories. {}", failures.len(), overlap_str)
+            format!(
+                "{} failures across multiple categories. {}",
+                failures.len(),
+                overlap_str
+            )
         }
     };
 
@@ -244,9 +259,7 @@ pub async fn run(
         println!("\n=== E2E TRIAGE REPORT ===\n");
         println!(
             "Pipeline: {} | {} | {}",
-            &result.pipeline_id,
-            result.time_window,
-            result.branch
+            &result.pipeline_id, result.time_window, result.branch
         );
         println!("Result:   {}", result.result);
         println!(
@@ -264,7 +277,9 @@ pub async fn run(
         if !result.failures.is_empty() {
             println!(
                 "FAILED ({} scenarios, all attempts failed):{:<7} {:<10} DETAIL",
-                result.failures.len(), "", "CLASS"
+                result.failures.len(),
+                "",
+                "CLASS"
             );
             for f in &result.failures {
                 let name = if f.name.len() > 48 {

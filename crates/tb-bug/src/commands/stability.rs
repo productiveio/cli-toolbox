@@ -3,12 +3,7 @@ use crate::config::Config;
 use crate::error::Result;
 use crate::output;
 
-pub async fn run(
-    client: &BugsnagClient,
-    config: &Config,
-    project: &str,
-    json: bool,
-) -> Result<()> {
+pub async fn run(client: &BugsnagClient, config: &Config, project: &str, json: bool) -> Result<()> {
     let project_id = config.resolve_project(project)?;
     let trend = client.get_stability(project_id).await?;
 

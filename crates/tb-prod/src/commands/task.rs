@@ -49,19 +49,23 @@ struct CommentRow {
     created_at: String,
 }
 
-pub async fn run(
-    client: &ProductiveClient,
-    task_id: &str,
-    json: bool,
-) -> Result<()> {
+pub async fn run(client: &ProductiveClient, task_id: &str, json: bool) -> Result<()> {
     let resp = client.get_task(task_id).await?;
     let task = &resp.data;
 
-    let status_name = resolve_name(&resp.included, "workflow_statuses", task.relationship_id("workflow_status"));
+    let status_name = resolve_name(
+        &resp.included,
+        "workflow_statuses",
+        task.relationship_id("workflow_status"),
+    );
     let assignee_name = resolve_person(&resp.included, task.relationship_id("assignee"));
     let project_name = resolve_name(&resp.included, "projects", task.relationship_id("project"));
     let creator_name = resolve_person(&resp.included, task.relationship_id("creator"));
-    let task_list_name = resolve_name(&resp.included, "task_lists", task.relationship_id("task_list"));
+    let task_list_name = resolve_name(
+        &resp.included,
+        "task_lists",
+        task.relationship_id("task_list"),
+    );
 
     // Fetch subtasks, todos, and comments in parallel
     let (subtasks_resp, todos_resp, comments_resp) = tokio::join!(
@@ -75,7 +79,11 @@ pub async fn run(
             r.data
                 .iter()
                 .map(|st| {
-                    let st_status = resolve_name(&r.included, "workflow_statuses", st.relationship_id("workflow_status"));
+                    let st_status = resolve_name(
+                        &r.included,
+                        "workflow_statuses",
+                        st.relationship_id("workflow_status"),
+                    );
                     SubtaskRow {
                         id: st.id.clone(),
                         number: st.attr_str("number").to_string(),
@@ -186,7 +194,11 @@ pub async fn run(
     if !detail.comments.is_empty() {
         println!("\n--- Comments ({}) ---", detail.comments.len());
         for c in &detail.comments {
-            println!("  [{}] {}", output::relative_time(&c.created_at), output::truncate(&c.body, 100));
+            println!(
+                "  [{}] {}",
+                output::relative_time(&c.created_at),
+                output::truncate(&c.body, 100)
+            );
         }
     }
 
@@ -214,13 +226,9 @@ fn resolve_person(included: &[Resource], id: Option<&str>) -> String {
         .iter()
         .find(|r| r.resource_type == "people" && r.id == id)
         .map(|r| {
-            format!(
-                "{} {}",
-                r.attr_str("first_name"),
-                r.attr_str("last_name")
-            )
-            .trim()
-            .to_string()
+            format!("{} {}", r.attr_str("first_name"), r.attr_str("last_name"))
+                .trim()
+                .to_string()
         })
         .unwrap_or_default()
 }

@@ -41,17 +41,15 @@ pub async fn run(
     } else {
         println!(
             "Search '{}' in '{}': {} matches\n",
-            query, project, matches.len()
+            query,
+            project,
+            matches.len()
         );
         if matches.is_empty() {
             println!("  No matching errors found.");
         } else {
             for e in &matches {
-                println!(
-                    "  {} — {}",
-                    e.error_class,
-                    output::truncate(&e.message, 60),
-                );
+                println!("  {} — {}", e.error_class, output::truncate(&e.message, 60),);
                 println!(
                     "     {} events  {} users  last seen {}  [{}] [{}]",
                     output::fmt_count(e.events),

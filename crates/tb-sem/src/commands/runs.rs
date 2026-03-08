@@ -35,9 +35,15 @@ pub async fn run(
 ) -> Result<()> {
     let (project_id, default_branch) = config.resolve_project(project)?;
     let branch = branch.or(Some(default_branch));
-    let tz = if utc { chrono_tz::UTC } else { config.timezone() };
+    let tz = if utc {
+        chrono_tz::UTC
+    } else {
+        config.timezone()
+    };
 
-    let workflows = client.list_workflows(project_id, branch, after, before).await?;
+    let workflows = client
+        .list_workflows(project_id, branch, after, before)
+        .await?;
 
     let mut runs = Vec::new();
     for wf in &workflows {
@@ -86,12 +92,7 @@ pub async fn run(
         for r in &result.runs {
             println!(
                 "{:<20} {:<8} {:<8} {:<38} {} {}",
-                r.time,
-                r.duration,
-                r.result,
-                r.pipeline_id,
-                r.commit_sha,
-                r.commit_message,
+                r.time, r.duration, r.result, r.pipeline_id, r.commit_sha, r.commit_message,
             );
         }
     }

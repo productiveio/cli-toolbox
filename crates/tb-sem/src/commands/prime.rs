@@ -3,13 +3,12 @@ use crate::config::Config;
 use crate::error::Result;
 use crate::output;
 
-pub async fn run(
-    client: &SemaphoreClient,
-    config: &Config,
-    mcp: bool,
-    utc: bool,
-) -> Result<()> {
-    let tz = if utc { chrono_tz::UTC } else { config.timezone() };
+pub async fn run(client: &SemaphoreClient, config: &Config, mcp: bool, utc: bool) -> Result<()> {
+    let tz = if utc {
+        chrono_tz::UTC
+    } else {
+        config.timezone()
+    };
 
     // Get latest run for each project
     let mut project_statuses = Vec::new();
@@ -50,7 +49,10 @@ pub async fn run(
 
         println!("## Projects");
         for (name, branch, time, result) in &project_statuses {
-            println!("  {:<16} {:<12} Last run: {} -- {}", name, branch, time, result);
+            println!(
+                "  {:<16} {:<12} Last run: {} -- {}",
+                name, branch, time, result
+            );
         }
 
         println!("\n## Quick Commands");

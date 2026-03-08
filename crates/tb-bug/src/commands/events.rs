@@ -22,8 +22,16 @@ pub async fn run(
             "RECEIVED", "SEV", "UNHANDLED", "VERSION", "STAGE"
         );
         for e in &events {
-            let version = e.app.as_ref().and_then(|a| a.version.as_deref()).unwrap_or("");
-            let stage = e.app.as_ref().and_then(|a| a.release_stage.as_deref()).unwrap_or("");
+            let version = e
+                .app
+                .as_ref()
+                .and_then(|a| a.version.as_deref())
+                .unwrap_or("");
+            let stage = e
+                .app
+                .as_ref()
+                .and_then(|a| a.release_stage.as_deref())
+                .unwrap_or("");
             println!(
                 "{:<13} {:<8} {:<9} {:<12} {:<12} {}",
                 output::relative_time(&e.received_at),

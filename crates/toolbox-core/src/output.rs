@@ -115,7 +115,10 @@ mod tests {
 
     #[test]
     fn empty_hint_format() {
-        assert_eq!(empty_hint("traces", "Try wider filters."), "No traces found. Try wider filters.");
+        assert_eq!(
+            empty_hint("traces", "Try wider filters."),
+            "No traces found. Try wider filters."
+        );
     }
 
     #[test]

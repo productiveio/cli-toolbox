@@ -24,7 +24,10 @@ pub async fn run(
     if summary {
         if let Some((failed, passed)) = log_parser::parse_cucumber_summary(&text) {
             let total = failed + passed;
-            let line = format!("{} scenarios -- {} passed, {} failed", total, passed, failed);
+            let line = format!(
+                "{} scenarios -- {} passed, {} failed",
+                total, passed, failed
+            );
             if json {
                 println!(
                     "{}",
@@ -43,9 +46,12 @@ pub async fn run(
     let text = if errors_only {
         text.lines()
             .filter(|l| {
-                l.contains("Error") || l.contains("error")
-                    || l.contains("FAIL") || l.contains("fail")
-                    || l.contains("502") || l.contains("503")
+                l.contains("Error")
+                    || l.contains("error")
+                    || l.contains("FAIL")
+                    || l.contains("fail")
+                    || l.contains("502")
+                    || l.contains("503")
                     || l.contains("Timeout")
             })
             .collect::<Vec<_>>()
@@ -65,7 +71,14 @@ pub async fn run(
     };
 
     let output_lines: Vec<&str> = if let Some(n) = tail {
-        filtered.into_iter().rev().take(n).collect::<Vec<_>>().into_iter().rev().collect()
+        filtered
+            .into_iter()
+            .rev()
+            .take(n)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect()
     } else if let Some(n) = head {
         filtered.into_iter().take(n).collect()
     } else {
@@ -73,7 +86,10 @@ pub async fn run(
     };
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&output_lines).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output_lines).unwrap_or_default()
+        );
     } else {
         for line in &output_lines {
             println!("{}", line);

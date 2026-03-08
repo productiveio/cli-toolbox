@@ -1,7 +1,6 @@
 use crate::api::SemaphoreClient;
 use crate::config::{Config, ProjectConfig};
-use crate::error::{TbSemError, Result};
-
+use crate::error::{Result, TbSemError};
 
 pub async fn init_with_org(token: &str, org_id: &str) -> Result<()> {
     eprintln!("Verifying token...");
@@ -64,12 +63,7 @@ pub fn show() -> Result<()> {
     println!("Timezone: {}", config.timezone);
     println!("\nProjects:");
     for (name, proj) in &config.projects {
-        println!(
-            "  {:<20} {} (branch: {})",
-            name,
-            &proj.id,
-            proj.branch
-        );
+        println!("  {:<20} {} (branch: {})", name, &proj.id, proj.branch);
     }
 
     Ok(())
@@ -119,7 +113,10 @@ pub fn remove(name: &str) -> Result<()> {
     let mut config = Config::load()?;
 
     if config.projects.remove(name).is_none() {
-        return Err(TbSemError::Config(format!("Project '{}' not in config.", name)));
+        return Err(TbSemError::Config(format!(
+            "Project '{}' not in config.",
+            name
+        )));
     }
 
     config.save()?;
@@ -127,4 +124,3 @@ pub fn remove(name: &str) -> Result<()> {
 
     Ok(())
 }
-

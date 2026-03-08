@@ -21,8 +21,14 @@ pub async fn run(
             "VERSION", "STAGE", "RELEASED", "NEW", "SEEN", "SESSIONS"
         );
         for r in &resp.items {
-            let stage = r.release_stage.as_ref().map(|s| s.name.as_str()).unwrap_or("?");
-            let released = r.release_time.as_deref()
+            let stage = r
+                .release_stage
+                .as_ref()
+                .map(|s| s.name.as_str())
+                .unwrap_or("?");
+            let released = r
+                .release_time
+                .as_deref()
                 .map(output::relative_time)
                 .unwrap_or_else(|| "?".to_string());
             println!(

@@ -25,9 +25,9 @@ pub fn run(config: &SkillConfig, action: &SkillAction) -> Result<(), String> {
             print!("{}", config.content);
             Ok(())
         }
-        SkillAction::Install { force } => {
-            install(config, *force).map(|_| ()).map_err(|e| e.to_string())
-        }
+        SkillAction::Install { force } => install(config, *force)
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
     }
 }
 

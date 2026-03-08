@@ -33,7 +33,11 @@ pub async fn run(
     json: bool,
     utc: bool,
 ) -> Result<()> {
-    let tz = if utc { chrono_tz::UTC } else { config.timezone() };
+    let tz = if utc {
+        chrono_tz::UTC
+    } else {
+        config.timezone()
+    };
     let (project_id, default_branch) = config.resolve_project(project)?;
 
     let workflows = client
@@ -61,7 +65,9 @@ pub async fn run(
         runs_checked += 1;
 
         for s in &scenarios {
-            let entry = stats.entry(s.name.clone()).or_insert((0, 0, 0, s.feature_file.clone()));
+            let entry = stats
+                .entry(s.name.clone())
+                .or_insert((0, 0, 0, s.feature_file.clone()));
             entry.2 += 1; // total
             match s.result {
                 logs::ScenarioOutcome::RetriedPassed => entry.0 += 1,

@@ -19,16 +19,13 @@ pub async fn run(config: &Config) -> Result<()> {
             println!("\nProjects:");
 
             for (name, proj_config) in &config.projects {
-                let accessible = projects
-                    .iter()
-                    .any(|p| p.metadata.id == proj_config.id);
-                let status = if accessible { "accessible" } else { "NOT FOUND" };
-                println!(
-                    "  {:<20} {} ({})",
-                    name,
-                    &proj_config.id,
-                    status
-                );
+                let accessible = projects.iter().any(|p| p.metadata.id == proj_config.id);
+                let status = if accessible {
+                    "accessible"
+                } else {
+                    "NOT FOUND"
+                };
+                println!("  {:<20} {} ({})", name, &proj_config.id, status);
             }
         }
         Err(e) => {

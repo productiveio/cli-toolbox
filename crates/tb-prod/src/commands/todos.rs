@@ -113,7 +113,9 @@ pub async fn update(
         }
     });
 
-    let resp = client.update(&format!("/todos/{}", todo_id), &payload).await?;
+    let resp = client
+        .update(&format!("/todos/{}", todo_id), &payload)
+        .await?;
     let todo = &resp.data;
 
     if json_output {

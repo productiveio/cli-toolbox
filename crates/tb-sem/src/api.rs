@@ -4,7 +4,7 @@ use reqwest::Client;
 use serde::Deserialize;
 
 use crate::config::Config;
-use crate::error::{TbSemError, Result};
+use crate::error::{Result, TbSemError};
 
 pub struct SemaphoreClient {
     client: Client,
@@ -114,13 +114,10 @@ impl Pipeline {
             .flat_map(|b| &b.jobs)
             .find(|j| j.is_failed())
             .or_else(|| {
-                self.blocks
-                    .iter()
-                    .flat_map(|b| &b.jobs)
-                    .find(|j| {
-                        let name = j.name.to_lowercase();
-                        name.contains("e2e") || name.contains("test")
-                    })
+                self.blocks.iter().flat_map(|b| &b.jobs).find(|j| {
+                    let name = j.name.to_lowercase();
+                    name.contains("e2e") || name.contains("test")
+                })
             })
     }
 }
@@ -345,11 +342,7 @@ impl SemaphoreClient {
         self.get_paginated(&path, 10).await
     }
 
-    pub async fn get_pipeline(
-        &self,
-        pipeline_id: &str,
-        detailed: bool,
-    ) -> Result<Pipeline> {
+    pub async fn get_pipeline(&self, pipeline_id: &str, detailed: bool) -> Result<Pipeline> {
         let mut path = format!("/pipelines/{}", pipeline_id);
         if detailed {
             path.push_str("?detailed=true");
@@ -367,10 +360,7 @@ impl SemaphoreClient {
         self.get(&format!("/pipelines?wf_id={}", workflow_id)).await
     }
 
-    pub async fn list_promotions(
-        &self,
-        pipeline_id: &str,
-    ) -> Result<Vec<Promotion>> {
+    pub async fn list_promotions(&self, pipeline_id: &str) -> Result<Vec<Promotion>> {
         self.get(&format!("/promotions?pipeline_id={}", pipeline_id))
             .await
     }
