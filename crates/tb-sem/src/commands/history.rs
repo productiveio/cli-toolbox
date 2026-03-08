@@ -37,9 +37,7 @@ pub async fn run(
     };
     let project_id = config.resolve_project(project)?;
 
-    let workflows = client
-        .list_workflows(project_id, None, None, None)
-        .await?;
+    let workflows = client.list_workflows(project_id, None, None, None).await?;
 
     let mut entries = Vec::new();
 

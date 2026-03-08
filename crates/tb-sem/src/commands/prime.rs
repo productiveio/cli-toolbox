@@ -49,10 +49,7 @@ pub async fn run(client: &SemaphoreClient, config: &Config, mcp: bool, utc: bool
 
         println!("## Projects");
         for (name, time, result) in &project_statuses {
-            println!(
-                "  {:<16} Last run: {} -- {}",
-                name, time, result
-            );
+            println!("  {:<16} Last run: {} -- {}", name, time, result);
         }
 
         println!("\n## Quick Commands");

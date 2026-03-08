@@ -9,5 +9,8 @@ pub mod skill;
 #[cfg(feature = "cache")]
 pub mod cache;
 
+#[cfg(feature = "prompt")]
+pub mod prompt;
+
 #[cfg(feature = "version-check")]
 pub mod version_check;

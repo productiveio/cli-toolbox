@@ -1,46 +1,24 @@
 use colored::Colorize;
+use toolbox_core::prompt::PromptResult;
 
 use crate::config::Config;
 use crate::error::{Result, TbProdError};
 
 pub async fn init(token: Option<&str>, org_id: Option<&str>) -> Result<()> {
-    use inquire::{InquireError, Password, PasswordDisplayMode};
-    use std::io::IsTerminal;
-
-    let interactive = std::io::stdin().is_terminal();
     let existing = Config::load().ok();
 
     // Resolve token
-    let token = match token {
-        Some(t) => t.to_string(),
-        None if interactive => {
-            let mut prompt = Password::new("Productive API token:")
-                .with_display_mode(PasswordDisplayMode::Masked)
-                .without_confirmation();
-            if existing.is_some() {
-                prompt = prompt.with_help_message("Press Enter to keep existing token");
-            }
-            match prompt.prompt() {
-                Ok(t) if t.is_empty() => {
-                    if let Some(ref cfg) = existing {
-                        cfg.token.clone()
-                    } else {
-                        return Err(TbProdError::Config("Token is required".into()));
-                    }
-                }
-                Ok(t) => t,
-                Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
-                    println!("Cancelled.");
-                    return Ok(());
-                }
-                Err(e) => return Err(TbProdError::Config(e.to_string())),
-            }
+    let token = match toolbox_core::prompt::prompt_token(
+        "Productive API token:",
+        token,
+        existing.as_ref().map(|c| c.token.as_str()),
+    ) {
+        Ok(PromptResult::Ok(t)) => t,
+        Ok(PromptResult::Cancelled) => {
+            println!("Cancelled.");
+            return Ok(());
         }
-        None => {
-            return Err(TbProdError::Config(
-                "Token is required. Use --token or run interactively in a terminal.".into(),
-            ));
-        }
+        Err(e) => return Err(TbProdError::Config(e)),
     };
 
     let (org_id, person_id) = match org_id {
@@ -124,19 +102,8 @@ pub fn show(config: &Config) {
 }
 
 pub fn set(key: &str, value: &str) -> Result<()> {
-    let path = Config::config_path()?;
-    let mut table: toml::Table = if path.exists() {
-        let content =
-            std::fs::read_to_string(&path).map_err(|e| TbProdError::Config(e.to_string()))?;
-        toml::from_str(&content).map_err(|e| TbProdError::Config(e.to_string()))?
-    } else {
-        toml::Table::new()
-    };
-
     match key {
-        "token" | "org_id" | "person_id" | "api_base_url" => {
-            table.insert(key.to_string(), toml::Value::String(value.to_string()));
-        }
+        "token" | "org_id" | "person_id" | "api_base_url" => {}
         _ => {
             return Err(TbProdError::Config(format!(
                 "Unknown config key '{}'. Valid keys: token, org_id, person_id, api_base_url",
@@ -145,10 +112,8 @@ pub fn set(key: &str, value: &str) -> Result<()> {
         }
     }
 
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| TbProdError::Config(e.to_string()))?;
-    }
-    std::fs::write(&path, toml::to_string_pretty(&table).unwrap())
+    let path = Config::config_path()?;
+    toolbox_core::config::patch_toml(&path, key, value)
         .map_err(|e| TbProdError::Config(e.to_string()))?;
     println!("Set {} = {}", key.bold(), value);
     Ok(())

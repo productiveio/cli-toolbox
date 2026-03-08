@@ -403,7 +403,12 @@ enum ConfigAction {
     /// Show current configuration
     Show,
     /// Set a config value
-    Set { key: String, value: String },
+    Set {
+        /// Config key (url, token, project)
+        key: String,
+        /// New value (optional for project — launches interactive selection)
+        value: Option<String>,
+    },
 }
 
 toolbox_core::run_main!(run());
@@ -2136,71 +2141,75 @@ async fn run() -> tb_lf::error::Result<()> {
     Ok(())
 }
 
+fn build_lf_project_options(projects: &[tb_lf::types::Project]) -> Vec<String> {
+    projects
+        .iter()
+        .map(|p| format!("{} (id: {})", p.name, p.id))
+        .collect()
+}
+
+fn resolve_lf_project_name(selected: &str, projects: &[tb_lf::types::Project]) -> String {
+    projects
+        .iter()
+        .find(|p| selected == format!("{} (id: {})", p.name, p.id))
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| selected.to_string())
+}
+
+fn find_lf_project_starting_cursor(
+    existing_project: Option<&str>,
+    projects: &[tb_lf::types::Project],
+) -> usize {
+    existing_project
+        .and_then(|name| {
+            projects
+                .iter()
+                .position(|p| p.name.eq_ignore_ascii_case(name))
+        })
+        .unwrap_or(0)
+}
+
 async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()> {
+    use toolbox_core::prompt::PromptResult;
+
     match action {
         Some(ConfigAction::Init {
             url,
             token,
             project,
         }) => {
-            use inquire::{InquireError, Password, PasswordDisplayMode, Select, Text};
-            use std::io::IsTerminal;
-
-            let interactive = std::io::stdin().is_terminal();
             let existing = Config::load().ok();
-            let default_url = "https://devportal.productive.io/";
 
             // Resolve URL
-            let url = match url.as_deref() {
-                Some(u) => u.trim_end_matches('/').to_string(),
-                None if interactive => {
-                    let existing_url = existing.as_ref().map(|c| c.url.as_str()).unwrap_or(default_url);
-                    match Text::new("DevPortal URL:")
-                        .with_default(existing_url)
-                        .prompt()
-                    {
-                        Ok(u) => u.trim_end_matches('/').to_string(),
-                        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
-                            println!("Cancelled.");
-                            return Ok(());
-                        }
-                        Err(e) => return Err(tb_lf::error::TbLfError::Config(e.to_string())),
-                    }
+            let default_url = existing
+                .as_ref()
+                .map(|c| c.url.as_str())
+                .unwrap_or("https://devportal.productive.io/");
+            let url = match toolbox_core::prompt::prompt_text(
+                "DevPortal URL:",
+                url.as_deref(),
+                default_url,
+            ) {
+                Ok(PromptResult::Ok(u)) => u.trim_end_matches('/').to_string(),
+                Ok(PromptResult::Cancelled) => {
+                    println!("Cancelled.");
+                    return Ok(());
                 }
-                None => default_url.to_string(),
+                Err(e) => return Err(tb_lf::error::TbLfError::Config(e)),
             };
 
             // Resolve token
-            let token = match token {
-                Some(t) => t.clone(),
-                None if interactive => {
-                    let mut prompt = Password::new("API token:")
-                        .with_display_mode(PasswordDisplayMode::Masked)
-                        .without_confirmation();
-                    if existing.is_some() {
-                        prompt = prompt.with_help_message("Press Enter to keep existing token");
-                    }
-                    match prompt.prompt() {
-                        Ok(t) if t.is_empty() => {
-                            if let Some(ref cfg) = existing {
-                                cfg.token.clone()
-                            } else {
-                                return Err(tb_lf::error::TbLfError::Config("Token is required".into()));
-                            }
-                        }
-                        Ok(t) => t,
-                        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
-                            println!("Cancelled.");
-                            return Ok(());
-                        }
-                        Err(e) => return Err(tb_lf::error::TbLfError::Config(e.to_string())),
-                    }
+            let token = match toolbox_core::prompt::prompt_token(
+                "API token:",
+                token.as_deref(),
+                existing.as_ref().map(|c| c.token.as_str()),
+            ) {
+                Ok(PromptResult::Ok(t)) => t,
+                Ok(PromptResult::Cancelled) => {
+                    println!("Cancelled.");
+                    return Ok(());
                 }
-                None => {
-                    return Err(tb_lf::error::TbLfError::Config(
-                        "Token is required. Use --token or run interactively in a terminal.".into(),
-                    ));
-                }
+                Err(e) => return Err(tb_lf::error::TbLfError::Config(e)),
             };
 
             // Validate by making a test API call
@@ -2221,7 +2230,7 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
                 let matched = resp
                     .data
                     .iter()
-                    .find(|proj| proj.name.eq_ignore_ascii_case(&p) || proj.id.to_string() == *p);
+                    .find(|proj| proj.name.eq_ignore_ascii_case(p) || proj.id.to_string() == *p);
                 match matched {
                     Some(proj) => {
                         println!("Default project: {} (id: {})", proj.name, proj.id);
@@ -2232,58 +2241,37 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
                         None
                     }
                 }
-            } else if interactive && !resp.data.is_empty() {
-                // Interactive: single-select
-                let options: Vec<String> = resp
-                    .data
-                    .iter()
-                    .map(|p| format!("{} (id: {})", p.name, p.id))
-                    .collect();
-                // Pre-select existing project
-                let starting = existing
-                    .as_ref()
-                    .and_then(|c| c.project.as_ref())
-                    .and_then(|name| {
-                        resp.data
-                            .iter()
-                            .position(|p| p.name.eq_ignore_ascii_case(name))
-                    })
-                    .unwrap_or(0);
+            } else if !resp.data.is_empty() {
+                let options = build_lf_project_options(&resp.data);
+                let starting = find_lf_project_starting_cursor(
+                    existing.as_ref().and_then(|c| c.project.as_deref()),
+                    &resp.data,
+                );
 
-                match Select::new("Default project:", options)
-                    .with_starting_cursor(starting)
-                    .with_help_message("Arrow keys to move, Enter to select")
-                    .prompt()
-                {
-                    Ok(selected) => resp
-                        .data
-                        .iter()
-                        .find(|p| selected.starts_with(&p.name))
-                        .map(|p| p.name.clone()),
-                    Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+                match toolbox_core::prompt::prompt_select("Default project:", options, starting) {
+                    Ok(PromptResult::Ok(selected)) => {
+                        Some(resolve_lf_project_name(&selected, &resp.data))
+                    }
+                    Ok(PromptResult::Cancelled) => {
                         println!("Cancelled.");
                         return Ok(());
                     }
-                    Err(e) => {
-                        return Err(tb_lf::error::TbLfError::Config(e.to_string()));
-                    }
+                    Err(e) => return Err(tb_lf::error::TbLfError::Config(e)),
                 }
             } else {
                 None
             };
 
-            let path = tb_lf::config::Config::config_path()?;
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
             let config = tb_lf::config::Config {
                 url,
                 token,
                 project,
             };
-            let content = toml::to_string_pretty(&config).unwrap();
-            std::fs::write(&path, content)?;
-            println!("Config saved to {}", path.display());
+            toolbox_core::config::save_config(&tb_lf::config::Config::config_path()?, &config)?;
+            println!(
+                "Config saved to {}",
+                tb_lf::config::Config::config_path()?.display()
+            );
 
             if let Some(ref p) = config.project {
                 println!("Default project: {}", p);
@@ -2300,18 +2288,50 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
             );
         }
         Some(ConfigAction::Set { key, value }) => {
-            let path = Config::config_path()?;
-            let mut table: toml::Table = if path.exists() {
-                let content = std::fs::read_to_string(&path)?;
-                toml::from_str(&content)?
-            } else {
-                toml::Table::new()
-            };
+            // Interactive project selection when key=project and no value
+            if key == "project" && value.is_none() {
+                let config = Config::load()?;
+                let client = tb_lf::api::DevPortalClient::new(&config, true)?;
+                let resp: tb_lf::api::PaginatedResponse<tb_lf::types::Project> = client
+                    .get("/projects", tb_lf::cache::CacheTtl::Short)
+                    .await?;
+
+                if resp.data.is_empty() {
+                    return Err(tb_lf::error::TbLfError::Config("No projects found".into()));
+                }
+
+                let options = build_lf_project_options(&resp.data);
+                let starting =
+                    find_lf_project_starting_cursor(config.project.as_deref(), &resp.data);
+
+                let project_name = match toolbox_core::prompt::prompt_select(
+                    "Default project:",
+                    options,
+                    starting,
+                ) {
+                    Ok(PromptResult::Ok(selected)) => {
+                        resolve_lf_project_name(&selected, &resp.data)
+                    }
+                    Ok(PromptResult::Cancelled) => {
+                        println!("Cancelled.");
+                        return Ok(());
+                    }
+                    Err(e) => return Err(tb_lf::error::TbLfError::Config(e)),
+                };
+
+                let path = Config::config_path()?;
+                toolbox_core::config::patch_toml(&path, "project", &project_name)?;
+                println!("Set {} = {}", "project".bold(), project_name);
+                return Ok(());
+            }
+
+            // Scalar set (requires value)
+            let value = value.as_ref().ok_or_else(|| {
+                tb_lf::error::TbLfError::Config(format!("Value is required for key '{}'", key))
+            })?;
 
             match key.as_str() {
-                "url" | "token" | "project" => {
-                    table.insert(key.clone(), toml::Value::String(value.clone()));
-                }
+                "url" | "token" | "project" => {}
                 _ => {
                     return Err(tb_lf::error::TbLfError::Config(format!(
                         "Unknown config key '{}'. Valid keys: url, token, project",
@@ -2320,10 +2340,8 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
                 }
             }
 
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::write(&path, toml::to_string_pretty(&table).unwrap())?;
+            let path = Config::config_path()?;
+            toolbox_core::config::patch_toml(&path, key, value)?;
             println!("Set {} = {}", key.bold(), value);
         }
     }

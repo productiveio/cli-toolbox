@@ -11,6 +11,7 @@ doctest = false
 default = []
 cache = []
 version-check = []
+prompt = ["dep:inquire"]
 
 [dependencies]
 clap.workspace = true
@@ -22,3 +23,4 @@ chrono.workspace = true
 reqwest.workspace = true
 colored.workspace = true
 dirs = "6"
+inquire = { workspace = true, optional = true }

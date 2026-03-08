@@ -52,9 +52,7 @@ pub async fn run(
         (None, None)
     };
 
-    let workflows = client
-        .list_workflows(project_id, None, None, None)
-        .await?;
+    let workflows = client.list_workflows(project_id, None, None, None).await?;
 
     let mut deploys = Vec::new();
     let mut has_overlap = false;

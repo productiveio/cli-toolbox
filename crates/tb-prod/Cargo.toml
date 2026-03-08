@@ -12,7 +12,7 @@ path = "src/main.rs"
 doctest = false
 
 [dependencies]
-toolbox-core = { workspace = true, features = ["version-check"] }
+toolbox-core = { workspace = true, features = ["prompt", "version-check"] }
 clap.workspace = true
 clap_complete.workspace = true
 tokio.workspace = true
@@ -25,7 +25,6 @@ chrono.workspace = true
 colored.workspace = true
 indicatif.workspace = true
 thiserror.workspace = true
-inquire.workspace = true
 
 # tb-prod-specific deps
 dirs = "6"

@@ -12,7 +12,7 @@ path = "src/main.rs"
 doctest = false
 
 [dependencies]
-toolbox-core = { workspace = true, features = ["cache", "version-check"] }
+toolbox-core = { workspace = true, features = ["cache", "prompt", "version-check"] }
 clap.workspace = true
 tokio.workspace = true
 reqwest.workspace = true
@@ -25,7 +25,6 @@ colored.workspace = true
 
 # tb-bug-specific deps
 urlencoding = "2.1"
-inquire.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true

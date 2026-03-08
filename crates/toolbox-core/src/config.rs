@@ -60,6 +60,27 @@ pub fn save_config<T: Serialize>(path: &Path, config: &T) -> std::io::Result<()>
     std::fs::write(path, content)
 }
 
+/// Read a TOML config file, set a single key, and write it back.
+/// Creates the file and parent directories if they don't exist.
+pub fn patch_toml(path: &Path, key: &str, value: &str) -> std::io::Result<()> {
+    let mut table: toml::Table = if path.exists() {
+        let content = std::fs::read_to_string(path)?;
+        toml::from_str(&content)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+    } else {
+        toml::Table::new()
+    };
+
+    table.insert(key.to_string(), toml::Value::String(value.to_string()));
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let content = toml::to_string_pretty(&table)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    std::fs::write(path, content)
+}
+
 /// Mask a token for display: `****...XXXX` (last 4 chars).
 pub fn masked_token(token: &str) -> String {
     if token.len() > 8 {

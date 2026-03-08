@@ -12,7 +12,7 @@ path = "src/main.rs"
 doctest = false
 
 [dependencies]
-toolbox-core = { workspace = true, features = ["version-check"] }
+toolbox-core = { workspace = true, features = ["prompt", "version-check"] }
 clap.workspace = true
 tokio.workspace = true
 reqwest.workspace = true
@@ -22,7 +22,6 @@ toml.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
 colored.workspace = true
-inquire.workspace = true
 
 # tb-sem-specific deps
 chrono-tz = "0.10"

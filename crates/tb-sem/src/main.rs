@@ -240,12 +240,18 @@ enum ConfigAction {
     },
     /// Show current configuration
     Show,
-    /// Set a config value
+    /// Set a config value (use "project" key to manage projects)
     Set {
-        /// Config key (token, org_id, timezone)
+        /// Config key (token, org_id, timezone, project)
         key: String,
-        /// New value
-        value: String,
+        /// New value (optional for project — launches interactive selection)
+        value: Option<String>,
+        /// Add a project by name (only with key=project)
+        #[arg(long)]
+        add: Option<String>,
+        /// Remove a project by name (only with key=project)
+        #[arg(long)]
+        remove: Option<String>,
     },
 }
 
@@ -281,8 +287,14 @@ async fn run() -> tb_sem::error::Result<()> {
             ConfigAction::Show => {
                 commands::config_cmd::show()?;
             }
-            ConfigAction::Set { key, value } => {
-                commands::config_cmd::set(&key, &value)?;
+            ConfigAction::Set {
+                key,
+                value,
+                add,
+                remove,
+            } => {
+                commands::config_cmd::set(key, value.as_deref(), add.as_deref(), remove.as_deref())
+                    .await?;
             }
         }
         return Ok(());
