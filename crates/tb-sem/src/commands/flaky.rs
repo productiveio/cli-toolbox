@@ -41,7 +41,9 @@ pub async fn run(
     };
     let project_id = config.resolve_project(project)?;
 
-    let workflows = client.list_workflows(project_id, branch, None, None).await?;
+    let workflows = client
+        .list_workflows(project_id, branch, None, None)
+        .await?;
 
     // Track per-scenario: (flaky_count, failure_count, total_count, feature_file)
     let mut stats: HashMap<String, (usize, usize, usize, Option<String>)> = HashMap::new();

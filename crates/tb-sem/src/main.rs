@@ -469,8 +469,16 @@ async fn run() -> tb_sem::error::Result<()> {
             json,
             utc,
         } => {
-            commands::flaky::run(&client, &config, &project, branch.as_deref(), limit, json, utc)
-                .await?;
+            commands::flaky::run(
+                &client,
+                &config,
+                &project,
+                branch.as_deref(),
+                limit,
+                json,
+                utc,
+            )
+            .await?;
         }
         Commands::Branches { project } => {
             commands::branches::run(&client, &config, &project).await?;
