@@ -240,19 +240,6 @@ enum ConfigAction {
     },
     /// Show current configuration
     Show,
-    /// Add a project
-    Add {
-        /// Project name
-        name: String,
-        /// Default branch
-        #[arg(long)]
-        branch: Option<String>,
-    },
-    /// Remove a project
-    Remove {
-        /// Project name
-        name: String,
-    },
 }
 
 toolbox_core::run_main!(run());
@@ -286,12 +273,6 @@ async fn run() -> tb_sem::error::Result<()> {
             }
             ConfigAction::Show => {
                 commands::config_cmd::show()?;
-            }
-            ConfigAction::Add { name, branch } => {
-                commands::config_cmd::add(name, branch.as_deref()).await?;
-            }
-            ConfigAction::Remove { name } => {
-                commands::config_cmd::remove(name)?;
             }
         }
         return Ok(());

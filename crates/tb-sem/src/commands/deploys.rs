@@ -40,7 +40,7 @@ pub async fn run(
     } else {
         config.timezone()
     };
-    let (project_id, default_branch) = config.resolve_project(project)?;
+    let project_id = config.resolve_project(project)?;
 
     // If --around, get the reference pipeline's time window
     let (ppl_start, ppl_end) = if let Some(ppl_id) = around {
@@ -53,7 +53,7 @@ pub async fn run(
     };
 
     let workflows = client
-        .list_workflows(project_id, Some(default_branch), None, None)
+        .list_workflows(project_id, None, None, None)
         .await?;
 
     let mut deploys = Vec::new();
@@ -122,10 +122,7 @@ pub async fn run(
         }
 
         if result.deploys.is_empty() {
-            println!(
-                "No deploys found for {} (branch: {})",
-                project, default_branch
-            );
+            println!("No deploys found for {}", project);
         } else {
             println!("{} DEPLOYS:", project.to_uppercase());
             for d in &result.deploys {

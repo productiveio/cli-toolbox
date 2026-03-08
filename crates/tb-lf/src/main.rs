@@ -1876,11 +1876,11 @@ async fn run() -> tb_lf::error::Result<()> {
             if mcp {
                 // Minimal ~50 token output for hook injection
                 let mut parts = vec![format!("tb-lf v{}", tb_lf::VERSION)];
-                if let Ok(projects) = client
-                    .get::<Vec<Project>>("/projects", CacheTtl::Long)
+                if let Ok(resp) = client
+                    .get::<tb_lf::api::PaginatedResponse<Project>>("/projects", CacheTtl::Long)
                     .await
                 {
-                    let names: Vec<&str> = projects.iter().map(|p| p.name.as_str()).collect();
+                    let names: Vec<&str> = resp.data.iter().map(|p| p.name.as_str()).collect();
                     parts.push(format!("projects: {}", names.join(", ")));
                 }
                 println!("{}", parts.join(" | "));
@@ -1892,11 +1892,11 @@ async fn run() -> tb_lf::error::Result<()> {
             // Projects
             println!("## Projects\n");
             match client
-                .get::<Vec<Project>>("/projects", CacheTtl::Long)
+                .get::<tb_lf::api::PaginatedResponse<Project>>("/projects", CacheTtl::Long)
                 .await
             {
-                Ok(projects) => {
-                    for p in &projects {
+                Ok(resp) => {
+                    for p in &resp.data {
                         println!("- {} (id: {})", p.name, p.id);
                     }
                 }

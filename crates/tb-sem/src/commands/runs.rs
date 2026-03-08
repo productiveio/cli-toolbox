@@ -33,8 +33,7 @@ pub async fn run(
     after: Option<i64>,
     before: Option<i64>,
 ) -> Result<()> {
-    let (project_id, default_branch) = config.resolve_project(project)?;
-    let branch = branch.or(Some(default_branch));
+    let project_id = config.resolve_project(project)?;
     let tz = if utc {
         chrono_tz::UTC
     } else {

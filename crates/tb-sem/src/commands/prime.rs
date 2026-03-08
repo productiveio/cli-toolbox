@@ -14,7 +14,7 @@ pub async fn run(client: &SemaphoreClient, config: &Config, mcp: bool, utc: bool
     let mut project_statuses = Vec::new();
     for (name, proj) in &config.projects {
         let workflows = client
-            .list_workflows(&proj.id, Some(&proj.branch), None, None)
+            .list_workflows(&proj.id, None, None, None)
             .await
             .unwrap_or_default();
 
@@ -25,7 +25,7 @@ pub async fn run(client: &SemaphoreClient, config: &Config, mcp: bool, utc: bool
                 .map(|p| p.result.to_uppercase())
                 .unwrap_or_else(|| "?".to_string());
             let time = output::epoch_to_local(wf.created_at.seconds, &tz);
-            project_statuses.push((name.clone(), proj.branch.clone(), time, result));
+            project_statuses.push((name.clone(), time, result));
         }
     }
 
@@ -35,7 +35,7 @@ pub async fn run(client: &SemaphoreClient, config: &Config, mcp: bool, utc: bool
         parts.push("# Semaphore CI Active".to_string());
         let names: Vec<&str> = config.projects.keys().map(|s| s.as_str()).collect();
         parts.push(format!("Projects: {}", names.join(", ")));
-        for (name, _, time, result) in &project_statuses {
+        for (name, time, result) in &project_statuses {
             if result == "FAILED" {
                 parts.push(format!("Last {} run: {} -- {}", name, time, result));
             }
@@ -48,10 +48,10 @@ pub async fn run(client: &SemaphoreClient, config: &Config, mcp: bool, utc: bool
         println!("Timezone: {}\n", config.timezone);
 
         println!("## Projects");
-        for (name, branch, time, result) in &project_statuses {
+        for (name, time, result) in &project_statuses {
             println!(
-                "  {:<16} {:<12} Last run: {} -- {}",
-                name, branch, time, result
+                "  {:<16} Last run: {} -- {}",
+                name, time, result
             );
         }
 

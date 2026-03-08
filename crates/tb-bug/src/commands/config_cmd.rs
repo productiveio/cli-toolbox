@@ -93,25 +93,3 @@ pub fn show(config: &Config) {
     }
 }
 
-pub fn add_project(config: &mut Config, name: &str, project_id: &str) -> Result<()> {
-    config.projects.insert(
-        name.to_string(),
-        ProjectConfig {
-            id: project_id.to_string(),
-        },
-    );
-    config.save()?;
-    println!("Added project '{}' ({})", name, project_id);
-    Ok(())
-}
-
-pub fn remove_project(config: &mut Config, name: &str) -> Result<()> {
-    if config.projects.remove(name).is_some() {
-        config.save()?;
-        println!("Removed project '{}'", name);
-    } else {
-        let available = config.available_projects().join(", ");
-        println!("Project '{}' not found. Available: {}", name, available);
-    }
-    Ok(())
-}

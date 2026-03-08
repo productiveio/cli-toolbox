@@ -170,18 +170,6 @@ enum ConfigAction {
     },
     /// Display current config
     Show,
-    /// Add a named project
-    AddProject {
-        /// Project name (alias for CLI use)
-        name: String,
-        /// Bugsnag project ID
-        project_id: String,
-    },
-    /// Remove a named project
-    RemoveProject {
-        /// Project name to remove
-        name: String,
-    },
 }
 
 #[derive(clap::Subcommand)]
@@ -380,14 +368,6 @@ async fn run() -> tb_bug::error::Result<()> {
             ConfigAction::Init { .. } => unreachable!(),
             ConfigAction::Show => {
                 commands::config_cmd::show(&config);
-            }
-            ConfigAction::AddProject { name, project_id } => {
-                let mut cfg = Config::load()?;
-                commands::config_cmd::add_project(&mut cfg, name, project_id)?;
-            }
-            ConfigAction::RemoveProject { name } => {
-                let mut cfg = Config::load()?;
-                commands::config_cmd::remove_project(&mut cfg, name)?;
             }
         },
     }

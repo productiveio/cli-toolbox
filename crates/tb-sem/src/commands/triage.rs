@@ -58,7 +58,7 @@ pub async fn run(
     };
 
     // Default to e2e-tests project
-    let (e2e_id, e2e_branch) = config.resolve_project("e2e-tests")?;
+    let e2e_id = config.resolve_project("e2e-tests")?;
 
     // Step 1: Find pipeline
     let ppl_id = if let Some(id) = pipeline_id {
@@ -68,7 +68,7 @@ pub async fn run(
             eprintln!("Finding latest failed e2e run...");
         }
         let workflows = client
-            .list_workflows(e2e_id, Some(e2e_branch), None, None)
+            .list_workflows(e2e_id, None, None, None)
             .await?;
         let mut found = None;
         for wf in &workflows {
@@ -169,9 +169,9 @@ pub async fn run(
     let mut deploy_overlap = false;
     let mut deploy_lines = Vec::new();
 
-    if let Ok((api_id, api_branch)) = config.resolve_project("api") {
+    if let Ok(api_id) = config.resolve_project("api") {
         let api_workflows = client
-            .list_workflows(api_id, Some(api_branch), None, None)
+            .list_workflows(api_id, None, None, None)
             .await
             .unwrap_or_default();
 

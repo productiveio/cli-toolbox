@@ -8,7 +8,6 @@ use crate::error::{Result, TbSemError};
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ProjectConfig {
     pub id: String,
-    pub branch: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -72,16 +71,16 @@ impl Config {
         format!("https://{}.semaphoreci.com/api/v1alpha", self.org_id)
     }
 
-    /// Resolve a project name to (project_id, default_branch).
+    /// Resolve a project name to its project_id.
     /// Accepts either an alias from config or a raw UUID.
-    pub fn resolve_project(&self, name: &str) -> Result<(&str, &str)> {
+    pub fn resolve_project(&self, name: &str) -> Result<&str> {
         if let Some(proj) = self.projects.get(name) {
-            return Ok((&proj.id, &proj.branch));
+            return Ok(&proj.id);
         }
         // Check if it looks like a UUID (contains dashes, len >= 36)
         if name.contains('-') && name.len() >= 36 {
             return Err(TbSemError::Config(format!(
-                "Project UUID '{}' not in config. Use `tb-sem config add` to register it.",
+                "Project UUID '{}' not in config. Run `tb-sem config init` to register it.",
                 name
             )));
         }
