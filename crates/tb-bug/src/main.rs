@@ -52,9 +52,9 @@ enum Commands {
     },
     /// AI-optimized context dump
     Prime {
-        /// Project name or ID
+        /// Project name or ID (omit for overview of all configured projects)
         #[arg(long)]
-        project: String,
+        project: Option<String>,
     },
     /// List projects in organization
     Projects {
@@ -132,6 +132,11 @@ enum Commands {
     },
     /// Health check for CLI setup
     Doctor,
+    /// Manage Claude Code skill file
+    Skill {
+        #[command(subcommand)]
+        action: toolbox_core::skill::SkillAction,
+    },
     /// Clear the response cache
     CacheClear,
     /// Manage configuration
@@ -229,7 +234,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // Config::Init works before Config::load()
+    // Commands that don't need a loaded config
+    if let Commands::Skill { action } = &cli.command {
+        let skill = toolbox_core::skill::SkillConfig {
+            tool_name: "tb-bug",
+            content: include_str!("../SKILL.md"),
+        };
+        toolbox_core::skill::run(&skill, action).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
     if let Commands::Config { action: ConfigAction::Init { token, org } } = &cli.command {
         commands::config_cmd::init(token, org)?;
         return Ok(());
@@ -260,7 +273,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         }
         Commands::Prime { project } => {
-            commands::prime::run(&client, &config, project).await?;
+            commands::prime::run(&client, &config, project.as_deref()).await?;
         }
         Commands::Projects { json } => {
             commands::projects::run(&client, &config, *json).await?;
@@ -307,6 +320,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             client.clear_cache()?;
             println!("Cache cleared.");
         }
+        Commands::Skill { .. } => unreachable!(),
         Commands::Config { action } => {
             match action {
                 ConfigAction::Init { .. } => unreachable!(),

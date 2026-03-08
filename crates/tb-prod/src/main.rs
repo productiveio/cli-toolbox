@@ -50,6 +50,11 @@ enum Commands {
     },
     /// Health check
     Doctor,
+    /// Manage Claude Code skill file
+    Skill {
+        #[command(subcommand)]
+        action: toolbox_core::skill::SkillAction,
+    },
     /// Manage configuration
     Config {
         #[command(subcommand)]
@@ -231,7 +236,15 @@ fn read_text_input(inline: Option<&str>, file: Option<&str>, from_stdin: bool) -
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    // Config init works before Config::load()
+    // Commands that don't need a loaded config
+    if let Commands::Skill { action } = &cli.command {
+        let skill = toolbox_core::skill::SkillConfig {
+            tool_name: "tb-prod",
+            content: include_str!("../SKILL.md"),
+        };
+        toolbox_core::skill::run(&skill, action).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
     if let Commands::Config {
         action: ConfigAction::Init { token, org, person_id },
     } = &cli.command
@@ -420,6 +433,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 commands::config_cmd::show(&config);
             }
         },
+        Commands::Skill { .. } => unreachable!(),
     }
 
     Ok(())

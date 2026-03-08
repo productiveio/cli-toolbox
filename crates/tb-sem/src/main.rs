@@ -207,6 +207,11 @@ enum Commands {
     },
     /// Health check for CLI setup
     Doctor,
+    /// Manage Claude Code skill file
+    Skill {
+        #[command(subcommand)]
+        action: toolbox_core::skill::SkillAction,
+    },
     /// Manage configuration
     Config {
         #[command(subcommand)]
@@ -246,7 +251,15 @@ enum ConfigAction {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    // Config commands don't need a loaded config
+    // Commands that don't need a loaded config
+    if let Commands::Skill { action } = &cli.command {
+        let skill = toolbox_core::skill::SkillConfig {
+            tool_name: "tb-sem",
+            content: include_str!("../SKILL.md"),
+        };
+        toolbox_core::skill::run(&skill, action).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
     if let Commands::Config { action } = &cli.command {
         match action {
             ConfigAction::Init { token, org } => {
@@ -310,7 +323,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Doctor => {
             commands::doctor::run(&config).await?;
         }
-        Commands::Config { .. } => unreachable!(),
+        Commands::Config { .. } | Commands::Skill { .. } => unreachable!(),
     }
 
     Ok(())

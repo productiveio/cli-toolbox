@@ -254,6 +254,11 @@ enum Commands {
     /// Health check
     #[command(after_help = "Examples:\n  tb-lf doctor\n  tb-lf doctor --json")]
     Doctor,
+    /// Manage Claude Code skill file
+    Skill {
+        #[command(subcommand)]
+        action: toolbox_core::skill::SkillAction,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -343,9 +348,18 @@ async fn main() {
 async fn run() -> tb_lf::error::Result<()> {
     let cli = Cli::parse();
 
-    // Config commands don't need API access
+    // Commands that don't need API access
     if let Commands::Config { ref action } = cli.command {
         return handle_config(action.as_ref());
+    }
+    if let Commands::Skill { ref action } = cli.command {
+        let skill = toolbox_core::skill::SkillConfig {
+            tool_name: "tb-lf",
+            content: include_str!("../SKILL.md"),
+        };
+        toolbox_core::skill::run(&skill, action)
+            .map_err(|e| tb_lf::error::TbLfError::Other(e))?;
+        return Ok(());
     }
 
     let config = Config::load()?;
@@ -1626,7 +1640,7 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("  {:<10} {} files, {}", "Cache:", count, size_str);
         }
 
-        Commands::Config { .. } => {} // handled before client construction
+        Commands::Config { .. } | Commands::Skill { .. } => {} // handled before client construction
     }
 
     Ok(())
