@@ -3,7 +3,46 @@ use colored::Colorize;
 use crate::config::Config;
 use crate::error::{Result, TbProdError};
 
-pub async fn init(token: &str, org_id: Option<&str>) -> Result<()> {
+pub async fn init(token: Option<&str>, org_id: Option<&str>) -> Result<()> {
+    use inquire::{InquireError, Password, PasswordDisplayMode};
+    use std::io::IsTerminal;
+
+    let interactive = std::io::stdin().is_terminal();
+    let existing = Config::load().ok();
+
+    // Resolve token
+    let token = match token {
+        Some(t) => t.to_string(),
+        None if interactive => {
+            let mut prompt = Password::new("Productive API token:")
+                .with_display_mode(PasswordDisplayMode::Masked)
+                .without_confirmation();
+            if existing.is_some() {
+                prompt = prompt.with_help_message("Press Enter to keep existing token");
+            }
+            match prompt.prompt() {
+                Ok(t) if t.is_empty() => {
+                    if let Some(ref cfg) = existing {
+                        cfg.token.clone()
+                    } else {
+                        return Err(TbProdError::Config("Token is required".into()));
+                    }
+                }
+                Ok(t) => t,
+                Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+                    println!("Cancelled.");
+                    return Ok(());
+                }
+                Err(e) => return Err(TbProdError::Config(e.to_string())),
+            }
+        }
+        None => {
+            return Err(TbProdError::Config(
+                "Token is required. Use --token or run interactively in a terminal.".into(),
+            ));
+        }
+    };
+
     let (org_id, person_id) = match org_id {
         Some(id) => (id.to_string(), None),
         None => {
@@ -12,7 +51,7 @@ pub async fn init(token: &str, org_id: Option<&str>) -> Result<()> {
             let resp = client
                 .get("https://api.productive.io/api/v2/organization_memberships?include=organization,person")
                 .header("Content-Type", "application/vnd.api+json")
-                .header("X-Auth-Token", token)
+                .header("X-Auth-Token", &token)
                 .send()
                 .await?;
 
@@ -64,7 +103,7 @@ pub async fn init(token: &str, org_id: Option<&str>) -> Result<()> {
     };
 
     let config = Config {
-        token: token.to_string(),
+        token,
         org_id,
         person_id,
         api_base_url: None,

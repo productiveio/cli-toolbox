@@ -215,8 +215,9 @@ enum CacheAction {
 enum ConfigAction {
     /// Create initial config
     Init {
+        /// API token (prompted interactively if omitted)
         #[arg(long)]
-        token: String,
+        token: Option<String>,
         /// Organization ID (auto-detected if omitted)
         #[arg(long)]
         org: Option<String>,
@@ -277,7 +278,7 @@ async fn run() -> tb_prod::error::Result<()> {
         action: ConfigAction::Init { token, org },
     } = &command
     {
-        commands::config_cmd::init(token, org.as_deref()).await?;
+        commands::config_cmd::init(token.as_deref(), org.as_deref()).await?;
         return Ok(());
     }
 

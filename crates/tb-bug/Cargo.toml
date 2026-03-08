@@ -25,6 +25,7 @@ colored.workspace = true
 
 # tb-bug-specific deps
 urlencoding = "2.1"
+inquire.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true

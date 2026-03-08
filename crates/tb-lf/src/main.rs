@@ -390,12 +390,12 @@ enum EvalAction {
 enum ConfigAction {
     /// Initialize configuration
     Init {
-        /// DevPortal base URL
+        /// DevPortal base URL (default: https://devportal.productive.io/)
         #[arg(long)]
-        url: String,
-        /// API token
+        url: Option<String>,
+        /// API token (prompted interactively if omitted)
         #[arg(long)]
-        token: String,
+        token: Option<String>,
         /// Default project name or ID
         #[arg(long)]
         project: Option<String>,
@@ -2143,7 +2143,65 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
             token,
             project,
         }) => {
-            let url = url.trim_end_matches('/').to_string();
+            use inquire::{InquireError, Password, PasswordDisplayMode, Select, Text};
+            use std::io::IsTerminal;
+
+            let interactive = std::io::stdin().is_terminal();
+            let existing = Config::load().ok();
+            let default_url = "https://devportal.productive.io/";
+
+            // Resolve URL
+            let url = match url.as_deref() {
+                Some(u) => u.trim_end_matches('/').to_string(),
+                None if interactive => {
+                    let existing_url = existing.as_ref().map(|c| c.url.as_str()).unwrap_or(default_url);
+                    match Text::new("DevPortal URL:")
+                        .with_default(existing_url)
+                        .prompt()
+                    {
+                        Ok(u) => u.trim_end_matches('/').to_string(),
+                        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+                            println!("Cancelled.");
+                            return Ok(());
+                        }
+                        Err(e) => return Err(tb_lf::error::TbLfError::Config(e.to_string())),
+                    }
+                }
+                None => default_url.to_string(),
+            };
+
+            // Resolve token
+            let token = match token {
+                Some(t) => t.clone(),
+                None if interactive => {
+                    let mut prompt = Password::new("API token:")
+                        .with_display_mode(PasswordDisplayMode::Masked)
+                        .without_confirmation();
+                    if existing.is_some() {
+                        prompt = prompt.with_help_message("Press Enter to keep existing token");
+                    }
+                    match prompt.prompt() {
+                        Ok(t) if t.is_empty() => {
+                            if let Some(ref cfg) = existing {
+                                cfg.token.clone()
+                            } else {
+                                return Err(tb_lf::error::TbLfError::Config("Token is required".into()));
+                            }
+                        }
+                        Ok(t) => t,
+                        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+                            println!("Cancelled.");
+                            return Ok(());
+                        }
+                        Err(e) => return Err(tb_lf::error::TbLfError::Config(e.to_string())),
+                    }
+                }
+                None => {
+                    return Err(tb_lf::error::TbLfError::Config(
+                        "Token is required. Use --token or run interactively in a terminal.".into(),
+                    ));
+                }
+            };
 
             // Validate by making a test API call
             let config = tb_lf::config::Config {
@@ -2157,12 +2215,13 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
                 .await?;
             println!("Connected! Found {} projects.", resp.data.len());
 
-            // Resolve project if provided
+            // Resolve project
             let project = if let Some(p) = project {
+                // Non-interactive: resolve from flag
                 let matched = resp
                     .data
                     .iter()
-                    .find(|proj| proj.name.eq_ignore_ascii_case(p) || proj.id.to_string() == *p);
+                    .find(|proj| proj.name.eq_ignore_ascii_case(&p) || proj.id.to_string() == *p);
                 match matched {
                     Some(proj) => {
                         println!("Default project: {} (id: {})", proj.name, proj.id);
@@ -2171,6 +2230,42 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
                     None => {
                         eprintln!("Warning: project '{}' not found, skipping", p);
                         None
+                    }
+                }
+            } else if interactive && !resp.data.is_empty() {
+                // Interactive: single-select
+                let options: Vec<String> = resp
+                    .data
+                    .iter()
+                    .map(|p| format!("{} (id: {})", p.name, p.id))
+                    .collect();
+                // Pre-select existing project
+                let starting = existing
+                    .as_ref()
+                    .and_then(|c| c.project.as_ref())
+                    .and_then(|name| {
+                        resp.data
+                            .iter()
+                            .position(|p| p.name.eq_ignore_ascii_case(name))
+                    })
+                    .unwrap_or(0);
+
+                match Select::new("Default project:", options)
+                    .with_starting_cursor(starting)
+                    .with_help_message("Arrow keys to move, Enter to select")
+                    .prompt()
+                {
+                    Ok(selected) => resp
+                        .data
+                        .iter()
+                        .find(|p| selected.starts_with(&p.name))
+                        .map(|p| p.name.clone()),
+                    Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+                        println!("Cancelled.");
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        return Err(tb_lf::error::TbLfError::Config(e.to_string()));
                     }
                 }
             } else {
@@ -2183,20 +2278,15 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
             }
             let config = tb_lf::config::Config {
                 url,
-                token: token.clone(),
+                token,
                 project,
             };
             let content = toml::to_string_pretty(&config).unwrap();
             std::fs::write(&path, content)?;
             println!("Config saved to {}", path.display());
 
-            if resp.data.is_empty() {
-                println!("\nNo projects found.");
-            } else if config.project.is_none() {
-                println!("\nAvailable projects (pass --project to set default):");
-                for p in &resp.data {
-                    println!("  {} (id: {})", p.name, p.id);
-                }
+            if let Some(ref p) = config.project {
+                println!("Default project: {}", p);
             }
         }
         None | Some(ConfigAction::Show) => {

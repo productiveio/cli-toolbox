@@ -231,12 +231,12 @@ enum Commands {
 enum ConfigAction {
     /// Initialize configuration
     Init {
-        /// API token
+        /// API token (prompted interactively if omitted)
         #[arg(long)]
-        token: String,
-        /// Organization ID (subdomain)
+        token: Option<String>,
+        /// Organization ID/subdomain (default: productive)
         #[arg(long)]
-        org: String,
+        org: Option<String>,
     },
     /// Show current configuration
     Show,
@@ -276,7 +276,7 @@ async fn run() -> tb_sem::error::Result<()> {
     if let Commands::Config { action } = &command {
         match action {
             ConfigAction::Init { token, org } => {
-                commands::config_cmd::init_with_org(token, org).await?;
+                commands::config_cmd::init(token.as_deref(), org.as_deref()).await?;
             }
             ConfigAction::Show => {
                 commands::config_cmd::show()?;

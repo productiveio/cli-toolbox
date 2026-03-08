@@ -158,9 +158,9 @@ enum Commands {
 enum ConfigAction {
     /// Create initial config file
     Init {
-        /// Bugsnag auth token
+        /// Bugsnag auth token (prompted interactively if omitted)
         #[arg(long)]
-        token: String,
+        token: Option<String>,
         /// Organization ID (auto-detected if omitted)
         #[arg(long)]
         org: Option<String>,
@@ -270,7 +270,7 @@ async fn run() -> tb_bug::error::Result<()> {
             },
     } = command
     {
-        commands::config_cmd::init(token, org.as_deref(), projects.as_deref()).await?;
+        commands::config_cmd::init(token.as_deref(), org.as_deref(), projects.as_deref()).await?;
         return Ok(());
     }
 

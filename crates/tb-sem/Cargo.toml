@@ -22,6 +22,7 @@ toml.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
 colored.workspace = true
+inquire.workspace = true
 
 # tb-sem-specific deps
 chrono-tz = "0.10"

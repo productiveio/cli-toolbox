@@ -25,6 +25,7 @@ chrono.workspace = true
 colored.workspace = true
 indicatif.workspace = true
 thiserror.workspace = true
+inquire.workspace = true
 
 # tb-prod-specific deps
 dirs = "6"

@@ -1,12 +1,70 @@
+use std::fmt;
+use std::io::IsTerminal;
+
 use colored::Colorize;
+use inquire::{InquireError, MultiSelect, Password, PasswordDisplayMode};
 
 use crate::api::BugsnagClient;
 use crate::config::{Config, ProjectConfig};
 use crate::error::{Result, TbBugError};
 
-pub async fn init(token: &str, org_id: Option<&str>, project_slugs: Option<&str>) -> Result<()> {
+struct ProjectOption {
+    slug: String,
+    id: String,
+    open_error_count: u64,
+}
+
+impl fmt::Display for ProjectOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:<24} {:>6} open errors", self.slug, self.open_error_count)
+    }
+}
+
+pub async fn init(
+    token: Option<&str>,
+    org_id: Option<&str>,
+    project_slugs: Option<&str>,
+) -> Result<()> {
+    let interactive = std::io::stdin().is_terminal();
+
+    // Load existing config for pre-filling
+    let existing = Config::load().ok();
+
+    // Resolve token
+    let token = match token {
+        Some(t) => t.to_string(),
+        None if interactive => {
+            let mut prompt = Password::new("Bugsnag auth token:")
+                .with_display_mode(PasswordDisplayMode::Masked)
+                .without_confirmation();
+            if existing.is_some() {
+                prompt = prompt.with_help_message("Press Enter to keep existing token");
+            }
+            match prompt.prompt() {
+                Ok(t) if t.is_empty() => {
+                    if let Some(ref cfg) = existing {
+                        cfg.token.clone()
+                    } else {
+                        return Err(TbBugError::Config("Token is required".into()));
+                    }
+                }
+                Ok(t) => t,
+                Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+                    println!("Cancelled.");
+                    return Ok(());
+                }
+                Err(e) => return Err(TbBugError::Config(e.to_string())),
+            }
+        }
+        None => {
+            return Err(TbBugError::Config(
+                "Token is required. Use --token or run interactively in a terminal.".into(),
+            ));
+        }
+    };
+
     let tmp_config = Config {
-        token: token.to_string(),
+        token: token.clone(),
         org_id: String::new(),
         projects: Default::default(),
     };
@@ -46,6 +104,7 @@ pub async fn init(token: &str, org_id: Option<&str>, project_slugs: Option<&str>
     // Resolve requested projects
     let mut projects = std::collections::HashMap::new();
     if let Some(slugs) = project_slugs {
+        // Non-interactive: resolve slugs from flag
         for slug in slugs.split(',').map(|s| s.trim()) {
             if let Some(p) = api_projects.iter().find(|p| p.slug == slug) {
                 projects.insert(slug.to_string(), ProjectConfig { id: p.id.clone() });
@@ -53,10 +112,51 @@ pub async fn init(token: &str, org_id: Option<&str>, project_slugs: Option<&str>
                 eprintln!("Warning: project '{}' not found, skipping", slug);
             }
         }
+    } else if interactive {
+        // Interactive: multi-select
+        let mut options: Vec<ProjectOption> = api_projects
+            .iter()
+            .map(|p| ProjectOption {
+                slug: p.slug.clone(),
+                id: p.id.clone(),
+                open_error_count: p.open_error_count,
+            })
+            .collect();
+        options.sort_by(|a, b| b.open_error_count.cmp(&a.open_error_count));
+
+        // Pre-check previously configured projects
+        let defaults: Vec<usize> = if let Some(ref cfg) = existing {
+            options
+                .iter()
+                .enumerate()
+                .filter(|(_, o)| cfg.projects.contains_key(&o.slug))
+                .map(|(i, _)| i)
+                .collect()
+        } else {
+            vec![]
+        };
+
+        match MultiSelect::new("Select projects:", options)
+            .with_default(&defaults)
+            .with_page_size(15)
+            .with_help_message("Space to toggle, Enter to confirm, type to filter")
+            .prompt()
+        {
+            Ok(selected) => {
+                for p in selected {
+                    projects.insert(p.slug.clone(), ProjectConfig { id: p.id.clone() });
+                }
+            }
+            Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+                println!("Cancelled.");
+                return Ok(());
+            }
+            Err(e) => return Err(TbBugError::Config(e.to_string())),
+        }
     }
 
     let config = Config {
-        token: token.to_string(),
+        token,
         org_id,
         projects,
     };
@@ -64,14 +164,7 @@ pub async fn init(token: &str, org_id: Option<&str>, project_slugs: Option<&str>
     println!("Config written to {:?}", Config::config_path()?);
 
     if config.projects.is_empty() {
-        // Show available projects so user knows what to add
-        println!("\nAvailable projects (pass --projects to add during init):");
-        let mut sorted = api_projects;
-        sorted.sort_by(|a, b| b.open_error_count.cmp(&a.open_error_count));
-        for p in &sorted {
-            println!("  {:<24} {:>6} open errors", p.slug, p.open_error_count);
-        }
-        println!("\nExample: tb-bug config init --token <TOKEN> --projects api,app,ai-agent");
+        println!("\nNo projects configured. Use `tb-bug config init` to select interactively.");
     } else {
         println!("\nConfigured projects:");
         for (name, proj) in &config.projects {
