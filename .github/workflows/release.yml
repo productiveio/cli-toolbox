@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags: ["tb-*-v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (build but don't create release)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    name: Parse tag
+    runs-on: ubuntu-latest
+    outputs:
+      crate: ${{ steps.parse.outputs.crate }}
+    steps:
+      - name: Extract crate name from tag
+        id: parse
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            crate="${tag%-v*}"
+          else
+            echo "::error::Not a tag push — use workflow_dispatch with a crate input"
+            exit 1
+          fi
+          echo "crate=$crate" >> "$GITHUB_OUTPUT"
+          echo "Parsed crate: $crate from tag: $tag"
+
+  check:
+    name: Check, Fmt, Clippy, Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Check
+        run: cargo check --workspace
+
+      - name: Clippy
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+  build:
+    needs: [prepare, check]
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            suffix: macos-arm64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            suffix: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release -p ${{ needs.prepare.outputs.crate }} --target ${{ matrix.target }}
+
+      - name: Rename binary
+        run: cp target/${{ matrix.target }}/release/${{ needs.prepare.outputs.crate }} ${{ needs.prepare.outputs.crate }}-${{ matrix.suffix }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.crate }}-${{ matrix.suffix }}
+          path: ${{ needs.prepare.outputs.crate }}-${{ matrix.suffix }}
+
+  release:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') && !(inputs.dry_run || false)
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" || \
+            gh release create "$tag" --generate-notes --title "$tag" --repo "$GITHUB_REPOSITORY"
+
+      - name: Upload binaries to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          for file in artifacts/*/*; do
+            gh release upload "$tag" "$file" --repo "$GITHUB_REPOSITORY"
+          done

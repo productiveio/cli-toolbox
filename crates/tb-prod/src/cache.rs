@@ -120,8 +120,18 @@ impl Cache {
                 id: r.id.clone(),
                 name: r.attr_str("name").to_string(),
                 workflow_id: r.relationship_id("workflow").unwrap_or("").to_string(),
-                color_id: r.attributes.get("color_id").and_then(|v| v.as_i64()).map(|v| v.to_string()).unwrap_or_default(),
-                category_id: r.attributes.get("category_id").and_then(|v| v.as_i64()).map(|v| v.to_string()).unwrap_or_default(),
+                color_id: r
+                    .attributes
+                    .get("color_id")
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v.to_string())
+                    .unwrap_or_default(),
+                category_id: r
+                    .attributes
+                    .get("category_id")
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v.to_string())
+                    .unwrap_or_default(),
             })
             .collect();
         self.write_cache("workflow_statuses.json", &CacheFile { data: statuses })?;
@@ -144,7 +154,12 @@ impl Cache {
     }
 
     pub fn clear(&self) -> Result<()> {
-        for name in &["projects.json", "workflows.json", "workflow_statuses.json", "people.json"] {
+        for name in &[
+            "projects.json",
+            "workflows.json",
+            "workflow_statuses.json",
+            "people.json",
+        ] {
             let path = self.dir.join(name);
             if path.exists() {
                 std::fs::remove_file(&path)?;
@@ -178,19 +193,32 @@ impl Cache {
         }
         let projects = self.projects()?;
         let needle = name_or_id.to_lowercase();
-        let matches: Vec<_> = projects.iter().filter(|p| p.name.to_lowercase().contains(&needle)).collect();
+        let matches: Vec<_> = projects
+            .iter()
+            .filter(|p| p.name.to_lowercase().contains(&needle))
+            .collect();
         match matches.len() {
             0 => {
-                let available: Vec<_> = projects.iter().map(|p| format!("  {} ({})", p.name, p.id)).collect();
+                let available: Vec<_> = projects
+                    .iter()
+                    .map(|p| format!("  {} ({})", p.name, p.id))
+                    .collect();
                 Err(TbProdError::Other(format!(
-                    "No project matching '{}'. Available:\n{}", name_or_id, available.join("\n")
+                    "No project matching '{}'. Available:\n{}",
+                    name_or_id,
+                    available.join("\n")
                 )))
             }
             1 => Ok(matches[0].id.clone()),
             _ => {
-                let ambiguous: Vec<_> = matches.iter().map(|p| format!("  {} ({})", p.name, p.id)).collect();
+                let ambiguous: Vec<_> = matches
+                    .iter()
+                    .map(|p| format!("  {} ({})", p.name, p.id))
+                    .collect();
                 Err(TbProdError::Other(format!(
-                    "Ambiguous project '{}'. Matches:\n{}", name_or_id, ambiguous.join("\n")
+                    "Ambiguous project '{}'. Matches:\n{}",
+                    name_or_id,
+                    ambiguous.join("\n")
                 )))
             }
         }
@@ -202,22 +230,35 @@ impl Cache {
         }
         let people = self.people()?;
         let needle = name_or_id.to_lowercase();
-        let matches: Vec<_> = people.iter().filter(|p| {
-            let full_name = format!("{} {}", p.first_name, p.last_name).to_lowercase();
-            full_name.contains(&needle) || p.email.to_lowercase().contains(&needle)
-        }).collect();
+        let matches: Vec<_> = people
+            .iter()
+            .filter(|p| {
+                let full_name = format!("{} {}", p.first_name, p.last_name).to_lowercase();
+                full_name.contains(&needle) || p.email.to_lowercase().contains(&needle)
+            })
+            .collect();
         match matches.len() {
             0 => {
-                let available: Vec<_> = people.iter().map(|p| format!("  {} {} ({})", p.first_name, p.last_name, p.id)).collect();
+                let available: Vec<_> = people
+                    .iter()
+                    .map(|p| format!("  {} {} ({})", p.first_name, p.last_name, p.id))
+                    .collect();
                 Err(TbProdError::Other(format!(
-                    "No person matching '{}'. Available:\n{}", name_or_id, available.join("\n")
+                    "No person matching '{}'. Available:\n{}",
+                    name_or_id,
+                    available.join("\n")
                 )))
             }
             1 => Ok(matches[0].id.clone()),
             _ => {
-                let ambiguous: Vec<_> = matches.iter().map(|p| format!("  {} {} ({})", p.first_name, p.last_name, p.id)).collect();
+                let ambiguous: Vec<_> = matches
+                    .iter()
+                    .map(|p| format!("  {} {} ({})", p.first_name, p.last_name, p.id))
+                    .collect();
                 Err(TbProdError::Other(format!(
-                    "Ambiguous person '{}'. Matches:\n{}", name_or_id, ambiguous.join("\n")
+                    "Ambiguous person '{}'. Matches:\n{}",
+                    name_or_id,
+                    ambiguous.join("\n")
                 )))
             }
         }
@@ -233,32 +274,47 @@ impl Cache {
             .cloned())
     }
 
-    pub fn resolve_workflow_status(&self, name_or_id: &str, workflow_id: Option<&str>) -> Result<String> {
+    pub fn resolve_workflow_status(
+        &self,
+        name_or_id: &str,
+        workflow_id: Option<&str>,
+    ) -> Result<String> {
         if name_or_id.chars().all(|c| c.is_ascii_digit()) {
             return Ok(name_or_id.to_string());
         }
         let statuses = self.workflow_statuses()?;
         let needle = name_or_id.to_lowercase();
-        let matches: Vec<_> = statuses.iter().filter(|s| {
-            let name_match = s.name.to_lowercase().contains(&needle);
-            let wf_match = workflow_id.map_or(true, |wid| s.workflow_id == wid);
-            name_match && wf_match
-        }).collect();
+        let matches: Vec<_> = statuses
+            .iter()
+            .filter(|s| {
+                let name_match = s.name.to_lowercase().contains(&needle);
+                let wf_match = workflow_id.is_none_or(|wid| s.workflow_id == wid);
+                name_match && wf_match
+            })
+            .collect();
         match matches.len() {
             0 => {
-                let available: Vec<_> = statuses.iter()
-                    .filter(|s| workflow_id.map_or(true, |wid| s.workflow_id == wid))
+                let available: Vec<_> = statuses
+                    .iter()
+                    .filter(|s| workflow_id.is_none_or(|wid| s.workflow_id == wid))
                     .map(|s| format!("  {} ({})", s.name, s.id))
                     .collect();
                 Err(TbProdError::Other(format!(
-                    "No workflow status matching '{}'. Available:\n{}", name_or_id, available.join("\n")
+                    "No workflow status matching '{}'. Available:\n{}",
+                    name_or_id,
+                    available.join("\n")
                 )))
             }
             1 => Ok(matches[0].id.clone()),
             _ => {
-                let ambiguous: Vec<_> = matches.iter().map(|s| format!("  {} ({})", s.name, s.id)).collect();
+                let ambiguous: Vec<_> = matches
+                    .iter()
+                    .map(|s| format!("  {} ({})", s.name, s.id))
+                    .collect();
                 Err(TbProdError::Other(format!(
-                    "Ambiguous status '{}'. Matches:\n{}", name_or_id, ambiguous.join("\n")
+                    "Ambiguous status '{}'. Matches:\n{}",
+                    name_or_id,
+                    ambiguous.join("\n")
                 )))
             }
         }
@@ -290,7 +346,8 @@ impl Cache {
         let path = self.dir.join(filename);
         let content = std::fs::read_to_string(&path).map_err(|_| {
             TbProdError::Other(format!(
-                "Cache file '{}' not found. Run `tb-prod cache sync` first.", filename
+                "Cache file '{}' not found. Run `tb-prod cache sync` first.",
+                filename
             ))
         })?;
         let cache: CacheFile<T> = serde_json::from_str(&content)?;
@@ -313,12 +370,21 @@ pub async fn resolve_task_list(
     }
     let resp = client.list_task_lists(&query).await?;
     match resp.data.len() {
-        0 => Err(TbProdError::Other(format!("No task list matching '{}'", name_or_id))),
+        0 => Err(TbProdError::Other(format!(
+            "No task list matching '{}'",
+            name_or_id
+        ))),
         1 => Ok(resp.data[0].id.clone()),
         _ => {
-            let ambiguous: Vec<_> = resp.data.iter().map(|r| format!("  {} ({})", r.attr_str("name"), r.id)).collect();
+            let ambiguous: Vec<_> = resp
+                .data
+                .iter()
+                .map(|r| format!("  {} ({})", r.attr_str("name"), r.id))
+                .collect();
             Err(TbProdError::Other(format!(
-                "Ambiguous task list '{}'. Matches:\n{}", name_or_id, ambiguous.join("\n")
+                "Ambiguous task list '{}'. Matches:\n{}",
+                name_or_id,
+                ambiguous.join("\n")
             )))
         }
     }

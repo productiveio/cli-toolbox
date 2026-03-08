@@ -2,14 +2,17 @@ use std::io::Read as _;
 
 use clap::Parser;
 
-
 use tb_prod::api::ProductiveClient;
 use tb_prod::cache::{self, Cache};
 use tb_prod::commands;
 use tb_prod::config::Config;
 
 #[derive(Parser)]
-#[command(name = "tb-prod", version, about = "Productive.io CLI — compact, AI-optimized")]
+#[command(
+    name = "tb-prod",
+    version,
+    about = "Productive.io CLI — compact, AI-optimized"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -219,7 +222,11 @@ enum ConfigAction {
     Show,
 }
 
-fn read_text_input(inline: Option<&str>, file: Option<&str>, from_stdin: bool) -> std::io::Result<Option<String>> {
+fn read_text_input(
+    inline: Option<&str>,
+    file: Option<&str>,
+    from_stdin: bool,
+) -> std::io::Result<Option<String>> {
     match (inline, file, from_stdin) {
         (Some(d), _, _) => Ok(Some(d.to_string())),
         (_, Some(path), _) => Ok(Some(std::fs::read_to_string(path)?)),
@@ -246,7 +253,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if let Commands::Config {
-        action: ConfigAction::Init { token, org, person_id },
+        action:
+            ConfigAction::Init {
+                token,
+                org,
+                person_id,
+            },
     } = &cli.command
     {
         commands::config_cmd::init(token, org, person_id.as_deref())?;
@@ -268,12 +280,20 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 let cache = Cache::new(client.org_id())?;
                 cache.ensure_fresh(&client).await?;
 
-                let project_id = project.as_deref().map(|p| cache.resolve_project(p)).transpose()?;
+                let project_id = project
+                    .as_deref()
+                    .map(|p| cache.resolve_project(p))
+                    .transpose()?;
                 let task_list_id = match task_list.as_deref() {
-                    Some(tl) => Some(cache::resolve_task_list(&client, tl, project_id.as_deref()).await?),
+                    Some(tl) => {
+                        Some(cache::resolve_task_list(&client, tl, project_id.as_deref()).await?)
+                    }
                     None => None,
                 };
-                let assignee_id = assignee.as_deref().map(|a| cache.resolve_person(a)).transpose()?;
+                let assignee_id = assignee
+                    .as_deref()
+                    .map(|a| cache.resolve_person(a))
+                    .transpose()?;
 
                 commands::tasks::run(
                     &client,
@@ -317,11 +337,22 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
                     let project_id = cache.resolve_project(project)?;
                     let workflow_id = cache.workflow_id_for_project(&project_id)?;
-                    let task_list_id = cache::resolve_task_list(&client, task_list, Some(&project_id)).await?;
-                    let status_id = status.as_deref().map(|s| cache.resolve_workflow_status(s, workflow_id.as_deref())).transpose()?;
-                    let assignee_id = assignee.as_deref().map(|a| cache.resolve_person(a)).transpose()?;
+                    let task_list_id =
+                        cache::resolve_task_list(&client, task_list, Some(&project_id)).await?;
+                    let status_id = status
+                        .as_deref()
+                        .map(|s| cache.resolve_workflow_status(s, workflow_id.as_deref()))
+                        .transpose()?;
+                    let assignee_id = assignee
+                        .as_deref()
+                        .map(|a| cache.resolve_person(a))
+                        .transpose()?;
 
-                    let desc = read_text_input(description.as_deref(), description_file.as_deref(), description_stdin)?;
+                    let desc = read_text_input(
+                        description.as_deref(),
+                        description_file.as_deref(),
+                        description_stdin,
+                    )?;
 
                     if dry_run {
                         let resolved = serde_json::json!({
@@ -351,7 +382,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            TaskAction::Update { id, status, title, assignee } => {
+            TaskAction::Update {
+                id,
+                status,
+                title,
+                assignee,
+            } => {
                 if status.is_none() && title.is_none() && assignee.is_none() {
                     return Err("Provide at least one of --status, --title, or --assignee".into());
                 }
@@ -366,8 +402,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 } else {
                     None
                 };
-                let status_id = status.as_deref().map(|s| cache.resolve_workflow_status(s, workflow_id.as_deref())).transpose()?;
-                let assignee_id = assignee.as_deref().map(|a| cache.resolve_person(a)).transpose()?;
+                let status_id = status
+                    .as_deref()
+                    .map(|s| cache.resolve_workflow_status(s, workflow_id.as_deref()))
+                    .transpose()?;
+                let assignee_id = assignee
+                    .as_deref()
+                    .map(|a| cache.resolve_person(a))
+                    .transpose()?;
 
                 commands::task_update::run(
                     &client,
@@ -384,7 +426,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             TodoAction::List { task_id } => {
                 commands::todos::list(&client, &task_id, cli.json).await?;
             }
-            TodoAction::Create { task_id, title, assignee } => {
+            TodoAction::Create {
+                task_id,
+                title,
+                assignee,
+            } => {
                 let assignee_id = if let Some(ref a) = assignee {
                     let cache = Cache::new(client.org_id())?;
                     cache.ensure_fresh(&client).await?;
@@ -392,19 +438,37 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 } else {
                     None
                 };
-                commands::todos::create(&client, &task_id, &title, assignee_id.as_deref(), cli.json).await?;
+                commands::todos::create(
+                    &client,
+                    &task_id,
+                    &title,
+                    assignee_id.as_deref(),
+                    cli.json,
+                )
+                .await?;
             }
-            TodoAction::Update { todo_id, done, title } => {
+            TodoAction::Update {
+                todo_id,
+                done,
+                title,
+            } => {
                 if done.is_none() && title.is_none() {
                     return Err("Provide at least one of --done or --title".into());
                 }
-                commands::todos::update(&client, &todo_id, done, title.as_deref(), cli.json).await?;
+                commands::todos::update(&client, &todo_id, done, title.as_deref(), cli.json)
+                    .await?;
             }
         },
         Commands::Comment { action } => match action {
-            CommentAction::Add { id, body, body_file, body_stdin } => {
-                let resolved_body = read_text_input(body.as_deref(), body_file.as_deref(), body_stdin)?
-                    .ok_or("Provide BODY, --body-file, or --body-stdin")?;
+            CommentAction::Add {
+                id,
+                body,
+                body_file,
+                body_stdin,
+            } => {
+                let resolved_body =
+                    read_text_input(body.as_deref(), body_file.as_deref(), body_stdin)?
+                        .ok_or("Provide BODY, --body-file, or --body-stdin")?;
                 commands::task_comment::run(&client, &id, &resolved_body, cli.json).await?;
             }
         },
@@ -415,6 +479,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         },
         Commands::Prime => {
             commands::prime::run(&client, &config).await?;
+            toolbox_core::version_check::check("tb-prod", env!("CARGO_PKG_VERSION")).await;
         }
         Commands::Cache { action } => match action {
             CacheAction::Sync => {

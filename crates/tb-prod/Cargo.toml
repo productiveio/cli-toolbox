@@ -12,7 +12,7 @@ path = "src/main.rs"
 doctest = false
 
 [dependencies]
-toolbox-core.workspace = true
+toolbox-core = { workspace = true, features = ["version-check"] }
 clap.workspace = true
 clap_complete.workspace = true
 tokio.workspace = true

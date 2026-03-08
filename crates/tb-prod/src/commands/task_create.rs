@@ -13,6 +13,7 @@ struct CreatedTask {
     url: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     client: &ProductiveClient,
     title: &str,
@@ -30,7 +31,8 @@ pub async fn run(
     });
 
     if let Some(status_id) = workflow_status_id {
-        relationships["workflow_status"] = json!({ "data": { "type": "workflow_statuses", "id": status_id } });
+        relationships["workflow_status"] =
+            json!({ "data": { "type": "workflow_statuses", "id": status_id } });
     }
     if let Some(aid) = assignee_id {
         relationships["assignee"] = json!({ "data": { "type": "people", "id": aid } });

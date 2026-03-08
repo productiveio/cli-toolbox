@@ -30,7 +30,9 @@ struct Cli {
 #[derive(clap::Subcommand)]
 enum Commands {
     /// List traces
-    #[command(after_help = "Examples:\n  tb-lf traces --since 1d\n  tb-lf traces --triage flagged --limit 50\n  tb-lf traces --name my-agent --env production\n  tb-lf traces --stats --since 7d")]
+    #[command(
+        after_help = "Examples:\n  tb-lf traces --since 1d\n  tb-lf traces --triage flagged --limit 50\n  tb-lf traces --name my-agent --env production\n  tb-lf traces --stats --since 7d"
+    )]
     Traces {
         #[arg(long)]
         name: Option<String>,
@@ -55,7 +57,9 @@ enum Commands {
         pagination: Pagination,
     },
     /// Fetch a single trace (Langfuse proxy)
-    #[command(after_help = "Examples:\n  tb-lf trace abc123 --project production\n  tb-lf trace abc123 --project production --full\n  tb-lf trace abc123 --project production --observations")]
+    #[command(
+        after_help = "Examples:\n  tb-lf trace abc123 --project production\n  tb-lf trace abc123 --project production --full\n  tb-lf trace abc123 --project production --observations"
+    )]
     Trace {
         id: String,
         /// Show full JSON
@@ -66,7 +70,9 @@ enum Commands {
         observations: bool,
     },
     /// List sessions
-    #[command(after_help = "Examples:\n  tb-lf sessions --since 7d\n  tb-lf sessions --user user@example.com\n  tb-lf sessions --stats")]
+    #[command(
+        after_help = "Examples:\n  tb-lf sessions --since 7d\n  tb-lf sessions --user user@example.com\n  tb-lf sessions --stats"
+    )]
     Sessions {
         #[arg(long)]
         user: Option<String>,
@@ -84,10 +90,14 @@ enum Commands {
         pagination: Pagination,
     },
     /// Show all traces in a session
-    #[command(after_help = "Examples:\n  tb-lf session my-session-id\n  tb-lf session my-session-id --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf session my-session-id\n  tb-lf session my-session-id --json"
+    )]
     Session { id: String },
     /// List observations
-    #[command(after_help = "Examples:\n  tb-lf observations --trace abc123\n  tb-lf observations --type GENERATION --model gpt-4\n  tb-lf observations --level ERROR")]
+    #[command(
+        after_help = "Examples:\n  tb-lf observations --trace abc123\n  tb-lf observations --type GENERATION --model gpt-4\n  tb-lf observations --level ERROR"
+    )]
     Observations {
         #[arg(long)]
         trace: Option<String>,
@@ -101,10 +111,14 @@ enum Commands {
         env: Option<String>,
     },
     /// Fetch a single observation (Langfuse proxy)
-    #[command(after_help = "Examples:\n  tb-lf observation abc123 --project production\n  tb-lf observation abc123 --project production --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf observation abc123 --project production\n  tb-lf observation abc123 --project production --json"
+    )]
     Observation { id: String },
     /// List scores
-    #[command(after_help = "Examples:\n  tb-lf scores --trace abc123\n  tb-lf scores --name correctness --source EVAL\n  tb-lf scores --json | jq '.[] | select(.value < 0.5)'")]
+    #[command(
+        after_help = "Examples:\n  tb-lf scores --trace abc123\n  tb-lf scores --name correctness --source EVAL\n  tb-lf scores --json | jq '.[] | select(.value < 0.5)'"
+    )]
     Scores {
         #[arg(long)]
         trace: Option<String>,
@@ -116,7 +130,9 @@ enum Commands {
         env: Option<String>,
     },
     /// List comments
-    #[command(after_help = "Examples:\n  tb-lf comments --trace abc123\n  tb-lf comments --type trace\n  tb-lf comments --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf comments --trace abc123\n  tb-lf comments --type trace\n  tb-lf comments --json"
+    )]
     Comments {
         #[arg(long)]
         trace: Option<String>,
@@ -126,13 +142,17 @@ enum Commands {
         object: Option<String>,
     },
     /// Show dashboard overview
-    #[command(after_help = "Examples:\n  tb-lf dashboard\n  tb-lf dashboard --from 2025-01-01 --to 2025-01-31\n  tb-lf dashboard --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf dashboard\n  tb-lf dashboard --from 2025-01-01 --to 2025-01-31\n  tb-lf dashboard --json"
+    )]
     Dashboard {
         #[command(flatten)]
         time: TimeRange,
     },
     /// Show daily metrics
-    #[command(after_help = "Examples:\n  tb-lf metrics --days 14\n  tb-lf metrics --env production --since 30d\n  tb-lf metrics --json | jq '.[] | .date'")]
+    #[command(
+        after_help = "Examples:\n  tb-lf metrics --days 14\n  tb-lf metrics --env production --since 30d\n  tb-lf metrics --json | jq '.[] | .date'"
+    )]
     Metrics {
         /// Number of days back
         #[arg(long)]
@@ -143,7 +163,9 @@ enum Commands {
         time: TimeRange,
     },
     /// View daily report
-    #[command(after_help = "Examples:\n  tb-lf daily\n  tb-lf daily 2025-03-01\n  tb-lf daily --findings --severity high\n  tb-lf daily --findings --type anomaly")]
+    #[command(
+        after_help = "Examples:\n  tb-lf daily\n  tb-lf daily 2025-03-01\n  tb-lf daily --findings --severity high\n  tb-lf daily --findings --type anomaly"
+    )]
     Daily {
         /// Date (YYYY-MM-DD), defaults to latest
         date: Option<String>,
@@ -158,7 +180,9 @@ enum Commands {
         r#type: Option<String>,
     },
     /// List triage queue items
-    #[command(after_help = "Examples:\n  tb-lf queue --status pending_review\n  tb-lf queue --category bug --confidence high\n  tb-lf queue --full --limit 5")]
+    #[command(
+        after_help = "Examples:\n  tb-lf queue --status pending_review\n  tb-lf queue --category bug --confidence high\n  tb-lf queue --full --limit 5"
+    )]
     Queue {
         #[arg(long)]
         status: Option<String>,
@@ -183,7 +207,9 @@ enum Commands {
     #[command(after_help = "Examples:\n  tb-lf queue-item 42\n  tb-lf queue-item 42 --json")]
     QueueItem { id: i64 },
     /// List triage runs
-    #[command(after_help = "Examples:\n  tb-lf triage-runs\n  tb-lf triage-runs --status completed --limit 5\n  tb-lf triage-runs --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf triage-runs\n  tb-lf triage-runs --status completed --limit 5\n  tb-lf triage-runs --json"
+    )]
     TriageRuns {
         #[arg(long)]
         status: Option<String>,
@@ -191,7 +217,9 @@ enum Commands {
         limit: u32,
     },
     /// Triage run statistics
-    #[command(after_help = "Examples:\n  tb-lf triage-runs-stats\n  tb-lf triage-runs-stats --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf triage-runs-stats\n  tb-lf triage-runs-stats --json"
+    )]
     TriageRunsStats,
     /// Eval runs and coverage
     Eval {
@@ -199,7 +227,9 @@ enum Commands {
         action: EvalAction,
     },
     /// Search traces
-    #[command(after_help = "Examples:\n  tb-lf search \"login error\"\n  tb-lf search \"john smith\" --ids-only\n  tb-lf search \"timeout\" --since 3d --limit 50")]
+    #[command(
+        after_help = "Examples:\n  tb-lf search \"login error\"\n  tb-lf search \"john smith\" --ids-only\n  tb-lf search \"timeout\" --since 3d --limit 50"
+    )]
     Search {
         query: String,
         /// Output only trace IDs (for piping)
@@ -217,7 +247,9 @@ enum Commands {
         time: TimeRange,
     },
     /// List tracked features
-    #[command(after_help = "Examples:\n  tb-lf features\n  tb-lf features --category billing --status active\n  tb-lf features --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf features\n  tb-lf features --category billing --status active\n  tb-lf features --json"
+    )]
     Features {
         #[arg(long)]
         category: Option<String>,
@@ -230,7 +262,9 @@ enum Commands {
     #[command(after_help = "Examples:\n  tb-lf feature-items 5\n  tb-lf feature-items 5 --json")]
     FeatureItems { id: i64 },
     /// AI-optimized context block
-    #[command(after_help = "Examples:\n  tb-lf prime --project production\n  tb-lf prime --mcp\n  tb-lf prime --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf prime --project production\n  tb-lf prime --mcp\n  tb-lf prime --json"
+    )]
     Prime {
         /// Minimal output for MCP hook injection
         #[arg(long)]
@@ -240,13 +274,17 @@ enum Commands {
     #[command(after_help = "Examples:\n  tb-lf human")]
     Human,
     /// Domain knowledge reference
-    #[command(after_help = "Examples:\n  tb-lf explain traces\n  tb-lf explain evaluations\n  tb-lf explain --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf explain traces\n  tb-lf explain evaluations\n  tb-lf explain --json"
+    )]
     Explain {
         /// Topic: entities, relationships, traces, scores, observations, sessions, evaluations, triage, features
         topic: Option<String>,
     },
     /// Configuration management
-    #[command(after_help = "Examples:\n  tb-lf config show\n  tb-lf config set url https://devportal.example.com\n  tb-lf config set project production")]
+    #[command(
+        after_help = "Examples:\n  tb-lf config show\n  tb-lf config set url https://devportal.example.com\n  tb-lf config set project production"
+    )]
     Config {
         #[command(subcommand)]
         action: Option<ConfigAction>,
@@ -264,7 +302,9 @@ enum Commands {
 #[derive(clap::Subcommand)]
 enum EvalAction {
     /// List eval runs
-    #[command(after_help = "Examples:\n  tb-lf eval runs\n  tb-lf eval runs --status failed --branch main\n  tb-lf eval runs --mode regression --limit 10")]
+    #[command(
+        after_help = "Examples:\n  tb-lf eval runs\n  tb-lf eval runs --status failed --branch main\n  tb-lf eval runs --mode regression --limit 10"
+    )]
     Runs {
         #[arg(long)]
         status: Option<String>,
@@ -276,7 +316,9 @@ enum EvalAction {
         limit: u32,
     },
     /// Show a single eval run
-    #[command(after_help = "Examples:\n  tb-lf eval run 42\n  tb-lf eval run 42 --failed\n  tb-lf eval run 42 --full")]
+    #[command(
+        after_help = "Examples:\n  tb-lf eval run 42\n  tb-lf eval run 42 --failed\n  tb-lf eval run 42 --full"
+    )]
     Run {
         id: i64,
         /// Show only failed items
@@ -287,7 +329,9 @@ enum EvalAction {
         full: bool,
     },
     /// Score trends across git revisions
-    #[command(after_help = "Examples:\n  tb-lf eval revisions\n  tb-lf eval revisions --branch main --limit 10\n  tb-lf eval revisions --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf eval revisions\n  tb-lf eval revisions --branch main --limit 10\n  tb-lf eval revisions --json"
+    )]
     Revisions {
         #[arg(long)]
         branch: Option<String>,
@@ -297,7 +341,9 @@ enum EvalAction {
         limit: u32,
     },
     /// Test suite coverage
-    #[command(after_help = "Examples:\n  tb-lf eval suites\n  tb-lf eval suites --mode regression\n  tb-lf eval suites --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf eval suites\n  tb-lf eval suites --mode regression\n  tb-lf eval suites --json"
+    )]
     Suites {
         #[arg(long)]
         mode: Option<String>,
@@ -305,7 +351,9 @@ enum EvalAction {
         branch: Option<String>,
     },
     /// Test case coverage
-    #[command(after_help = "Examples:\n  tb-lf eval cases\n  tb-lf eval cases --suite my-suite --limit 20\n  tb-lf eval cases --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf eval cases\n  tb-lf eval cases --suite my-suite --limit 20\n  tb-lf eval cases --json"
+    )]
     Cases {
         #[arg(long)]
         suite: Option<String>,
@@ -317,7 +365,9 @@ enum EvalAction {
         limit: u32,
     },
     /// Flaky test detection
-    #[command(after_help = "Examples:\n  tb-lf eval flaky\n  tb-lf eval flaky --last-n 50\n  tb-lf eval flaky --branch main --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf eval flaky\n  tb-lf eval flaky --last-n 50\n  tb-lf eval flaky --branch main --json"
+    )]
     Flaky {
         /// Sample size for flaky detection
         #[arg(long, default_value = "20")]
@@ -357,28 +407,32 @@ async fn run() -> tb_lf::error::Result<()> {
             tool_name: "tb-lf",
             content: include_str!("../SKILL.md"),
         };
-        toolbox_core::skill::run(&skill, action)
-            .map_err(|e| tb_lf::error::TbLfError::Other(e))?;
+        toolbox_core::skill::run(&skill, action).map_err(tb_lf::error::TbLfError::Other)?;
         return Ok(());
     }
 
     let config = Config::load()?;
     let client = DevPortalClient::new(&config, cli.no_cache)?;
-    let project_id = config::resolve_project(
-        &client,
-        cli.project.as_deref(),
-        config.project.as_deref(),
-    ).await?;
+    let project_id =
+        config::resolve_project(&client, cli.project.as_deref(), config.project.as_deref()).await?;
     let pid = project_id.map(|id| id.to_string());
 
     match cli.command {
-        Commands::Traces { name, user, session, env, triage, satisfaction, sort, stats, time, pagination } => {
+        Commands::Traces {
+            name,
+            user,
+            session,
+            env,
+            triage,
+            satisfaction,
+            sort,
+            stats,
+            time,
+            pagination,
+        } => {
             if stats {
-                let mut params: Vec<(&str, Option<String>)> = vec![
-                    ("project_id", pid),
-                    ("name", name),
-                    ("environment", env),
-                ];
+                let mut params: Vec<(&str, Option<String>)> =
+                    vec![("project_id", pid), ("name", name), ("environment", env)];
                 time.push_params(&mut params);
                 let path = DevPortalClient::build_path("/traces/stats", &params);
                 let s: TraceStats = client.get(&path, CacheTtl::Short).await?;
@@ -388,7 +442,10 @@ async fn run() -> tb_lf::error::Result<()> {
                 }
                 println!("{}\n", "Trace Stats".bold());
                 println!("  Total traces: {}", s.total_traces.unwrap_or(0));
-                println!("  Total cost:   {}", s.total_cost.map(output::fmt_cost).unwrap_or_default());
+                println!(
+                    "  Total cost:   {}",
+                    s.total_cost.map(output::fmt_cost).unwrap_or_default()
+                );
                 println!("  Avg duration: {}ms", s.avg_duration_ms.unwrap_or(0.0));
                 println!("  Max duration: {}ms", s.max_duration_ms.unwrap_or(0.0));
                 return Ok(());
@@ -415,17 +472,23 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             if resp.data.is_empty() {
-                println!("{}", output::empty_hint("traces", "Try widening filters or check `tb-lf doctor`."));
+                println!(
+                    "{}",
+                    output::empty_hint("traces", "Try widening filters or check `tb-lf doctor`.")
+                );
                 return Ok(());
             }
 
             println!("{}\n", "Traces".bold());
             for t in &resp.data {
-                let name = t.display_name.as_deref()
+                let name = t
+                    .display_name
+                    .as_deref()
                     .or(t.name.as_deref())
                     .unwrap_or("(unnamed)");
                 let cost = t.cost_usd.map(output::fmt_cost).unwrap_or_default();
-                let latency = t.latency_ms
+                let latency = t
+                    .latency_ms
                     .map(|l| format!("{:.0}ms", l))
                     .unwrap_or_default();
                 let triage_str = match t.triage_status.as_deref() {
@@ -435,7 +498,8 @@ async fn run() -> tb_lf::error::Result<()> {
                 };
                 let time = output::relative_time(&t.timestamp);
 
-                println!("  {} {}  {}  {}  {}{}",
+                println!(
+                    "  {} {}  {}  {}  {}{}",
                     t.langfuse_id.dimmed(),
                     output::truncate(name, 40).bold(),
                     cost,
@@ -448,13 +512,22 @@ async fn run() -> tb_lf::error::Result<()> {
                 }
             }
 
-            if let Some(hint) = output::pagination_hint(pagination.page, pagination.limit, resp.meta.total) {
+            if let Some(hint) =
+                output::pagination_hint(pagination.page, pagination.limit, resp.meta.total)
+            {
                 println!("\n  {}", hint.dimmed());
             }
-            println!("\n  {}", "Run `tb-lf trace <id>` for full details.".dimmed());
+            println!(
+                "\n  {}",
+                "Run `tb-lf trace <id>` for full details.".dimmed()
+            );
         }
 
-        Commands::Trace { id, full, observations } => {
+        Commands::Trace {
+            id,
+            full,
+            observations,
+        } => {
             let project_id = project_id.ok_or_else(|| {
                 tb_lf::error::TbLfError::Config("--project required for trace fetch.".into())
             })?;
@@ -486,31 +559,53 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             if observations {
-                let obs_path = DevPortalClient::build_path("/observations", &[
-                    ("project_id", Some(project_id.to_string())),
-                    ("trace_id", Some(id)),
-                ]);
+                let obs_path = DevPortalClient::build_path(
+                    "/observations",
+                    &[
+                        ("project_id", Some(project_id.to_string())),
+                        ("trace_id", Some(id)),
+                    ],
+                );
                 let obs: Vec<Observation> = client.get(&obs_path, CacheTtl::Short).await?;
                 println!("\n{} ({})\n", "Observations".bold(), obs.len());
                 for o in &obs {
                     let kind = o.observation_type.as_deref().unwrap_or("?");
                     let name = o.name.as_deref().unwrap_or("(unnamed)");
                     let model = o.model.as_deref().unwrap_or("");
-                    let tokens = o.total_tokens.map(|t| format!("{} tok", t)).unwrap_or_default();
+                    let tokens = o
+                        .total_tokens
+                        .map(|t| format!("{} tok", t))
+                        .unwrap_or_default();
                     let cost = o.cost_usd.map(output::fmt_cost).unwrap_or_default();
-                    let latency = o.latency_ms.map(|l| format!("{:.0}ms", l)).unwrap_or_default();
-                    println!("  {} [{}] {}  {}  {}  {}",
-                        name.bold(), kind, model.dimmed(), tokens, cost, latency);
+                    let latency = o
+                        .latency_ms
+                        .map(|l| format!("{:.0}ms", l))
+                        .unwrap_or_default();
+                    println!(
+                        "  {} [{}] {}  {}  {}  {}",
+                        name.bold(),
+                        kind,
+                        model.dimmed(),
+                        tokens,
+                        cost,
+                        latency
+                    );
                 }
             }
         }
 
-        Commands::Sessions { user, env, satisfaction, sort, stats, time, pagination } => {
+        Commands::Sessions {
+            user,
+            env,
+            satisfaction,
+            sort,
+            stats,
+            time,
+            pagination,
+        } => {
             if stats {
-                let mut params: Vec<(&str, Option<String>)> = vec![
-                    ("project_id", pid),
-                    ("environment", env),
-                ];
+                let mut params: Vec<(&str, Option<String>)> =
+                    vec![("project_id", pid), ("environment", env)];
                 time.push_params(&mut params);
                 let path = DevPortalClient::build_path("/sessions/stats", &params);
                 let s: serde_json::Value = client.get(&path, CacheTtl::Short).await?;
@@ -536,7 +631,10 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             if resp.data.is_empty() {
-                println!("{}", output::empty_hint("sessions", "Try widening filters."));
+                println!(
+                    "{}",
+                    output::empty_hint("sessions", "Try widening filters.")
+                );
                 return Ok(());
             }
 
@@ -544,11 +642,14 @@ async fn run() -> tb_lf::error::Result<()> {
             for s in &resp.data {
                 let cost = s.total_cost_usd.map(output::fmt_cost).unwrap_or_default();
                 let time = output::relative_time(&s.last_trace_at);
-                let users = s.user_ids.as_ref()
+                let users = s
+                    .user_ids
+                    .as_ref()
                     .map(|ids| ids.join(", "))
                     .unwrap_or_default();
 
-                println!("  {} {} traces  {}  {}  {}",
+                println!(
+                    "  {} {} traces  {}  {}  {}",
                     s.session_id.bold(),
                     s.trace_count,
                     cost,
@@ -557,15 +658,16 @@ async fn run() -> tb_lf::error::Result<()> {
                 );
             }
 
-            if let Some(hint) = output::pagination_hint(pagination.page, pagination.limit, resp.meta.total) {
+            if let Some(hint) =
+                output::pagination_hint(pagination.page, pagination.limit, resp.meta.total)
+            {
                 println!("\n  {}", hint.dimmed());
             }
         }
 
         Commands::Session { id } => {
-            let path = DevPortalClient::build_path(&format!("/sessions/{}", id), &[
-                ("project_id", pid),
-            ]);
+            let path =
+                DevPortalClient::build_path(&format!("/sessions/{}", id), &[("project_id", pid)]);
             let traces: Vec<Trace> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -574,33 +676,59 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             if traces.is_empty() {
-                println!("{}", output::empty_hint("traces in session", "Check the session ID."));
+                println!(
+                    "{}",
+                    output::empty_hint("traces in session", "Check the session ID.")
+                );
                 return Ok(());
             }
 
             println!("{} ({})\n", "Session".bold(), id);
             for t in &traces {
-                let name = t.display_name.as_deref()
+                let name = t
+                    .display_name
+                    .as_deref()
                     .or(t.name.as_deref())
                     .unwrap_or("(unnamed)");
                 let cost = t.cost_usd.map(output::fmt_cost).unwrap_or_default();
-                let latency = t.latency_ms.map(|l| format!("{:.0}ms", l)).unwrap_or_default();
+                let latency = t
+                    .latency_ms
+                    .map(|l| format!("{:.0}ms", l))
+                    .unwrap_or_default();
 
-                println!("  {} {}  {}  {}", t.langfuse_id.dimmed(), name.bold(), cost, latency);
+                println!(
+                    "  {} {}  {}  {}",
+                    t.langfuse_id.dimmed(),
+                    name.bold(),
+                    cost,
+                    latency
+                );
             }
 
-            println!("\n  {}", "Run `tb-lf trace <id> --project <p>` to inspect a trace.".dimmed());
+            println!(
+                "\n  {}",
+                "Run `tb-lf trace <id> --project <p>` to inspect a trace.".dimmed()
+            );
         }
 
-        Commands::Observations { trace, r#type, model, level, env } => {
-            let path = DevPortalClient::build_path("/observations", &[
-                ("project_id", pid),
-                ("trace_id", trace),
-                ("type", r#type),
-                ("model", model),
-                ("level", level),
-                ("environment", env),
-            ]);
+        Commands::Observations {
+            trace,
+            r#type,
+            model,
+            level,
+            env,
+        } => {
+            let path = DevPortalClient::build_path(
+                "/observations",
+                &[
+                    ("project_id", pid),
+                    ("trace_id", trace),
+                    ("type", r#type),
+                    ("model", model),
+                    ("level", level),
+                    ("environment", env),
+                ],
+            );
             let obs: Vec<Observation> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -609,7 +737,10 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             if obs.is_empty() {
-                println!("{}", output::empty_hint("observations", "Try different filters."));
+                println!(
+                    "{}",
+                    output::empty_hint("observations", "Try different filters.")
+                );
                 return Ok(());
             }
 
@@ -618,12 +749,25 @@ async fn run() -> tb_lf::error::Result<()> {
                 let kind = o.observation_type.as_deref().unwrap_or("?");
                 let name = o.name.as_deref().unwrap_or("(unnamed)");
                 let model = o.model.as_deref().unwrap_or("");
-                let tokens = o.total_tokens.map(|t| format!("{} tok", t)).unwrap_or_default();
+                let tokens = o
+                    .total_tokens
+                    .map(|t| format!("{} tok", t))
+                    .unwrap_or_default();
                 let cost = o.cost_usd.map(output::fmt_cost).unwrap_or_default();
-                let latency = o.latency_ms.map(|l| format!("{:.0}ms", l)).unwrap_or_default();
+                let latency = o
+                    .latency_ms
+                    .map(|l| format!("{:.0}ms", l))
+                    .unwrap_or_default();
 
-                println!("  {} [{}] {}  {}  {}  {}",
-                    name.bold(), kind, model.dimmed(), tokens, cost, latency);
+                println!(
+                    "  {} [{}] {}  {}  {}  {}",
+                    name.bold(),
+                    kind,
+                    model.dimmed(),
+                    tokens,
+                    cost,
+                    latency
+                );
             }
         }
 
@@ -636,14 +780,22 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("{}", output::render_json(&obs));
         }
 
-        Commands::Scores { trace, name, source, env } => {
-            let path = DevPortalClient::build_path("/scores", &[
-                ("project_id", pid),
-                ("trace_id", trace),
-                ("name", name),
-                ("source", source),
-                ("environment", env),
-            ]);
+        Commands::Scores {
+            trace,
+            name,
+            source,
+            env,
+        } => {
+            let path = DevPortalClient::build_path(
+                "/scores",
+                &[
+                    ("project_id", pid),
+                    ("trace_id", trace),
+                    ("name", name),
+                    ("source", source),
+                    ("environment", env),
+                ],
+            );
             let scores: Vec<Score> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -658,28 +810,42 @@ async fn run() -> tb_lf::error::Result<()> {
 
             println!("{} ({})\n", "Scores".bold(), scores.len());
             for s in &scores {
-                let val = s.value
+                let val = s
+                    .value
                     .map(output::score_color)
                     .or(s.string_value.clone())
                     .unwrap_or_default();
                 let source = s.source.as_deref().unwrap_or("");
                 let time = output::relative_time(&s.timestamp);
 
-                println!("  {} {}  {}  {}  {}",
-                    s.name.bold(), val, source.dimmed(), s.trace_langfuse_id.dimmed(), time.dimmed());
+                println!(
+                    "  {} {}  {}  {}  {}",
+                    s.name.bold(),
+                    val,
+                    source.dimmed(),
+                    s.trace_langfuse_id.dimmed(),
+                    time.dimmed()
+                );
                 if let Some(c) = &s.comment {
                     println!("    {}", output::truncate(c, 80).dimmed());
                 }
             }
         }
 
-        Commands::Comments { trace, r#type, object } => {
-            let path = DevPortalClient::build_path("/comments", &[
-                ("project_id", pid),
-                ("trace_id", trace),
-                ("object_type", r#type),
-                ("object_id", object),
-            ]);
+        Commands::Comments {
+            trace,
+            r#type,
+            object,
+        } => {
+            let path = DevPortalClient::build_path(
+                "/comments",
+                &[
+                    ("project_id", pid),
+                    ("trace_id", trace),
+                    ("object_type", r#type),
+                    ("object_id", object),
+                ],
+            );
             let comments: Vec<Comment> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -688,7 +854,10 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             if comments.is_empty() {
-                println!("{}", output::empty_hint("comments", "Try different filters."));
+                println!(
+                    "{}",
+                    output::empty_hint("comments", "Try different filters.")
+                );
                 return Ok(());
             }
 
@@ -697,19 +866,24 @@ async fn run() -> tb_lf::error::Result<()> {
                 let author = c.author.as_deref().unwrap_or("unknown");
                 let obj_type = c.object_type.as_deref().unwrap_or("");
                 let content = c.content.as_deref().unwrap_or("");
-                let time = c.created_at.as_deref()
+                let time = c
+                    .created_at
+                    .as_deref()
                     .map(output::relative_time)
                     .unwrap_or_default();
 
-                println!("  {} [{}]  {}", author.bold(), obj_type.dimmed(), time.dimmed());
+                println!(
+                    "  {} [{}]  {}",
+                    author.bold(),
+                    obj_type.dimmed(),
+                    time.dimmed()
+                );
                 println!("    {}", output::truncate(content, 100));
             }
         }
 
         Commands::Dashboard { time } => {
-            let mut params: Vec<(&str, Option<String>)> = vec![
-                ("project_id", pid),
-            ];
+            let mut params: Vec<(&str, Option<String>)> = vec![("project_id", pid)];
             time.push_params(&mut params);
             let path = DevPortalClient::build_path("/dashboard", &params);
             let dash: Dashboard = client.get(&path, CacheTtl::Medium).await?;
@@ -736,8 +910,11 @@ async fn run() -> tb_lf::error::Result<()> {
                         let change = match (val, prev) {
                             (Some(v), Some(p)) if p > 0.0 => {
                                 let pct = ((v - p) / p) * 100.0;
-                                if pct >= 0.0 { format!("+{:.0}%", pct).green().to_string() }
-                                else { format!("{:.0}%", pct).red().to_string() }
+                                if pct >= 0.0 {
+                                    format!("+{:.0}%", pct).green().to_string()
+                                } else {
+                                    format!("{:.0}%", pct).red().to_string()
+                                }
                             }
                             _ => String::new(),
                         };
@@ -748,14 +925,30 @@ async fn run() -> tb_lf::error::Result<()> {
 
             if let Some(feedback) = dash.get("feedback") {
                 println!("\n  {}", "Feedback".bold());
-                let pos = feedback.get("positive").and_then(|v| v.as_u64()).unwrap_or(0);
-                let neg = feedback.get("negative").and_then(|v| v.as_u64()).unwrap_or(0);
-                let total = feedback.get("total_sessions").and_then(|v| v.as_u64()).unwrap_or(0);
-                println!("    {} positive  {} negative  {} total sessions",
-                    pos.to_string().green(), neg.to_string().red(), total);
+                let pos = feedback
+                    .get("positive")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let neg = feedback
+                    .get("negative")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let total = feedback
+                    .get("total_sessions")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                println!(
+                    "    {} positive  {} negative  {} total sessions",
+                    pos.to_string().green(),
+                    neg.to_string().red(),
+                    total
+                );
             }
 
-            println!("\n  {}", "Run `tb-lf traces` to drill into individual traces.".dimmed());
+            println!(
+                "\n  {}",
+                "Run `tb-lf traces` to drill into individual traces.".dimmed()
+            );
             println!("  {}", "Run `tb-lf metrics` for daily trends.".dimmed());
         }
 
@@ -776,10 +969,8 @@ async fn run() -> tb_lf::error::Result<()> {
                 time
             };
 
-            let mut params: Vec<(&str, Option<String>)> = vec![
-                ("project_id", pid),
-                ("environment", env),
-            ];
+            let mut params: Vec<(&str, Option<String>)> =
+                vec![("project_id", pid), ("environment", env)];
             effective_time.push_params(&mut params);
             let path = DevPortalClient::build_path("/daily_metrics", &params);
             let metrics: Vec<DailyMetric> = client.get(&path, CacheTtl::Short).await?;
@@ -790,31 +981,45 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             if metrics.is_empty() {
-                println!("{}", output::empty_hint("metrics", "Try a wider date range."));
+                println!(
+                    "{}",
+                    output::empty_hint("metrics", "Try a wider date range.")
+                );
                 return Ok(());
             }
 
             println!("{}\n", "Daily Metrics".bold());
-            println!("  {:<12} {:>8} {:>6} {:>10} {:>10} {:>8}",
-                "Date", "Traces", "Users", "Cost", "Latency", "Errors");
+            println!(
+                "  {:<12} {:>8} {:>6} {:>10} {:>10} {:>8}",
+                "Date", "Traces", "Users", "Cost", "Latency", "Errors"
+            );
             println!("  {}", "─".repeat(60));
             for m in &metrics {
-                println!("  {:<12} {:>8} {:>6} {:>10} {:>10} {:>8}",
+                println!(
+                    "  {:<12} {:>8} {:>6} {:>10} {:>10} {:>8}",
                     m.date,
                     m.trace_count.unwrap_or(0),
                     m.unique_users.unwrap_or(0),
                     m.total_cost_usd.map(output::fmt_cost).unwrap_or_default(),
-                    m.avg_latency_ms.map(|l| format!("{:.0}ms", l)).unwrap_or_default(),
+                    m.avg_latency_ms
+                        .map(|l| format!("{:.0}ms", l))
+                        .unwrap_or_default(),
                     m.error_count.unwrap_or(0),
                 );
             }
         }
 
-        Commands::Daily { date, findings, severity, r#type } => {
+        Commands::Daily {
+            date,
+            findings,
+            severity,
+            r#type,
+        } => {
             let date_part = date.as_deref().unwrap_or("latest");
-            let path = DevPortalClient::build_path(&format!("/reports/{}", date_part), &[
-                ("project_id", pid),
-            ]);
+            let path = DevPortalClient::build_path(
+                &format!("/reports/{}", date_part),
+                &[("project_id", pid)],
+            );
             let report: DailyReport = client.get(&path, CacheTtl::Medium).await?;
 
             if cli.json {
@@ -838,7 +1043,8 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             if let Some(ref items) = report.findings {
-                let items: Vec<&Finding> = items.iter()
+                let items: Vec<&Finding> = items
+                    .iter()
                     .filter(|f| {
                         severity.as_ref().is_none_or(|s| {
                             f.severity.as_deref().unwrap_or("").eq_ignore_ascii_case(s)
@@ -846,7 +1052,10 @@ async fn run() -> tb_lf::error::Result<()> {
                     })
                     .filter(|f| {
                         r#type.as_ref().is_none_or(|t| {
-                            f.finding_type.as_deref().unwrap_or("").eq_ignore_ascii_case(t)
+                            f.finding_type
+                                .as_deref()
+                                .unwrap_or("")
+                                .eq_ignore_ascii_case(t)
                         })
                     })
                     .collect();
@@ -868,7 +1077,15 @@ async fn run() -> tb_lf::error::Result<()> {
             }
         }
 
-        Commands::Queue { status, category, confidence, run, feature, full, pagination } => {
+        Commands::Queue {
+            status,
+            category,
+            confidence,
+            run,
+            feature,
+            full,
+            pagination,
+        } => {
             let mut params: Vec<(&str, Option<String>)> = vec![
                 ("project_id", pid),
                 ("status", status),
@@ -887,7 +1104,10 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             if items.is_empty() {
-                println!("{}", output::empty_hint("queue items", "Try different filters."));
+                println!(
+                    "{}",
+                    output::empty_hint("queue items", "Try different filters.")
+                );
                 return Ok(());
             }
 
@@ -904,9 +1124,14 @@ async fn run() -> tb_lf::error::Result<()> {
                 let conf = item.ai_confidence.as_deref().unwrap_or("");
                 let trace = item.trace_langfuse_id.as_deref().unwrap_or("");
 
-                println!("  {} [{}] {} {}  {}",
-                    trace.dimmed(), status_colored, cat, conf.dimmed(),
-                    item.reviewed_by.as_deref().unwrap_or("").dimmed());
+                println!(
+                    "  {} [{}] {} {}  {}",
+                    trace.dimmed(),
+                    status_colored,
+                    cat,
+                    conf.dimmed(),
+                    item.reviewed_by.as_deref().unwrap_or("").dimmed()
+                );
 
                 if full {
                     if let Some(reasoning) = &item.ai_reasoning {
@@ -919,22 +1144,24 @@ async fn run() -> tb_lf::error::Result<()> {
         }
 
         Commands::QueueStats => {
-            let path = DevPortalClient::build_path("/queue_items/stats", &[
-                ("project_id", pid),
-            ]);
+            let path = DevPortalClient::build_path("/queue_items/stats", &[("project_id", pid)]);
             let stats: serde_json::Value = client.get(&path, CacheTtl::Short).await?;
             if cli.json {
                 println!("{}", output::render_json(&stats));
             } else {
                 println!("{}\n", "Queue Stats".bold());
-                println!("{}", serde_json::to_string_pretty(&stats).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&stats).unwrap_or_default()
+                );
             }
         }
 
         Commands::QueueItem { id } => {
-            let path = DevPortalClient::build_path(&format!("/queue_items/{}", id), &[
-                ("project_id", pid),
-            ]);
+            let path = DevPortalClient::build_path(
+                &format!("/queue_items/{}", id),
+                &[("project_id", pid)],
+            );
             let item: QueueItem = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -943,28 +1170,45 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             println!("{} #{}\n", "Queue Item".bold(), id);
-            println!("  Trace:      {}", item.trace_langfuse_id.as_deref().unwrap_or("—"));
+            println!(
+                "  Trace:      {}",
+                item.trace_langfuse_id.as_deref().unwrap_or("—")
+            );
             println!("  Status:     {}", item.status.as_deref().unwrap_or("—"));
-            println!("  Category:   {} (AI: {})",
+            println!(
+                "  Category:   {} (AI: {})",
                 item.category.as_deref().unwrap_or("—"),
-                item.ai_category.as_deref().unwrap_or("—"));
-            println!("  Confidence: {}", item.ai_confidence.as_deref().unwrap_or("—"));
-            println!("  Reviewed:   {}", item.reviewed_by.as_deref().unwrap_or("—"));
+                item.ai_category.as_deref().unwrap_or("—")
+            );
+            println!(
+                "  Confidence: {}",
+                item.ai_confidence.as_deref().unwrap_or("—")
+            );
+            println!(
+                "  Reviewed:   {}",
+                item.reviewed_by.as_deref().unwrap_or("—")
+            );
             if let Some(reasoning) = &item.ai_reasoning {
                 println!("\n  {}", "AI Reasoning:".bold());
                 println!("  {}", reasoning);
             }
             if let Some(trace_id) = &item.trace_langfuse_id {
-                println!("\n  {}", format!("Run `tb-lf trace {}` to see the full trace.", trace_id).dimmed());
+                println!(
+                    "\n  {}",
+                    format!("Run `tb-lf trace {}` to see the full trace.", trace_id).dimmed()
+                );
             }
         }
 
         Commands::TriageRuns { status, limit } => {
-            let path = DevPortalClient::build_path("/triage_runs", &[
-                ("project_id", pid),
-                ("status", status),
-                ("per_page", Some(limit.to_string())),
-            ]);
+            let path = DevPortalClient::build_path(
+                "/triage_runs",
+                &[
+                    ("project_id", pid),
+                    ("status", status),
+                    ("per_page", Some(limit.to_string())),
+                ],
+            );
             let runs: Vec<TriageRun> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -989,276 +1233,378 @@ async fn run() -> tb_lf::error::Result<()> {
                 let processed = r.processed_count.unwrap_or(0);
                 let flagged = r.flagged_count.unwrap_or(0);
                 let dismissed = r.dismissed_count.unwrap_or(0);
-                let dur = r.duration_seconds.map(|d| format!("{:.0}s", d)).unwrap_or_default();
+                let dur = r
+                    .duration_seconds
+                    .map(|d| format!("{:.0}s", d))
+                    .unwrap_or_default();
                 let model = r.model.as_deref().unwrap_or("");
                 let cost = r.cost_usd.map(output::fmt_cost).unwrap_or_default();
-                let time = r.created_at.as_deref()
+                let time = r
+                    .created_at
+                    .as_deref()
                     .map(output::relative_time)
                     .unwrap_or_default();
 
-                println!("  #{} [{}]  {} processed, {} flagged, {} dismissed  {}  {}  {}  {}",
-                    r.id, status_colored, processed, flagged, dismissed,
-                    dur, model.dimmed(), cost, time.dimmed());
+                println!(
+                    "  #{} [{}]  {} processed, {} flagged, {} dismissed  {}  {}  {}  {}",
+                    r.id,
+                    status_colored,
+                    processed,
+                    flagged,
+                    dismissed,
+                    dur,
+                    model.dimmed(),
+                    cost,
+                    time.dimmed()
+                );
             }
         }
 
         Commands::TriageRunsStats => {
-            let path = DevPortalClient::build_path("/triage_runs/stats", &[
-                ("project_id", pid),
-            ]);
+            let path = DevPortalClient::build_path("/triage_runs/stats", &[("project_id", pid)]);
             let stats: serde_json::Value = client.get(&path, CacheTtl::Short).await?;
             if cli.json {
                 println!("{}", output::render_json(&stats));
             } else {
                 println!("{}\n", "Triage Stats".bold());
-                println!("{}", serde_json::to_string_pretty(&stats).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&stats).unwrap_or_default()
+                );
             }
         }
 
-        Commands::Eval { action } => {
-            match action {
-                EvalAction::Runs { status, branch, mode, limit } => {
-                    let path = DevPortalClient::build_path("/eval/runs", &[
+        Commands::Eval { action } => match action {
+            EvalAction::Runs {
+                status,
+                branch,
+                mode,
+                limit,
+            } => {
+                let path = DevPortalClient::build_path(
+                    "/eval/runs",
+                    &[
                         ("project_id", pid),
                         ("status", status),
                         ("branch", branch),
                         ("mode", mode),
                         ("per_page", Some(limit.to_string())),
-                    ]);
-                    let runs: Vec<EvalRun> = client.get(&path, CacheTtl::Short).await?;
+                    ],
+                );
+                let runs: Vec<EvalRun> = client.get(&path, CacheTtl::Short).await?;
 
-                    if cli.json {
-                        println!("{}", output::render_json(&runs));
-                        return Ok(());
-                    }
-
-                    if runs.is_empty() {
-                        println!("{}", output::empty_hint("eval runs", "Try different filters."));
-                        return Ok(());
-                    }
-
-                    println!("{} ({})\n", "Eval Runs".bold(), runs.len());
-                    for r in &runs {
-                        let name = r.name.as_deref().unwrap_or("(unnamed)");
-                        let branch = r.branch.as_deref().unwrap_or("");
-                        let status = r.status.as_deref().unwrap_or("?");
-                        let status_colored = match status {
-                            "passed" | "completed" => status.green().to_string(),
-                            "failed" => status.red().to_string(),
-                            "running" => status.yellow().to_string(),
-                            _ => status.to_string(),
-                        };
-                        let total = r.total_items.unwrap_or(0);
-                        let passed = r.passed_items.unwrap_or(0);
-                        let failed = r.failed_items.unwrap_or(0);
-                        let score = r.avg_score.map(output::score_color).unwrap_or_default();
-                        let dur = r.duration_seconds.map(|d| format!("{:.0}s", d)).unwrap_or_default();
-                        let model = r.model.as_deref().unwrap_or("");
-
-                        println!("  {} {} [{}]  {}/{}/{} (pass/fail/total)  {}  {}  {}",
-                            name.bold(), branch.dimmed(), status_colored,
-                            passed, failed, total, score, dur, model.dimmed());
-                    }
+                if cli.json {
+                    println!("{}", output::render_json(&runs));
+                    return Ok(());
                 }
 
-                EvalAction::Run { id, failed, full } => {
-                    let path = DevPortalClient::build_path(&format!("/eval/runs/{}", id), &[
-                        ("project_id", pid),
-                    ]);
-                    let detail: EvalRunDetail = client.get(&path, CacheTtl::Medium).await?;
+                if runs.is_empty() {
+                    println!(
+                        "{}",
+                        output::empty_hint("eval runs", "Try different filters.")
+                    );
+                    return Ok(());
+                }
 
-                    if cli.json {
-                        println!("{}", output::render_json(&detail));
-                        return Ok(());
-                    }
+                println!("{} ({})\n", "Eval Runs".bold(), runs.len());
+                for r in &runs {
+                    let name = r.name.as_deref().unwrap_or("(unnamed)");
+                    let branch = r.branch.as_deref().unwrap_or("");
+                    let status = r.status.as_deref().unwrap_or("?");
+                    let status_colored = match status {
+                        "passed" | "completed" => status.green().to_string(),
+                        "failed" => status.red().to_string(),
+                        "running" => status.yellow().to_string(),
+                        _ => status.to_string(),
+                    };
+                    let total = r.total_items.unwrap_or(0);
+                    let passed = r.passed_items.unwrap_or(0);
+                    let failed = r.failed_items.unwrap_or(0);
+                    let score = r.avg_score.map(output::score_color).unwrap_or_default();
+                    let dur = r
+                        .duration_seconds
+                        .map(|d| format!("{:.0}s", d))
+                        .unwrap_or_default();
+                    let model = r.model.as_deref().unwrap_or("");
 
-                    let r = &detail.run;
-                    println!("{} #{}\n", "Eval Run".bold(), id);
-                    println!("  Name:   {}", r.name.as_deref().unwrap_or("—"));
-                    println!("  Branch: {}", r.branch.as_deref().unwrap_or("—"));
-                    println!("  Status: {}", r.status.as_deref().unwrap_or("—"));
-                    println!("  Score:  {}", r.avg_score.map(output::score_color).unwrap_or_default());
-                    println!("  Items:  {} total, {} passed, {} failed",
-                        r.total_items.unwrap_or(0),
-                        r.passed_items.unwrap_or(0),
-                        r.failed_items.unwrap_or(0));
+                    println!(
+                        "  {} {} [{}]  {}/{}/{} (pass/fail/total)  {}  {}  {}",
+                        name.bold(),
+                        branch.dimmed(),
+                        status_colored,
+                        passed,
+                        failed,
+                        total,
+                        score,
+                        dur,
+                        model.dimmed()
+                    );
+                }
+            }
 
-                    if let Some(items) = &detail.items {
-                        let items: Vec<&EvalItem> = if failed {
-                            items.iter().filter(|i| i.status.as_deref() == Some("failed")).collect()
-                        } else {
-                            items.iter().collect()
+            EvalAction::Run { id, failed, full } => {
+                let path = DevPortalClient::build_path(
+                    &format!("/eval/runs/{}", id),
+                    &[("project_id", pid)],
+                );
+                let detail: EvalRunDetail = client.get(&path, CacheTtl::Medium).await?;
+
+                if cli.json {
+                    println!("{}", output::render_json(&detail));
+                    return Ok(());
+                }
+
+                let r = &detail.run;
+                println!("{} #{}\n", "Eval Run".bold(), id);
+                println!("  Name:   {}", r.name.as_deref().unwrap_or("—"));
+                println!("  Branch: {}", r.branch.as_deref().unwrap_or("—"));
+                println!("  Status: {}", r.status.as_deref().unwrap_or("—"));
+                println!(
+                    "  Score:  {}",
+                    r.avg_score.map(output::score_color).unwrap_or_default()
+                );
+                println!(
+                    "  Items:  {} total, {} passed, {} failed",
+                    r.total_items.unwrap_or(0),
+                    r.passed_items.unwrap_or(0),
+                    r.failed_items.unwrap_or(0)
+                );
+
+                if let Some(items) = &detail.items {
+                    let items: Vec<&EvalItem> = if failed {
+                        items
+                            .iter()
+                            .filter(|i| i.status.as_deref() == Some("failed"))
+                            .collect()
+                    } else {
+                        items.iter().collect()
+                    };
+
+                    println!("\n  {}\n", "Items:".bold());
+                    for item in &items {
+                        let suite = item.suite.as_deref().unwrap_or("");
+                        let case = item.case.as_deref().unwrap_or("");
+                        let status = item.status.as_deref().unwrap_or("?");
+                        let status_colored = match status {
+                            "passed" => status.green().to_string(),
+                            "failed" => status.red().to_string(),
+                            _ => status.to_string(),
                         };
+                        let score = item.score.map(output::score_color).unwrap_or_default();
+                        let dur = item
+                            .duration_seconds
+                            .map(|d| format!("{:.0}s", d))
+                            .unwrap_or_default();
 
-                        println!("\n  {}\n", "Items:".bold());
-                        for item in &items {
-                            let suite = item.suite.as_deref().unwrap_or("");
-                            let case = item.case.as_deref().unwrap_or("");
-                            let status = item.status.as_deref().unwrap_or("?");
-                            let status_colored = match status {
-                                "passed" => status.green().to_string(),
-                                "failed" => status.red().to_string(),
-                                _ => status.to_string(),
-                            };
-                            let score = item.score.map(output::score_color).unwrap_or_default();
-                            let dur = item.duration_seconds.map(|d| format!("{:.0}s", d)).unwrap_or_default();
+                        println!(
+                            "  {} / {} [{}]  {}  {}",
+                            suite,
+                            case.bold(),
+                            status_colored,
+                            score,
+                            dur
+                        );
 
-                            println!("  {} / {} [{}]  {}  {}", suite, case.bold(), status_colored, score, dur);
-
-                            if full {
-                                if let Some(err) = &item.error_message {
-                                    println!("    {}: {}", "Error".red(), err);
-                                }
-                                if let Some(log) = &item.conversation_log {
-                                    println!("    {}", output::truncate(log, 200));
-                                }
+                        if full {
+                            if let Some(err) = &item.error_message {
+                                println!("    {}: {}", "Error".red(), err);
                             }
-
-                            if let Some(trace_id) = &item.trace_langfuse_id {
-                                println!("    trace: {}", trace_id.dimmed());
+                            if let Some(log) = &item.conversation_log {
+                                println!("    {}", output::truncate(log, 200));
                             }
+                        }
+
+                        if let Some(trace_id) = &item.trace_langfuse_id {
+                            println!("    trace: {}", trace_id.dimmed());
                         }
                     }
                 }
+            }
 
-                EvalAction::Revisions { branch, mode, limit } => {
-                    let path = DevPortalClient::build_path("/eval/runs/revisions", &[
+            EvalAction::Revisions {
+                branch,
+                mode,
+                limit,
+            } => {
+                let path = DevPortalClient::build_path(
+                    "/eval/runs/revisions",
+                    &[
                         ("project_id", pid),
                         ("branch", branch),
                         ("mode", mode),
                         ("per_page", Some(limit.to_string())),
-                    ]);
-                    let revs: Vec<EvalRevision> = client.get(&path, CacheTtl::Short).await?;
+                    ],
+                );
+                let revs: Vec<EvalRevision> = client.get(&path, CacheTtl::Short).await?;
 
-                    if cli.json {
-                        println!("{}", output::render_json(&revs));
-                        return Ok(());
-                    }
-
-                    if revs.is_empty() {
-                        println!("{}", output::empty_hint("eval revisions", "No revisions found."));
-                        return Ok(());
-                    }
-
-                    println!("{} ({})\n", "Eval Revisions".bold(), revs.len());
-                    for rev in &revs {
-                        let sha = rev.revision.as_deref().unwrap_or("?");
-                        let short_sha = if sha.len() > 7 { &sha[..7] } else { sha };
-                        let msg = rev.message.as_deref().unwrap_or("");
-                        let date = rev.date.as_deref().unwrap_or("");
-                        let score = rev.avg_score.map(output::score_color).unwrap_or_default();
-                        let passed = rev.passed.unwrap_or(0);
-                        let failed = rev.failed.unwrap_or(0);
-                        let runs = rev.runs.unwrap_or(0);
-
-                        println!("  {} {}  {} runs  {}  {}/{} pass/fail  {}",
-                            short_sha.yellow(), output::truncate(msg, 40),
-                            runs, score, passed, failed, date.dimmed());
-                    }
+                if cli.json {
+                    println!("{}", output::render_json(&revs));
+                    return Ok(());
                 }
 
-                EvalAction::Suites { mode, branch } => {
-                    let path = DevPortalClient::build_path("/eval/coverage/suites", &[
-                        ("project_id", pid),
-                        ("mode", mode),
-                        ("branch", branch),
-                    ]);
-                    let suites: Vec<EvalSuite> = client.get(&path, CacheTtl::Short).await?;
-
-                    if cli.json {
-                        println!("{}", output::render_json(&suites));
-                        return Ok(());
-                    }
-
-                    if suites.is_empty() {
-                        println!("{}", output::empty_hint("eval suites", "No suites found."));
-                        return Ok(());
-                    }
-
-                    println!("{} ({})\n", "Eval Suites".bold(), suites.len());
-                    for s in &suites {
-                        let name = s.suite.as_deref().unwrap_or("(unnamed)");
-                        let runs = s.run_count.unwrap_or(0);
-                        let last = s.last_run_date.as_deref().unwrap_or("—");
-                        println!("  {}  {} runs  last: {}", name.bold(), runs, last.dimmed());
-                    }
+                if revs.is_empty() {
+                    println!(
+                        "{}",
+                        output::empty_hint("eval revisions", "No revisions found.")
+                    );
+                    return Ok(());
                 }
 
-                EvalAction::Cases { suite, mode, branch, limit } => {
-                    let path = DevPortalClient::build_path("/eval/coverage/cases", &[
+                println!("{} ({})\n", "Eval Revisions".bold(), revs.len());
+                for rev in &revs {
+                    let sha = rev.revision.as_deref().unwrap_or("?");
+                    let short_sha = if sha.len() > 7 { &sha[..7] } else { sha };
+                    let msg = rev.message.as_deref().unwrap_or("");
+                    let date = rev.date.as_deref().unwrap_or("");
+                    let score = rev.avg_score.map(output::score_color).unwrap_or_default();
+                    let passed = rev.passed.unwrap_or(0);
+                    let failed = rev.failed.unwrap_or(0);
+                    let runs = rev.runs.unwrap_or(0);
+
+                    println!(
+                        "  {} {}  {} runs  {}  {}/{} pass/fail  {}",
+                        short_sha.yellow(),
+                        output::truncate(msg, 40),
+                        runs,
+                        score,
+                        passed,
+                        failed,
+                        date.dimmed()
+                    );
+                }
+            }
+
+            EvalAction::Suites { mode, branch } => {
+                let path = DevPortalClient::build_path(
+                    "/eval/coverage/suites",
+                    &[("project_id", pid), ("mode", mode), ("branch", branch)],
+                );
+                let suites: Vec<EvalSuite> = client.get(&path, CacheTtl::Short).await?;
+
+                if cli.json {
+                    println!("{}", output::render_json(&suites));
+                    return Ok(());
+                }
+
+                if suites.is_empty() {
+                    println!("{}", output::empty_hint("eval suites", "No suites found."));
+                    return Ok(());
+                }
+
+                println!("{} ({})\n", "Eval Suites".bold(), suites.len());
+                for s in &suites {
+                    let name = s.suite.as_deref().unwrap_or("(unnamed)");
+                    let runs = s.run_count.unwrap_or(0);
+                    let last = s.last_run_date.as_deref().unwrap_or("—");
+                    println!("  {}  {} runs  last: {}", name.bold(), runs, last.dimmed());
+                }
+            }
+
+            EvalAction::Cases {
+                suite,
+                mode,
+                branch,
+                limit,
+            } => {
+                let path = DevPortalClient::build_path(
+                    "/eval/coverage/cases",
+                    &[
                         ("project_id", pid),
                         ("suite", suite),
                         ("mode", mode),
                         ("branch", branch),
                         ("per_page", Some(limit.to_string())),
-                    ]);
-                    let cases: Vec<EvalCase> = client.get(&path, CacheTtl::Short).await?;
+                    ],
+                );
+                let cases: Vec<EvalCase> = client.get(&path, CacheTtl::Short).await?;
 
-                    if cli.json {
-                        println!("{}", output::render_json(&cases));
-                        return Ok(());
-                    }
-
-                    if cases.is_empty() {
-                        println!("{}", output::empty_hint("eval cases", "No cases found."));
-                        return Ok(());
-                    }
-
-                    println!("{} ({})\n", "Eval Cases".bold(), cases.len());
-                    for c in &cases {
-                        let suite = c.suite.as_deref().unwrap_or("");
-                        let case = c.case.as_deref().unwrap_or("");
-                        let runs = c.runs.unwrap_or(0);
-                        let rate = c.pass_rate.map(output::score_color).unwrap_or_default();
-                        let last = c.last_run.as_deref().unwrap_or("—");
-
-                        println!("  {} / {}  {} runs  {}  last: {}",
-                            suite, case.bold(), runs, rate, last.dimmed());
-                    }
+                if cli.json {
+                    println!("{}", output::render_json(&cases));
+                    return Ok(());
                 }
 
-                EvalAction::Flaky { last_n, mode, branch } => {
-                    let path = DevPortalClient::build_path("/eval/coverage/flaky", &[
+                if cases.is_empty() {
+                    println!("{}", output::empty_hint("eval cases", "No cases found."));
+                    return Ok(());
+                }
+
+                println!("{} ({})\n", "Eval Cases".bold(), cases.len());
+                for c in &cases {
+                    let suite = c.suite.as_deref().unwrap_or("");
+                    let case = c.case.as_deref().unwrap_or("");
+                    let runs = c.runs.unwrap_or(0);
+                    let rate = c.pass_rate.map(output::score_color).unwrap_or_default();
+                    let last = c.last_run.as_deref().unwrap_or("—");
+
+                    println!(
+                        "  {} / {}  {} runs  {}  last: {}",
+                        suite,
+                        case.bold(),
+                        runs,
+                        rate,
+                        last.dimmed()
+                    );
+                }
+            }
+
+            EvalAction::Flaky {
+                last_n,
+                mode,
+                branch,
+            } => {
+                let path = DevPortalClient::build_path(
+                    "/eval/coverage/flaky",
+                    &[
                         ("project_id", pid),
                         ("last_n", Some(last_n.to_string())),
                         ("mode", mode),
                         ("branch", branch),
-                    ]);
-                    let flaky: Vec<EvalFlaky> = client.get(&path, CacheTtl::Short).await?;
+                    ],
+                );
+                let flaky: Vec<EvalFlaky> = client.get(&path, CacheTtl::Short).await?;
 
-                    if cli.json {
-                        println!("{}", output::render_json(&flaky));
-                        return Ok(());
-                    }
+                if cli.json {
+                    println!("{}", output::render_json(&flaky));
+                    return Ok(());
+                }
 
-                    if flaky.is_empty() {
-                        println!("No flaky tests detected.");
-                        return Ok(());
-                    }
+                if flaky.is_empty() {
+                    println!("No flaky tests detected.");
+                    return Ok(());
+                }
 
-                    println!("{} ({})\n", "Flaky Tests".bold().yellow(), flaky.len());
-                    for f in &flaky {
-                        let suite = f.suite.as_deref().unwrap_or("");
-                        let case = f.case.as_deref().unwrap_or("");
-                        let sample = f.sample_size.unwrap_or(0);
-                        let passed = f.passed.unwrap_or(0);
-                        let rate = f.pass_rate
-                            .map(|r| format!("{:.0}%", r * 100.0).yellow().to_string())
-                            .unwrap_or_default();
+                println!("{} ({})\n", "Flaky Tests".bold().yellow(), flaky.len());
+                for f in &flaky {
+                    let suite = f.suite.as_deref().unwrap_or("");
+                    let case = f.case.as_deref().unwrap_or("");
+                    let sample = f.sample_size.unwrap_or(0);
+                    let passed = f.passed.unwrap_or(0);
+                    let rate = f
+                        .pass_rate
+                        .map(|r| format!("{:.0}%", r * 100.0).yellow().to_string())
+                        .unwrap_or_default();
 
-                        println!("  {} / {}  {}/{} passed ({})  ",
-                            suite, case.bold(), passed, sample, rate);
-                    }
+                    println!(
+                        "  {} / {}  {}/{} passed ({})  ",
+                        suite,
+                        case.bold(),
+                        passed,
+                        sample,
+                        rate
+                    );
                 }
             }
-        }
+        },
 
-        Commands::Search { query, ids_only, time, pagination } => {
+        Commands::Search {
+            query,
+            ids_only,
+            time,
+            pagination,
+        } => {
             // Try devportal search endpoint, fall back to traces with name filter
-            let mut params: Vec<(&str, Option<String>)> = vec![
-                ("project_id", pid.clone()),
-                ("q", Some(query.clone())),
-            ];
+            let mut params: Vec<(&str, Option<String>)> =
+                vec![("project_id", pid.clone()), ("q", Some(query.clone()))];
             time.push_params(&mut params);
             pagination.push_params(&mut params);
             let path = DevPortalClient::build_path("/search", &params);
@@ -1282,13 +1628,24 @@ async fn run() -> tb_lf::error::Result<()> {
                     }
 
                     if resp.data.is_empty() {
-                        println!("{}", output::empty_hint("search results", "Try a different query."));
+                        println!(
+                            "{}",
+                            output::empty_hint("search results", "Try a different query.")
+                        );
                         return Ok(());
                     }
 
-                    println!("{} for \"{}\" ({})\n", "Search".bold(), query, resp.data.len());
+                    println!(
+                        "{} for \"{}\" ({})\n",
+                        "Search".bold(),
+                        query,
+                        resp.data.len()
+                    );
                     for r in &resp.data {
-                        let name = r.trace.display_name.as_deref()
+                        let name = r
+                            .trace
+                            .display_name
+                            .as_deref()
                             .or(r.trace.name.as_deref())
                             .unwrap_or("(unnamed)");
                         let match_type = r.match_type.as_deref().unwrap_or("");
@@ -1301,24 +1658,28 @@ async fn run() -> tb_lf::error::Result<()> {
                         };
                         let time = output::relative_time(&r.trace.timestamp);
 
-                        println!("  {} {} [{}]  {}",
-                            r.trace.langfuse_id.dimmed(), name.bold(),
-                            match_type_colored, time.dimmed());
+                        println!(
+                            "  {} {} [{}]  {}",
+                            r.trace.langfuse_id.dimmed(),
+                            name.bold(),
+                            match_type_colored,
+                            time.dimmed()
+                        );
                         if let Some(ctx) = &r.match_context {
                             println!("    {}", output::truncate(ctx, 80).dimmed());
                         }
                     }
 
-                    if let Some(hint) = output::pagination_hint(pagination.page, pagination.limit, resp.meta.total) {
+                    if let Some(hint) =
+                        output::pagination_hint(pagination.page, pagination.limit, resp.meta.total)
+                    {
                         println!("\n  {}", hint.dimmed());
                     }
                 }
                 Err(tb_lf::error::TbLfError::Api { status: 404, .. }) => {
                     // Search endpoint not deployed — fall back to traces name filter
-                    let mut params: Vec<(&str, Option<String>)> = vec![
-                        ("project_id", pid),
-                        ("name", Some(query.clone())),
-                    ];
+                    let mut params: Vec<(&str, Option<String>)> =
+                        vec![("project_id", pid), ("name", Some(query.clone()))];
                     time.push_params(&mut params);
                     pagination.push_params(&mut params);
                     let path = DevPortalClient::build_path("/traces", &params);
@@ -1337,22 +1698,38 @@ async fn run() -> tb_lf::error::Result<()> {
                     }
 
                     if resp.data.is_empty() {
-                        println!("{}", output::empty_hint("search results", "Try a different query."));
+                        println!(
+                            "{}",
+                            output::empty_hint("search results", "Try a different query.")
+                        );
                         return Ok(());
                     }
 
-                    println!("{} for \"{}\" ({}) {}\n",
-                        "Search".bold(), query, resp.data.len(),
-                        "(name filter fallback)".dimmed());
+                    println!(
+                        "{} for \"{}\" ({}) {}\n",
+                        "Search".bold(),
+                        query,
+                        resp.data.len(),
+                        "(name filter fallback)".dimmed()
+                    );
                     for t in &resp.data {
-                        let name = t.display_name.as_deref()
+                        let name = t
+                            .display_name
+                            .as_deref()
                             .or(t.name.as_deref())
                             .unwrap_or("(unnamed)");
                         let time = output::relative_time(&t.timestamp);
-                        println!("  {} {}  {}", t.langfuse_id.dimmed(), name.bold(), time.dimmed());
+                        println!(
+                            "  {} {}  {}",
+                            t.langfuse_id.dimmed(),
+                            name.bold(),
+                            time.dimmed()
+                        );
                     }
 
-                    if let Some(hint) = output::pagination_hint(pagination.page, pagination.limit, resp.meta.total) {
+                    if let Some(hint) =
+                        output::pagination_hint(pagination.page, pagination.limit, resp.meta.total)
+                    {
                         println!("\n  {}", hint.dimmed());
                     }
                 }
@@ -1361,9 +1738,7 @@ async fn run() -> tb_lf::error::Result<()> {
         }
 
         Commands::Tags { time } => {
-            let mut params: Vec<(&str, Option<String>)> = vec![
-                ("project_id", pid),
-            ];
+            let mut params: Vec<(&str, Option<String>)> = vec![("project_id", pid)];
             time.push_params(&mut params);
             let path = DevPortalClient::build_path("/traces/names", &params);
             let names: Vec<String> = client.get(&path, CacheTtl::Short).await?;
@@ -1374,7 +1749,10 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             if names.is_empty() {
-                println!("{}", output::empty_hint("trace names", "No trace names found."));
+                println!(
+                    "{}",
+                    output::empty_hint("trace names", "No trace names found.")
+                );
                 return Ok(());
             }
 
@@ -1384,13 +1762,20 @@ async fn run() -> tb_lf::error::Result<()> {
             }
         }
 
-        Commands::Features { category, team, status } => {
-            let path = DevPortalClient::build_path("/features", &[
-                ("project_id", pid),
-                ("category", category),
-                ("team", team),
-                ("status", status),
-            ]);
+        Commands::Features {
+            category,
+            team,
+            status,
+        } => {
+            let path = DevPortalClient::build_path(
+                "/features",
+                &[
+                    ("project_id", pid),
+                    ("category", category),
+                    ("team", team),
+                    ("status", status),
+                ],
+            );
             let features: Vec<Feature> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -1411,15 +1796,22 @@ async fn run() -> tb_lf::error::Result<()> {
                 let teams = f.teams.as_ref().map(|t| t.join(", ")).unwrap_or_default();
                 let items = f.queue_item_count.unwrap_or(0);
 
-                println!("  {} [{}] {}  {}  {} queue items",
-                    name.bold(), cat, status.dimmed(), teams.dimmed(), items);
+                println!(
+                    "  {} [{}] {}  {}  {} queue items",
+                    name.bold(),
+                    cat,
+                    status.dimmed(),
+                    teams.dimmed(),
+                    items
+                );
             }
         }
 
         Commands::FeatureItems { id } => {
-            let path = DevPortalClient::build_path(&format!("/features/{}/queue_items", id), &[
-                ("project_id", pid),
-            ]);
+            let path = DevPortalClient::build_path(
+                &format!("/features/{}/queue_items", id),
+                &[("project_id", pid)],
+            );
             let items: Vec<QueueItem> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -1428,18 +1820,32 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             if items.is_empty() {
-                println!("{}", output::empty_hint("queue items for feature", "No items found."));
+                println!(
+                    "{}",
+                    output::empty_hint("queue items for feature", "No items found.")
+                );
                 return Ok(());
             }
 
-            println!("{} #{} ({})\n", "Feature Queue Items".bold(), id, items.len());
+            println!(
+                "{} #{} ({})\n",
+                "Feature Queue Items".bold(),
+                id,
+                items.len()
+            );
             for item in &items {
                 let trace = item.trace_langfuse_id.as_deref().unwrap_or("—");
                 let status = item.status.as_deref().unwrap_or("?");
                 let cat = item.ai_category.as_deref().unwrap_or("");
                 let conf = item.ai_confidence.as_deref().unwrap_or("");
 
-                println!("  {} [{}] {} {}", trace.dimmed(), status, cat, conf.dimmed());
+                println!(
+                    "  {} [{}] {} {}",
+                    trace.dimmed(),
+                    status,
+                    cat,
+                    conf.dimmed()
+                );
             }
         }
 
@@ -1447,7 +1853,10 @@ async fn run() -> tb_lf::error::Result<()> {
             if mcp {
                 // Minimal ~50 token output for hook injection
                 let mut parts = vec![format!("tb-lf v{}", tb_lf::VERSION)];
-                if let Ok(projects) = client.get::<Vec<Project>>("/projects", CacheTtl::Long).await {
+                if let Ok(projects) = client
+                    .get::<Vec<Project>>("/projects", CacheTtl::Long)
+                    .await
+                {
                     let names: Vec<&str> = projects.iter().map(|p| p.name.as_str()).collect();
                     parts.push(format!("projects: {}", names.join(", ")));
                 }
@@ -1459,7 +1868,10 @@ async fn run() -> tb_lf::error::Result<()> {
 
             // Projects
             println!("## Projects\n");
-            match client.get::<Vec<Project>>("/projects", CacheTtl::Long).await {
+            match client
+                .get::<Vec<Project>>("/projects", CacheTtl::Long)
+                .await
+            {
                 Ok(projects) => {
                     for p in &projects {
                         println!("- {} (id: {})", p.name, p.id);
@@ -1471,28 +1883,43 @@ async fn run() -> tb_lf::error::Result<()> {
             // Dashboard KPIs
             if let Some(pid) = &pid {
                 println!("\n## Current KPIs (project {})\n", pid);
-                let path = DevPortalClient::build_path("/dashboard", &[
-                    ("project_id", Some(pid.clone())),
-                ]);
-                if let Ok(dash) = client.get::<serde_json::Value>(&path, CacheTtl::Medium).await
-                    && let Some(kpi) = dash.get("kpi") {
-                        for key in ["sessions", "unique_users", "avg_cost", "satisfaction", "latency_p50"] {
-                            if let Some(obj) = kpi.get(key) {
-                                let val = obj.get("value").and_then(|v| v.as_f64());
-                                if let Some(v) = val {
-                                    println!("- {}: {:.2}", key, v);
-                                }
+                let path =
+                    DevPortalClient::build_path("/dashboard", &[("project_id", Some(pid.clone()))]);
+                if let Ok(dash) = client
+                    .get::<serde_json::Value>(&path, CacheTtl::Medium)
+                    .await
+                    && let Some(kpi) = dash.get("kpi")
+                {
+                    for key in [
+                        "sessions",
+                        "unique_users",
+                        "avg_cost",
+                        "satisfaction",
+                        "latency_p50",
+                    ] {
+                        if let Some(obj) = kpi.get(key) {
+                            let val = obj.get("value").and_then(|v| v.as_f64());
+                            if let Some(v) = val {
+                                println!("- {}: {:.2}", key, v);
                             }
                         }
                     }
+                }
 
                 // Triage stats
                 println!("\n## Triage\n");
-                let path = DevPortalClient::build_path("/triage_runs/stats", &[
-                    ("project_id", Some(pid.clone())),
-                ]);
-                if let Ok(stats) = client.get::<serde_json::Value>(&path, CacheTtl::Medium).await {
-                    println!("{}", serde_json::to_string_pretty(&stats).unwrap_or_default());
+                let path = DevPortalClient::build_path(
+                    "/triage_runs/stats",
+                    &[("project_id", Some(pid.clone()))],
+                );
+                if let Ok(stats) = client
+                    .get::<serde_json::Value>(&path, CacheTtl::Medium)
+                    .await
+                {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&stats).unwrap_or_default()
+                    );
                 }
             }
 
@@ -1512,6 +1939,8 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("- Satisfaction: user thumbs up/down feedback");
             println!("- Triage: flagged=needs review, dismissed=noise, untouched=not yet triaged");
             println!("- Eval pass rate: >=0.90 healthy, <0.70 needs attention");
+
+            toolbox_core::version_check::check("tb-lf", env!("CARGO_PKG_VERSION")).await;
         }
 
         Commands::Human => {
@@ -1563,15 +1992,42 @@ async fn run() -> tb_lf::error::Result<()> {
 
         Commands::Explain { topic } => {
             let topics = [
-                ("entities", "DevPortal tracks AI agent behavior through several entities:\n- Traces: A single agent invocation (user query → agent response)\n- Observations: Sub-steps within a trace (LLM calls, tool calls, spans)\n- Sessions: Groups of traces from the same user conversation\n- Scores: Numeric or categorical evaluations attached to traces\n- Comments: Human annotations on traces or observations"),
-                ("relationships", "Entity relationships:\n- A Session contains multiple Traces\n- A Trace contains multiple Observations and Scores\n- Queue Items reference Traces (triage results)\n- Eval Items reference Traces (eval run results)\n- Features group Queue Items by product feature"),
-                ("traces", "Traces represent a single AI agent invocation:\n- langfuse_id: Unique identifier from Langfuse\n- name: Agent/workflow name (e.g., \"customer-support-agent\")\n- cost_usd: Total LLM cost for this invocation\n- latency_ms: End-to-end duration\n- triage_status: flagged/dismissed/untouched\n- user_query: The user's input\n- agent_response: The agent's output"),
-                ("scores", "Scores are evaluations attached to traces:\n- value: Numeric score (0.0-1.0 typical)\n- source: EVAL (automated), API (programmatic), ANNOTATION (human)\n- Thresholds: >=0.80 good, >=0.50 ok, <0.50 bad\n- Common scores: correctness, helpfulness, safety, relevance"),
-                ("observations", "Observations are sub-steps within a trace:\n- Types: GENERATION (LLM call), SPAN (logical grouping), EVENT (point-in-time)\n- Track: model, tokens, cost, latency per step\n- Useful for debugging which step in an agent pipeline failed or was slow"),
-                ("sessions", "Sessions group traces from the same user conversation:\n- session_id: Identifier linking traces together\n- trace_count: Number of turns in the conversation\n- total_cost_usd: Aggregate cost across all traces\n- user_satisfied: Whether user gave positive feedback"),
-                ("evaluations", "Eval runs test agent behavior systematically:\n- Runs execute test suites against the agent\n- Items are individual test cases with pass/fail/score\n- Revisions track score trends across git commits\n- Coverage shows which suites/cases exist and their reliability\n- Flaky detection identifies inconsistent test cases"),
-                ("triage", "Triage automates trace review:\n- Triage runs scan recent traces using AI classification\n- Queue items are the results: flagged or dismissed\n- Categories: bug, feature_request, unknown\n- Confidence: high, medium, low\n- Status: pending_review → confirmed/dismissed by human"),
-                ("features", "Features group related queue items:\n- Track which product features generate user feedback\n- Categories and teams help route items\n- Queue item count shows volume per feature"),
+                (
+                    "entities",
+                    "DevPortal tracks AI agent behavior through several entities:\n- Traces: A single agent invocation (user query → agent response)\n- Observations: Sub-steps within a trace (LLM calls, tool calls, spans)\n- Sessions: Groups of traces from the same user conversation\n- Scores: Numeric or categorical evaluations attached to traces\n- Comments: Human annotations on traces or observations",
+                ),
+                (
+                    "relationships",
+                    "Entity relationships:\n- A Session contains multiple Traces\n- A Trace contains multiple Observations and Scores\n- Queue Items reference Traces (triage results)\n- Eval Items reference Traces (eval run results)\n- Features group Queue Items by product feature",
+                ),
+                (
+                    "traces",
+                    "Traces represent a single AI agent invocation:\n- langfuse_id: Unique identifier from Langfuse\n- name: Agent/workflow name (e.g., \"customer-support-agent\")\n- cost_usd: Total LLM cost for this invocation\n- latency_ms: End-to-end duration\n- triage_status: flagged/dismissed/untouched\n- user_query: The user's input\n- agent_response: The agent's output",
+                ),
+                (
+                    "scores",
+                    "Scores are evaluations attached to traces:\n- value: Numeric score (0.0-1.0 typical)\n- source: EVAL (automated), API (programmatic), ANNOTATION (human)\n- Thresholds: >=0.80 good, >=0.50 ok, <0.50 bad\n- Common scores: correctness, helpfulness, safety, relevance",
+                ),
+                (
+                    "observations",
+                    "Observations are sub-steps within a trace:\n- Types: GENERATION (LLM call), SPAN (logical grouping), EVENT (point-in-time)\n- Track: model, tokens, cost, latency per step\n- Useful for debugging which step in an agent pipeline failed or was slow",
+                ),
+                (
+                    "sessions",
+                    "Sessions group traces from the same user conversation:\n- session_id: Identifier linking traces together\n- trace_count: Number of turns in the conversation\n- total_cost_usd: Aggregate cost across all traces\n- user_satisfied: Whether user gave positive feedback",
+                ),
+                (
+                    "evaluations",
+                    "Eval runs test agent behavior systematically:\n- Runs execute test suites against the agent\n- Items are individual test cases with pass/fail/score\n- Revisions track score trends across git commits\n- Coverage shows which suites/cases exist and their reliability\n- Flaky detection identifies inconsistent test cases",
+                ),
+                (
+                    "triage",
+                    "Triage automates trace review:\n- Triage runs scan recent traces using AI classification\n- Queue items are the results: flagged or dismissed\n- Categories: bug, feature_request, unknown\n- Confidence: high, medium, low\n- Status: pending_review → confirmed/dismissed by human",
+                ),
+                (
+                    "features",
+                    "Features group related queue items:\n- Track which product features generate user feedback\n- Categories and teams help route items\n- Queue item count shows volume per feature",
+                ),
             ];
 
             if cli.json {
@@ -1580,7 +2036,10 @@ async fn run() -> tb_lf::error::Result<()> {
                     if let Some(content) = map.get(t.as_str()) {
                         println!("{}", serde_json::json!({"topic": t, "content": content}));
                     } else {
-                        println!("{}", serde_json::json!({"error": "unknown topic", "available": topics.iter().map(|(k,_)| k).collect::<Vec<_>>()}));
+                        println!(
+                            "{}",
+                            serde_json::json!({"error": "unknown topic", "available": topics.iter().map(|(k,_)| k).collect::<Vec<_>>()})
+                        );
                     }
                 } else {
                     println!("{}", serde_json::to_string_pretty(&map).unwrap());
@@ -1603,7 +2062,10 @@ async fn run() -> tb_lf::error::Result<()> {
                 for (k, _) in &topics {
                     println!("  {}", k);
                 }
-                println!("\n  {}", "Run `tb-lf explain <topic>` for details.".dimmed());
+                println!(
+                    "\n  {}",
+                    "Run `tb-lf explain <topic>` for details.".dimmed()
+                );
             }
         }
 
@@ -1620,10 +2082,14 @@ async fn run() -> tb_lf::error::Result<()> {
 
             // API connectivity
             print!("  {:<10} ", "API:");
-            let test_path = DevPortalClient::build_path("/dashboard", &[
-                ("project_id", project_id.map(|id| id.to_string())),
-            ]);
-            match client.get::<serde_json::Value>(&test_path, CacheTtl::Short).await {
+            let test_path = DevPortalClient::build_path(
+                "/dashboard",
+                &[("project_id", project_id.map(|id| id.to_string()))],
+            );
+            match client
+                .get::<serde_json::Value>(&test_path, CacheTtl::Short)
+                .await
+            {
                 Ok(_) => println!("{}", "OK".green()),
                 Err(e) => println!("{} — {}", "FAIL".red(), e),
             }
@@ -1653,7 +2119,10 @@ fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()> {
             println!("{}", "DevPortal Configuration".bold());
             println!("  URL:     {}", config.url);
             println!("  Token:   {}", config.masked_token());
-            println!("  Project: {}", config.project.as_deref().unwrap_or("(none)"));
+            println!(
+                "  Project: {}",
+                config.project.as_deref().unwrap_or("(none)")
+            );
         }
         Some(ConfigAction::Set { key, value }) => {
             let path = Config::config_path()?;
@@ -1669,9 +2138,10 @@ fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()> {
                     table.insert(key.clone(), toml::Value::String(value.clone()));
                 }
                 _ => {
-                    return Err(tb_lf::error::TbLfError::Config(
-                        format!("Unknown config key '{}'. Valid keys: url, token, project", key),
-                    ));
+                    return Err(tb_lf::error::TbLfError::Config(format!(
+                        "Unknown config key '{}'. Valid keys: url, token, project",
+                        key
+                    )));
                 }
             }
 

@@ -222,14 +222,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => {
             let msg = e.to_string();
             if msg.contains("--project")
-                && let Ok(config) = Config::load() {
-                    let names: Vec<_> = config.projects.keys().map(|s| s.as_str()).collect();
-                    if !names.is_empty() {
-                        eprintln!("{e}");
-                        eprintln!("Available projects: {}\n", names.join(", "));
-                        std::process::exit(2);
-                    }
+                && let Ok(config) = Config::load()
+            {
+                let names: Vec<_> = config.projects.keys().map(|s| s.as_str()).collect();
+                if !names.is_empty() {
+                    eprintln!("{e}");
+                    eprintln!("Available projects: {}\n", names.join(", "));
+                    std::process::exit(2);
                 }
+            }
             e.exit();
         }
     };
@@ -243,7 +244,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         toolbox_core::skill::run(&skill, action).map_err(|e| e.to_string())?;
         return Ok(());
     }
-    if let Commands::Config { action: ConfigAction::Init { token, org } } = &cli.command {
+    if let Commands::Config {
+        action: ConfigAction::Init { token, org },
+    } = &cli.command
+    {
         commands::config_cmd::init(token, org)?;
         return Ok(());
     }
@@ -253,8 +257,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match &cli.command {
         Commands::Errors {
-            project, status, severity, since, stage, class,
-            sort, limit, json, long,
+            project,
+            status,
+            severity,
+            since,
+            stage,
+            class,
+            sort,
+            limit,
+            json,
+            long,
         } => {
             commands::errors::run(
                 &client,
@@ -274,24 +286,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::Prime { project } => {
             commands::prime::run(&client, &config, project.as_deref()).await?;
+            toolbox_core::version_check::check("tb-bug", env!("CARGO_PKG_VERSION")).await;
         }
         Commands::Projects { json } => {
             commands::projects::run(&client, &config, *json).await?;
         }
-        Commands::Events { project, error_id, limit, json } => {
+        Commands::Events {
+            project,
+            error_id,
+            limit,
+            json,
+        } => {
             commands::events::run(&client, &config, project, error_id, *limit, *json).await?;
         }
-        Commands::Fetch { target } => {
-            match target {
-                FetchTarget::Error { project, error_id } => {
-                    commands::fetch::run_error(&client, &config, project, error_id).await?;
-                }
-                FetchTarget::Event { project, event_id } => {
-                    commands::fetch::run_event(&client, &config, project, event_id).await?;
-                }
+        Commands::Fetch { target } => match target {
+            FetchTarget::Error { project, error_id } => {
+                commands::fetch::run_error(&client, &config, project, error_id).await?;
             }
-        }
-        Commands::Releases { project, limit, json } => {
+            FetchTarget::Event { project, event_id } => {
+                commands::fetch::run_event(&client, &config, project, event_id).await?;
+            }
+        },
+        Commands::Releases {
+            project,
+            limit,
+            json,
+        } => {
             commands::releases::run(&client, &config, project, *limit, *json).await?;
         }
         Commands::Trends { project, json } => {
@@ -300,17 +320,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Stability { project, json } => {
             commands::stability::run(&client, &config, project, *json).await?;
         }
-        Commands::Report { kind } => {
-            match kind {
-                ReportKind::Dashboard { project } => {
-                    commands::report::run_dashboard(&client, &config, project).await?;
-                }
-                ReportKind::Open { project, limit, json } => {
-                    commands::report::run_open(&client, &config, project, *limit, *json).await?;
-                }
+        Commands::Report { kind } => match kind {
+            ReportKind::Dashboard { project } => {
+                commands::report::run_dashboard(&client, &config, project).await?;
             }
-        }
-        Commands::Search { project, query, limit, json } => {
+            ReportKind::Open {
+                project,
+                limit,
+                json,
+            } => {
+                commands::report::run_open(&client, &config, project, *limit, *json).await?;
+            }
+        },
+        Commands::Search {
+            project,
+            query,
+            limit,
+            json,
+        } => {
             commands::search::run(&client, &config, project, query, *limit, *json).await?;
         }
         Commands::Doctor => {
@@ -321,22 +348,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Cache cleared.");
         }
         Commands::Skill { .. } => unreachable!(),
-        Commands::Config { action } => {
-            match action {
-                ConfigAction::Init { .. } => unreachable!(),
-                ConfigAction::Show => {
-                    commands::config_cmd::show(&config);
-                }
-                ConfigAction::AddProject { name, project_id } => {
-                    let mut cfg = Config::load()?;
-                    commands::config_cmd::add_project(&mut cfg, name, project_id)?;
-                }
-                ConfigAction::RemoveProject { name } => {
-                    let mut cfg = Config::load()?;
-                    commands::config_cmd::remove_project(&mut cfg, name)?;
-                }
+        Commands::Config { action } => match action {
+            ConfigAction::Init { .. } => unreachable!(),
+            ConfigAction::Show => {
+                commands::config_cmd::show(&config);
             }
-        }
+            ConfigAction::AddProject { name, project_id } => {
+                let mut cfg = Config::load()?;
+                commands::config_cmd::add_project(&mut cfg, name, project_id)?;
+            }
+            ConfigAction::RemoveProject { name } => {
+                let mut cfg = Config::load()?;
+                commands::config_cmd::remove_project(&mut cfg, name)?;
+            }
+        },
     }
 
     Ok(())

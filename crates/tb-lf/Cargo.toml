@@ -12,7 +12,7 @@ path = "src/main.rs"
 doctest = false
 
 [dependencies]
-toolbox-core = { workspace = true, features = ["cache"] }
+toolbox-core = { workspace = true, features = ["cache", "version-check"] }
 clap.workspace = true
 tokio.workspace = true
 reqwest.workspace = true

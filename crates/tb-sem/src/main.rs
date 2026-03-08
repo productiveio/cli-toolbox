@@ -13,7 +13,11 @@ fn parse_date_to_timestamp(s: &str) -> Option<i64> {
 }
 
 #[derive(Parser)]
-#[command(name = "tb-sem", version, about = "Semaphore CI CLI for triage and investigation")]
+#[command(
+    name = "tb-sem",
+    version,
+    about = "Semaphore CI CLI for triage and investigation"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -282,43 +286,130 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = SemaphoreClient::new(&config);
 
     match cli.command {
-        Commands::Runs { project, branch, failed, limit, after, before, json, utc } => {
+        Commands::Runs {
+            project,
+            branch,
+            failed,
+            limit,
+            after,
+            before,
+            json,
+            utc,
+        } => {
             let after_ts = after.as_deref().and_then(parse_date_to_timestamp);
             let before_ts = before.as_deref().and_then(parse_date_to_timestamp);
-            commands::runs::run(&client, &config, &project, branch.as_deref(), failed, limit, json, utc, after_ts, before_ts).await?;
+            commands::runs::run(
+                &client,
+                &config,
+                &project,
+                branch.as_deref(),
+                failed,
+                limit,
+                json,
+                utc,
+                after_ts,
+                before_ts,
+            )
+            .await?;
         }
-        Commands::Pipeline { pipeline_id, jobs, json, utc } => {
+        Commands::Pipeline {
+            pipeline_id,
+            jobs,
+            json,
+            utc,
+        } => {
             commands::pipeline::run(&client, &config, &pipeline_id, jobs, json, utc).await?;
         }
         Commands::Failures { pipeline_id, json } => {
             commands::failures::run(&client, &pipeline_id, json).await?;
         }
-        Commands::Logs { job_id, grep, tail, head, summary, errors, raw, json } => {
-            commands::logs::run(&client, &job_id, grep.as_deref(), tail, head, summary, errors, raw, json).await?;
+        Commands::Logs {
+            job_id,
+            grep,
+            tail,
+            head,
+            summary,
+            errors,
+            raw,
+            json,
+        } => {
+            commands::logs::run(
+                &client,
+                &job_id,
+                grep.as_deref(),
+                tail,
+                head,
+                summary,
+                errors,
+                raw,
+                json,
+            )
+            .await?;
         }
-        Commands::Deploys { project, around, json, utc } => {
-            commands::deploys::run(&client, &config, &project, around.as_deref(), json, utc).await?;
+        Commands::Deploys {
+            project,
+            around,
+            json,
+            utc,
+        } => {
+            commands::deploys::run(&client, &config, &project, around.as_deref(), json, utc)
+                .await?;
         }
-        Commands::Triage { pipeline_id, json, utc } => {
+        Commands::Triage {
+            pipeline_id,
+            json,
+            utc,
+        } => {
             commands::triage::run(&client, &config, pipeline_id.as_deref(), json, utc).await?;
         }
-        Commands::Tests { pipeline_id, failed, retried, summary, json } => {
+        Commands::Tests {
+            pipeline_id,
+            failed,
+            retried,
+            summary,
+            json,
+        } => {
             commands::tests::run(&client, &pipeline_id, failed, retried, summary, json).await?;
         }
-        Commands::Promotions { pipeline_id, name, json, utc } => {
-            commands::promotions::run(&client, &config, &pipeline_id, name.as_deref(), json, utc).await?;
+        Commands::Promotions {
+            pipeline_id,
+            name,
+            json,
+            utc,
+        } => {
+            commands::promotions::run(&client, &config, &pipeline_id, name.as_deref(), json, utc)
+                .await?;
         }
-        Commands::Compare { pipeline_id_1, pipeline_id_2, json, utc } => {
-            commands::compare::run(&client, &config, &pipeline_id_1, &pipeline_id_2, json, utc).await?;
+        Commands::Compare {
+            pipeline_id_1,
+            pipeline_id_2,
+            json,
+            utc,
+        } => {
+            commands::compare::run(&client, &config, &pipeline_id_1, &pipeline_id_2, json, utc)
+                .await?;
         }
-        Commands::History { test_name, project, limit, json, utc } => {
-            commands::history::run(&client, &config, &test_name, &project, limit, json, utc).await?;
+        Commands::History {
+            test_name,
+            project,
+            limit,
+            json,
+            utc,
+        } => {
+            commands::history::run(&client, &config, &test_name, &project, limit, json, utc)
+                .await?;
         }
-        Commands::Flaky { project, limit, json, utc } => {
+        Commands::Flaky {
+            project,
+            limit,
+            json,
+            utc,
+        } => {
             commands::flaky::run(&client, &config, &project, limit, json, utc).await?;
         }
         Commands::Prime { mcp, utc } => {
             commands::prime::run(&client, &config, mcp, utc).await?;
+            toolbox_core::version_check::check("tb-sem", env!("CARGO_PKG_VERSION")).await;
         }
         Commands::Doctor => {
             commands::doctor::run(&config).await?;

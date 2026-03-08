@@ -10,6 +10,7 @@ doctest = false
 [features]
 default = []
 cache = []
+version-check = []
 
 [dependencies]
 clap.workspace = true

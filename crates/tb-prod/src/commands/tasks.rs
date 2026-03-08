@@ -16,6 +16,7 @@ struct TaskRow {
     updated: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     client: &ProductiveClient,
     config: &Config,
@@ -79,10 +80,11 @@ pub async fn run(
     // Assignee filter: explicit override > default (when no task_list/search)
     if let Some(aid) = assignee_override {
         query = query.filter_array("assignee_id", aid);
-    } else if task_list_id.is_none() && search.is_none() {
-        if let Some(ref pid) = config.person_id {
-            query = query.filter_array("assignee_id", pid);
-        }
+    } else if task_list_id.is_none()
+        && search.is_none()
+        && let Some(ref pid) = config.person_id
+    {
+        query = query.filter_array("assignee_id", pid);
     }
 
     let resp = client.list_tasks(&query).await?;
@@ -99,13 +101,7 @@ pub async fn run(
                 .map(|r| r.attr_str("name").to_string())
                 .unwrap_or_default();
             let assignee_name = find_included(&resp.included, "people", assignee_id)
-                .map(|r| {
-                    format!(
-                        "{} {}",
-                        r.attr_str("first_name"),
-                        r.attr_str("last_name")
-                    )
-                })
+                .map(|r| format!("{} {}", r.attr_str("first_name"), r.attr_str("last_name")))
                 .unwrap_or_default();
             let project_name = find_included(&resp.included, "projects", project_id)
                 .map(|r| r.attr_str("name").to_string())

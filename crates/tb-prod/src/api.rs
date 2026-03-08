@@ -20,7 +20,10 @@ pub struct Resource {
 
 impl Resource {
     pub fn attr_str(&self, key: &str) -> &str {
-        self.attributes.get(key).and_then(|v| v.as_str()).unwrap_or("")
+        self.attributes
+            .get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
     }
 
     pub fn attr_i64(&self, key: &str) -> Option<i64> {
@@ -28,7 +31,10 @@ impl Resource {
     }
 
     pub fn attr_bool(&self, key: &str) -> bool {
-        self.attributes.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
+        self.attributes
+            .get(key)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
     }
 
     pub fn relationship_id(&self, name: &str) -> Option<&str> {
@@ -61,6 +67,7 @@ pub struct JsonApiSingleResponse {
 
 // --- Query builder for Productive's indexed filter syntax ---
 
+#[derive(Default)]
 pub struct Query {
     filters: Vec<(String, String)>,
     params: Vec<(String, String)>,
@@ -68,21 +75,20 @@ pub struct Query {
 
 impl Query {
     pub fn new() -> Self {
-        Self {
-            filters: Vec::new(),
-            params: Vec::new(),
-        }
+        Self::default()
     }
 
     /// Add a simple filter: filter[field]=value
     pub fn filter(mut self, field: &str, value: &str) -> Self {
-        self.filters.push((format!("filter[{}]", field), value.to_string()));
+        self.filters
+            .push((format!("filter[{}]", field), value.to_string()));
         self
     }
 
     /// Add an array filter: filter[field][]=value
     pub fn filter_array(mut self, field: &str, value: &str) -> Self {
-        self.filters.push((format!("filter[{}][]", field), value.to_string()));
+        self.filters
+            .push((format!("filter[{}][]", field), value.to_string()));
         self
     }
 
@@ -98,12 +104,14 @@ impl Query {
 
     /// Set the logical operator for indexed filters.
     pub fn filter_op(mut self, op: &str) -> Self {
-        self.filters.push(("filter[$op]".to_string(), op.to_string()));
+        self.filters
+            .push(("filter[$op]".to_string(), op.to_string()));
         self
     }
 
     pub fn include(mut self, includes: &str) -> Self {
-        self.params.push(("include".to_string(), includes.to_string()));
+        self.params
+            .push(("include".to_string(), includes.to_string()));
         self
     }
 
@@ -113,8 +121,10 @@ impl Query {
     }
 
     pub fn page(mut self, number: usize, size: usize) -> Self {
-        self.params.push(("page[number]".to_string(), number.to_string()));
-        self.params.push(("page[size]".to_string(), size.to_string()));
+        self.params
+            .push(("page[number]".to_string(), number.to_string()));
+        self.params
+            .push(("page[size]".to_string(), size.to_string()));
         self
     }
 
@@ -171,7 +181,10 @@ impl ProductiveClient {
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(TbProdError::Api { status, message: body });
+            return Err(TbProdError::Api {
+                status,
+                message: body,
+            });
         }
         Ok(resp.json().await?)
     }
@@ -197,7 +210,10 @@ impl ProductiveClient {
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(TbProdError::Api { status, message: body });
+            return Err(TbProdError::Api {
+                status,
+                message: body,
+            });
         }
         Ok(resp.json().await?)
     }
@@ -230,7 +246,10 @@ impl ProductiveClient {
             let status = resp.status().as_u16();
             if !resp.status().is_success() {
                 let body = resp.text().await.unwrap_or_default();
-                return Err(TbProdError::Api { status, message: body });
+                return Err(TbProdError::Api {
+                    status,
+                    message: body,
+                });
             }
 
             let page: JsonApiResponse = resp.json().await?;
@@ -257,7 +276,11 @@ impl ProductiveClient {
     }
 
     /// POST a JSONAPI resource. Returns the created resource.
-    pub async fn create(&self, path: &str, body: &serde_json::Value) -> Result<JsonApiSingleResponse> {
+    pub async fn create(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<JsonApiSingleResponse> {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .request(reqwest::Method::POST, &url)
@@ -267,13 +290,20 @@ impl ProductiveClient {
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(TbProdError::Api { status, message: body });
+            return Err(TbProdError::Api {
+                status,
+                message: body,
+            });
         }
         Ok(resp.json().await?)
     }
 
     /// PATCH a JSONAPI resource. Returns the updated resource.
-    pub async fn update(&self, path: &str, body: &serde_json::Value) -> Result<JsonApiSingleResponse> {
+    pub async fn update(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<JsonApiSingleResponse> {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .request(reqwest::Method::PATCH, &url)
@@ -283,7 +313,10 @@ impl ProductiveClient {
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(TbProdError::Api { status, message: body });
+            return Err(TbProdError::Api {
+                status,
+                message: body,
+            });
         }
         Ok(resp.json().await?)
     }
@@ -321,16 +354,26 @@ impl ProductiveClient {
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(TbProdError::Api { status, message: body });
+            return Err(TbProdError::Api {
+                status,
+                message: body,
+            });
         }
         Ok(resp.json().await?)
     }
 
-    pub async fn update_task(&self, id: &str, payload: &serde_json::Value) -> Result<JsonApiSingleResponse> {
+    pub async fn update_task(
+        &self,
+        id: &str,
+        payload: &serde_json::Value,
+    ) -> Result<JsonApiSingleResponse> {
         self.update(&format!("/tasks/{}", id), payload).await
     }
 
-    pub async fn create_comment(&self, payload: &serde_json::Value) -> Result<JsonApiSingleResponse> {
+    pub async fn create_comment(
+        &self,
+        payload: &serde_json::Value,
+    ) -> Result<JsonApiSingleResponse> {
         self.create("/comments", payload).await
     }
 
