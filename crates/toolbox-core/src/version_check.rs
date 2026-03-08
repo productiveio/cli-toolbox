@@ -55,13 +55,19 @@ pub fn check_cached(tool_name: &str, current_version: &str) -> Option<String> {
 pub fn format_version_line(tool_name: &str, current: &str, latest: Option<&str>) -> String {
     match latest {
         Some(v) if is_newer(v, current) => {
-            format!("{} {} (latest: {} \u{2014} upgrade available)", tool_name, current, v)
+            format!(
+                "{} {} (latest: {} \u{2014} upgrade available)",
+                tool_name, current, v
+            )
         }
         Some(_) => {
             format!("{} {} (latest)", tool_name, current)
         }
         None => {
-            format!("{} {} (install gh to check for updates)", tool_name, current)
+            format!(
+                "{} {} (install gh to check for updates)",
+                tool_name, current
+            )
         }
     }
 }
@@ -70,7 +76,10 @@ pub fn format_version_line(tool_name: &str, current: &str, latest: Option<&str>)
 /// Always fetches fresh and caches the result.
 pub fn print_version(tool_name: &str, current_version: &str) {
     let latest = fetch_latest_version(tool_name);
-    println!("{}", format_version_line(tool_name, current_version, latest.as_deref()));
+    println!(
+        "{}",
+        format_version_line(tool_name, current_version, latest.as_deref())
+    );
 }
 
 /// Print an update message to stderr if a cached check shows a newer version.
@@ -169,7 +178,10 @@ mod tests {
     #[test]
     fn test_format_version_line_upgrade() {
         let line = format_version_line("tb-prod", "0.1.4", Some("0.1.5"));
-        assert_eq!(line, "tb-prod 0.1.4 (latest: 0.1.5 \u{2014} upgrade available)");
+        assert_eq!(
+            line,
+            "tb-prod 0.1.4 (latest: 0.1.5 \u{2014} upgrade available)"
+        );
     }
 
     #[test]

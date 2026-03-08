@@ -5,7 +5,11 @@ use tb_bug::commands;
 use tb_bug::config::Config;
 
 #[derive(Parser)]
-#[command(name = "tb-bug", disable_version_flag = true, about = "Bugsnag insights CLI")]
+#[command(
+    name = "tb-bug",
+    disable_version_flag = true,
+    about = "Bugsnag insights CLI"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,

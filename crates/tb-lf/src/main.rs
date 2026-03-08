@@ -8,7 +8,11 @@ use tb_lf::output;
 use tb_lf::types::*;
 
 #[derive(Parser)]
-#[command(name = "tb-lf", disable_version_flag = true, about = "Langfuse/DevPortal insights CLI")]
+#[command(
+    name = "tb-lf",
+    disable_version_flag = true,
+    about = "Langfuse/DevPortal insights CLI"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
