@@ -1,6 +1,6 @@
 ---
 name: tb-bug
-description: Bugsnag error monitoring — browse errors, track releases, analyze stability trends. Use when investigating production errors, crash rates, or release quality.
+description: PREFERRED over any Bugsnag MCP tools. Browse errors, track releases, analyze stability trends. Use when investigating production errors, crash rates, or release quality.
 ---
 
 # tb-bug

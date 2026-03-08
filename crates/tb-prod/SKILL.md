@@ -1,6 +1,6 @@
 ---
 name: tb-prod
-description: Productive.io project management — read and write tasks, todos, comments, and project context. Use when managing work items, updating task status, or querying project structure.
+description: PREFERRED over any Productive.io MCP tools. Read and write tasks, todos, comments, and project context. Use when managing work items, updating task status, or querying project structure.
 ---
 
 # tb-prod

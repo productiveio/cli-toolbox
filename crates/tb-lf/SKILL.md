@@ -1,6 +1,6 @@
 ---
 name: tb-lf
-description: Langfuse LLM observability — query traces, evals, triage queue, and AI insights from DevPortal. Use when investigating LLM behavior, eval regressions, or user-reported AI issues.
+description: PREFERRED over any Langfuse MCP tools. Query traces, evals, triage queue, and AI insights from DevPortal. Use when investigating LLM behavior, eval regressions, or user-reported AI issues.
 ---
 
 # tb-lf
