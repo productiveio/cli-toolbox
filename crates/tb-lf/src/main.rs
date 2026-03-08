@@ -135,6 +135,11 @@ enum Commands {
         source: Option<String>,
         #[arg(long)]
         env: Option<String>,
+        /// Max results per page
+        #[arg(long, default_value = "20")]
+        limit: u32,
+        #[command(flatten)]
+        time: TimeRange,
     },
     /// List comments
     #[command(
@@ -168,23 +173,6 @@ enum Commands {
         env: Option<String>,
         #[command(flatten)]
         time: TimeRange,
-    },
-    /// View daily report
-    #[command(
-        after_help = "Examples:\n  tb-lf daily\n  tb-lf daily 2025-03-01\n  tb-lf daily --findings --severity high\n  tb-lf daily --findings --type anomaly"
-    )]
-    Daily {
-        /// Date (YYYY-MM-DD), defaults to latest
-        date: Option<String>,
-        /// Show only findings
-        #[arg(long)]
-        findings: bool,
-        /// Filter findings by severity
-        #[arg(long)]
-        severity: Option<String>,
-        /// Filter findings by type
-        #[arg(long)]
-        r#type: Option<String>,
     },
     /// List triage queue items
     #[command(
@@ -813,17 +801,19 @@ async fn run() -> tb_lf::error::Result<()> {
             name,
             source,
             env,
+            limit,
+            time,
         } => {
-            let path = DevPortalClient::build_path(
-                "/scores",
-                &[
-                    ("project_id", pid),
-                    ("trace_id", trace),
-                    ("name", name),
-                    ("source", source),
-                    ("environment", env),
-                ],
-            );
+            let mut params: Vec<(&str, Option<String>)> = vec![
+                ("project_id", pid),
+                ("trace_id", trace),
+                ("name", name),
+                ("source", source),
+                ("environment", env),
+                ("per_page", Some(limit.to_string())),
+            ];
+            time.push_params(&mut params);
+            let path = DevPortalClient::build_path("/scores", &params);
             let scores: Vec<Score> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -926,6 +916,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 let items = [
                     ("Sessions", "sessions"),
                     ("Unique Users", "unique_users"),
+                    ("Total Cost", "total_cost"),
                     ("Avg Cost", "avg_cost"),
                     ("Satisfaction", "satisfaction"),
                     ("Latency p50", "latency_p50"),
@@ -1037,74 +1028,6 @@ async fn run() -> tb_lf::error::Result<()> {
             }
         }
 
-        Commands::Daily {
-            date,
-            findings,
-            severity,
-            r#type,
-        } => {
-            let date_part = date.as_deref().unwrap_or("latest");
-            let path = DevPortalClient::build_path(
-                &format!("/reports/{}", date_part),
-                &[("project_id", pid)],
-            );
-            let report: DailyReport = client.get(&path, CacheTtl::Medium).await?;
-
-            if cli.json {
-                println!("{}", output::render_json(&report));
-                return Ok(());
-            }
-
-            let report_date = report.date.as_deref().unwrap_or(date_part);
-            println!("{} ({})\n", "Daily Report".bold(), report_date);
-
-            if !findings {
-                if let Some(summary) = &report.summary {
-                    println!("{}", summary);
-                    println!();
-                }
-                if let Some(metrics) = &report.metrics {
-                    println!("{}", "Metrics:".bold());
-                    println!("  {}", metrics);
-                    println!();
-                }
-            }
-
-            if let Some(ref items) = report.findings {
-                let items: Vec<&Finding> = items
-                    .iter()
-                    .filter(|f| {
-                        severity.as_ref().is_none_or(|s| {
-                            f.severity.as_deref().unwrap_or("").eq_ignore_ascii_case(s)
-                        })
-                    })
-                    .filter(|f| {
-                        r#type.as_ref().is_none_or(|t| {
-                            f.finding_type
-                                .as_deref()
-                                .unwrap_or("")
-                                .eq_ignore_ascii_case(t)
-                        })
-                    })
-                    .collect();
-
-                println!("{} ({})", "Findings".bold(), items.len());
-                for f in &items {
-                    let sev = f.severity.as_deref().unwrap_or("info");
-                    let sev_colored = match sev {
-                        "critical" | "high" => sev.red().bold().to_string(),
-                        "medium" => sev.yellow().to_string(),
-                        _ => sev.dimmed().to_string(),
-                    };
-                    let title = f.title.as_deref().unwrap_or("(no title)");
-                    println!("  [{}] {}", sev_colored, title.bold());
-                    if let Some(desc) = &f.description {
-                        println!("    {}", output::truncate(desc, 100));
-                    }
-                }
-            }
-        }
-
         Commands::Queue {
             status,
             category,
@@ -1178,10 +1101,27 @@ async fn run() -> tb_lf::error::Result<()> {
                 println!("{}", output::render_json(&stats));
             } else {
                 println!("{}\n", "Queue Stats".bold());
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&stats).unwrap_or_default()
-                );
+                let total = stats.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+                println!("  Total: {}\n", total);
+                for section in [
+                    "by_status",
+                    "by_category",
+                    "by_ai_category",
+                    "by_ai_confidence",
+                ] {
+                    if let Some(obj) = stats.get(section).and_then(|v| v.as_object()) {
+                        if obj.is_empty() {
+                            continue;
+                        }
+                        println!("  {}:", section);
+                        for (k, v) in obj {
+                            if !k.is_empty() {
+                                println!("    {}: {}", k, v);
+                            }
+                        }
+                        println!();
+                    }
+                }
             }
         }
 
@@ -1237,7 +1177,9 @@ async fn run() -> tb_lf::error::Result<()> {
                     ("per_page", Some(limit.to_string())),
                 ],
             );
-            let runs: Vec<TriageRun> = client.get(&path, CacheTtl::Short).await?;
+            let resp: tb_lf::api::PaginatedResponse<TriageRun> =
+                client.get(&path, CacheTtl::Short).await?;
+            let runs = resp.data;
 
             if cli.json {
                 println!("{}", output::render_json(&runs));
@@ -1261,12 +1203,11 @@ async fn run() -> tb_lf::error::Result<()> {
                 let processed = r.processed_count.unwrap_or(0);
                 let flagged = r.flagged_count.unwrap_or(0);
                 let dismissed = r.dismissed_count.unwrap_or(0);
-                let dur = r
-                    .duration_seconds
-                    .map(|d| format!("{:.0}s", d))
-                    .unwrap_or_default();
                 let model = r.model.as_deref().unwrap_or("");
-                let cost = r.cost_usd.map(output::fmt_cost).unwrap_or_default();
+                let cost = r
+                    .cost_cents
+                    .map(|c| output::fmt_cost(c / 100.0))
+                    .unwrap_or_default();
                 let time = r
                     .created_at
                     .as_deref()
@@ -1274,13 +1215,12 @@ async fn run() -> tb_lf::error::Result<()> {
                     .unwrap_or_default();
 
                 println!(
-                    "  #{} [{}]  {} processed, {} flagged, {} dismissed  {}  {}  {}  {}",
+                    "  #{} [{}]  {} processed, {} flagged, {} dismissed  {}  {}  {}",
                     r.id,
                     status_colored,
                     processed,
                     flagged,
                     dismissed,
-                    dur,
                     model.dimmed(),
                     cost,
                     time.dimmed()
@@ -1295,10 +1235,51 @@ async fn run() -> tb_lf::error::Result<()> {
                 println!("{}", output::render_json(&stats));
             } else {
                 println!("{}\n", "Triage Stats".bold());
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&stats).unwrap_or_default()
-                );
+
+                if let Some(pending) = stats.get("pending_trace_count").and_then(|v| v.as_u64()) {
+                    println!("  Pending traces: {}", pending);
+                }
+                if let Some(days) = stats.get("lookback_days").and_then(|v| v.as_u64()) {
+                    println!("  Lookback: {} days", days);
+                }
+
+                if let Some(summary) = stats.get("queue_summary") {
+                    let total = summary.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+                    println!("\n  Queue: {} total", total);
+                    if let Some(obj) = summary.get("by_status").and_then(|v| v.as_object()) {
+                        for (k, v) in obj {
+                            println!("    {}: {}", k, v);
+                        }
+                    }
+                }
+
+                if let Some(runs) = stats.get("runs").and_then(|v| v.as_array()) {
+                    let show = runs.iter().take(5);
+                    println!("\n  Recent runs:");
+                    for r in show {
+                        let id = r.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let status = r.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+                        let processed = r
+                            .get("total_processed")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        let flagged = r.get("flagged_count").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let dismissed = r
+                            .get("dismissed_count")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        let cost = r
+                            .get("cost_cents")
+                            .and_then(|v| v.as_f64())
+                            .map(|c| c / 100.0);
+                        let cost_str = cost.map(output::fmt_cost).unwrap_or_default();
+                        println!(
+                            "    #{} [{}]  {} processed, {} flagged, {} dismissed  {}",
+                            id, status, processed, flagged, dismissed, cost_str
+                        );
+                    }
+                }
+                println!();
             }
         }
 
@@ -1319,7 +1300,9 @@ async fn run() -> tb_lf::error::Result<()> {
                         ("per_page", Some(limit.to_string())),
                     ],
                 );
-                let runs: Vec<EvalRun> = client.get(&path, CacheTtl::Short).await?;
+                let resp: tb_lf::api::PaginatedResponse<EvalRun> =
+                    client.get(&path, CacheTtl::Short).await?;
+                let runs = resp.data;
 
                 if cli.json {
                     println!("{}", output::render_json(&runs));
@@ -1345,18 +1328,17 @@ async fn run() -> tb_lf::error::Result<()> {
                         "running" => status.yellow().to_string(),
                         _ => status.to_string(),
                     };
-                    let total = r.total_items.unwrap_or(0);
-                    let passed = r.passed_items.unwrap_or(0);
-                    let failed = r.failed_items.unwrap_or(0);
-                    let score = r.avg_score.map(output::score_color).unwrap_or_default();
+                    let total = r.total_cases.unwrap_or(0);
+                    let passed = r.passed_cases.unwrap_or(0);
+                    let failed = r.failed_cases.unwrap_or(0);
+                    let score = r.total_score.map(output::score_color).unwrap_or_default();
                     let dur = r
-                        .duration_seconds
-                        .map(|d| format!("{:.0}s", d))
+                        .duration_ms
+                        .map(|d| format!("{:.1}s", d / 1000.0))
                         .unwrap_or_default();
-                    let model = r.model.as_deref().unwrap_or("");
 
                     println!(
-                        "  {} {} [{}]  {}/{}/{} (pass/fail/total)  {}  {}  {}",
+                        "  {} {} [{}]  {}/{}/{} (pass/fail/total)  {}  {}",
                         name.bold(),
                         branch.dimmed(),
                         status_colored,
@@ -1365,7 +1347,6 @@ async fn run() -> tb_lf::error::Result<()> {
                         total,
                         score,
                         dur,
-                        model.dimmed()
                     );
                 }
             }
@@ -1389,13 +1370,13 @@ async fn run() -> tb_lf::error::Result<()> {
                 println!("  Status: {}", r.status.as_deref().unwrap_or("—"));
                 println!(
                     "  Score:  {}",
-                    r.avg_score.map(output::score_color).unwrap_or_default()
+                    r.total_score.map(output::score_color).unwrap_or_default()
                 );
                 println!(
-                    "  Items:  {} total, {} passed, {} failed",
-                    r.total_items.unwrap_or(0),
-                    r.passed_items.unwrap_or(0),
-                    r.failed_items.unwrap_or(0)
+                    "  Cases:  {} total, {} passed, {} failed",
+                    r.total_cases.unwrap_or(0),
+                    r.passed_cases.unwrap_or(0),
+                    r.failed_cases.unwrap_or(0)
                 );
 
                 if let Some(items) = &detail.items {
@@ -1482,12 +1463,16 @@ async fn run() -> tb_lf::error::Result<()> {
                 for rev in &revs {
                     let sha = rev.revision.as_deref().unwrap_or("?");
                     let short_sha = if sha.len() > 7 { &sha[..7] } else { sha };
-                    let msg = rev.message.as_deref().unwrap_or("");
-                    let date = rev.date.as_deref().unwrap_or("");
+                    let msg = rev.revision_message.as_deref().unwrap_or("");
+                    let date = rev
+                        .latest_started_at
+                        .as_deref()
+                        .map(output::relative_time)
+                        .unwrap_or_default();
                     let score = rev.avg_score.map(output::score_color).unwrap_or_default();
-                    let passed = rev.passed.unwrap_or(0);
-                    let failed = rev.failed.unwrap_or(0);
-                    let runs = rev.runs.unwrap_or(0);
+                    let passed = rev.total_passed.unwrap_or(0);
+                    let failed = rev.total_failed.unwrap_or(0);
+                    let runs = rev.runs_count.unwrap_or(0);
 
                     println!(
                         "  {} {}  {} runs  {}  {}/{} pass/fail  {}",
@@ -1521,9 +1506,17 @@ async fn run() -> tb_lf::error::Result<()> {
 
                 println!("{} ({})\n", "Eval Suites".bold(), suites.len());
                 for s in &suites {
-                    let name = s.suite.as_deref().unwrap_or("(unnamed)");
+                    let name = s
+                        .suite_name
+                        .as_deref()
+                        .or(s.suite_key.as_deref())
+                        .unwrap_or("(unnamed)");
                     let runs = s.run_count.unwrap_or(0);
-                    let last = s.last_run_date.as_deref().unwrap_or("—");
+                    let last = s
+                        .last_run_at
+                        .as_deref()
+                        .map(output::relative_time)
+                        .unwrap_or_else(|| "—".to_string());
                     println!("  {}  {} runs  last: {}", name.bold(), runs, last.dimmed());
                 }
             }
@@ -1558,11 +1551,23 @@ async fn run() -> tb_lf::error::Result<()> {
 
                 println!("{} ({})\n", "Eval Cases".bold(), cases.len());
                 for c in &cases {
-                    let suite = c.suite.as_deref().unwrap_or("");
-                    let case = c.case.as_deref().unwrap_or("");
-                    let runs = c.runs.unwrap_or(0);
+                    let suite = c
+                        .suite_name
+                        .as_deref()
+                        .or(c.suite_key.as_deref())
+                        .unwrap_or("");
+                    let case = c
+                        .case_name
+                        .as_deref()
+                        .or(c.case_key.as_deref())
+                        .unwrap_or("");
+                    let runs = c.run_count.unwrap_or(0);
                     let rate = c.pass_rate.map(output::score_color).unwrap_or_default();
-                    let last = c.last_run.as_deref().unwrap_or("—");
+                    let last = c
+                        .last_run_at
+                        .as_deref()
+                        .map(output::relative_time)
+                        .unwrap_or_else(|| "—".to_string());
 
                     println!(
                         "  {} / {}  {} runs  {}  last: {}",
@@ -1603,10 +1608,18 @@ async fn run() -> tb_lf::error::Result<()> {
 
                 println!("{} ({})\n", "Flaky Tests".bold().yellow(), flaky.len());
                 for f in &flaky {
-                    let suite = f.suite.as_deref().unwrap_or("");
-                    let case = f.case.as_deref().unwrap_or("");
+                    let suite = f
+                        .suite_name
+                        .as_deref()
+                        .or(f.suite_key.as_deref())
+                        .unwrap_or("");
+                    let case = f
+                        .case_name
+                        .as_deref()
+                        .or(f.case_key.as_deref())
+                        .unwrap_or("");
                     let sample = f.sample_size.unwrap_or(0);
-                    let passed = f.passed.unwrap_or(0);
+                    let passed = f.passed_count.unwrap_or(0);
                     let rate = f
                         .pass_rate
                         .map(|r| format!("{:.0}%", r * 100.0).yellow().to_string())
@@ -1799,12 +1812,14 @@ async fn run() -> tb_lf::error::Result<()> {
                 "/features",
                 &[
                     ("project_id", pid),
-                    ("category", category),
+                    ("category_id", category),
                     ("team", team),
                     ("status", status),
                 ],
             );
-            let features: Vec<Feature> = client.get(&path, CacheTtl::Short).await?;
+            let resp: tb_lf::api::PaginatedResponse<Feature> =
+                client.get(&path, CacheTtl::Short).await?;
+            let features = resp.data;
 
             if cli.json {
                 println!("{}", output::render_json(&features));
@@ -1819,9 +1834,18 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("{} ({})\n", "Features".bold(), features.len());
             for f in &features {
                 let name = f.name.as_deref().unwrap_or("(unnamed)");
-                let cat = f.category.as_deref().unwrap_or("");
+                let cat = f.category.as_ref().map(|c| c.name.as_str()).unwrap_or("");
                 let status = f.status.as_deref().unwrap_or("");
-                let teams = f.teams.as_ref().map(|t| t.join(", ")).unwrap_or_default();
+                let teams = f
+                    .teams
+                    .as_ref()
+                    .map(|t| {
+                        t.iter()
+                            .map(|r| r.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    })
+                    .unwrap_or_default();
                 let items = f.queue_item_count.unwrap_or(0);
 
                 println!(
@@ -1945,7 +1969,6 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("  tb-lf traces --since 1d            Today's traces");
             println!("  tb-lf traces --triage flagged      Flagged traces");
             println!("  tb-lf metrics --days 7             Weekly trends");
-            println!("  tb-lf daily                        AI daily report");
             println!();
             println!("{}", "Investigating Traces".bold().underline());
             println!("  tb-lf traces --name <agent>        Filter by name");

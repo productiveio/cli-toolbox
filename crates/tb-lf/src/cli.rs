@@ -18,13 +18,16 @@ pub struct TimeRange {
 
 impl TimeRange {
     /// Convert to (from, to) query param strings.
+    /// Bare dates in `--to` are treated as inclusive: `--to 2026-03-06` sends
+    /// `to=2026-03-07` so the server's timestamp range covers the full day.
     pub fn resolve(&self) -> (Option<String>, Option<String>) {
         let from = if let Some(since) = &self.since {
             parse_relative(since)
         } else {
             self.from.clone()
         };
-        (from, self.to.clone())
+        let to = self.to.as_deref().map(make_to_inclusive);
+        (from, to)
     }
 
     /// Add resolved time range params to a param list.
@@ -32,6 +35,21 @@ impl TimeRange {
         let (from, to) = self.resolve();
         params.push(("from", from));
         params.push(("to", to));
+    }
+}
+
+/// If `to` is a bare date (YYYY-MM-DD), add one day so the server's
+/// timestamp range covers the full day (making `--to` inclusive).
+/// If it already contains a time component (`T`), return as-is.
+fn make_to_inclusive(to: &str) -> String {
+    if to.contains('T') {
+        return to.to_string();
+    }
+    match chrono::NaiveDate::parse_from_str(to, "%Y-%m-%d") {
+        Ok(d) => (d + chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string(),
+        Err(_) => to.to_string(),
     }
 }
 

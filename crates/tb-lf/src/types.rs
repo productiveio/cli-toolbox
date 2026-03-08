@@ -196,32 +196,6 @@ pub struct Comment {
 // Dashboard is a complex nested type — use Value for now
 pub type Dashboard = serde_json::Value;
 
-// --- Daily reports ---
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct DailyReport {
-    #[serde(default)]
-    pub date: Option<String>,
-    #[serde(default)]
-    pub summary: Option<String>,
-    #[serde(default)]
-    pub metrics: Option<serde_json::Value>,
-    #[serde(default)]
-    pub findings: Option<Vec<Finding>>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct Finding {
-    #[serde(default)]
-    pub severity: Option<String>,
-    #[serde(default)]
-    pub finding_type: Option<String>,
-    #[serde(default)]
-    pub title: Option<String>,
-    #[serde(default)]
-    pub description: Option<String>,
-}
-
 // --- Triage queue ---
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -252,18 +226,24 @@ pub struct TriageRun {
     pub id: i64,
     #[serde(default)]
     pub status: Option<String>,
-    #[serde(default, deserialize_with = "string_or_u64")]
+    #[serde(
+        default,
+        deserialize_with = "string_or_u64",
+        rename = "total_processed"
+    )]
     pub processed_count: Option<u64>,
     #[serde(default, deserialize_with = "string_or_u64")]
     pub flagged_count: Option<u64>,
     #[serde(default, deserialize_with = "string_or_u64")]
     pub dismissed_count: Option<u64>,
-    #[serde(default, deserialize_with = "string_or_f64")]
-    pub duration_seconds: Option<f64>,
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default, deserialize_with = "string_or_f64")]
-    pub cost_usd: Option<f64>,
+    pub cost_cents: Option<f64>,
+    #[serde(default)]
+    pub started_at: Option<String>,
+    #[serde(default)]
+    pub completed_at: Option<String>,
     #[serde(default)]
     pub created_at: Option<String>,
 }
@@ -282,17 +262,15 @@ pub struct EvalRun {
     #[serde(default)]
     pub mode: Option<String>,
     #[serde(default, deserialize_with = "string_or_u64")]
-    pub total_items: Option<u64>,
+    pub total_cases: Option<u64>,
     #[serde(default, deserialize_with = "string_or_u64")]
-    pub passed_items: Option<u64>,
+    pub passed_cases: Option<u64>,
     #[serde(default, deserialize_with = "string_or_u64")]
-    pub failed_items: Option<u64>,
+    pub failed_cases: Option<u64>,
     #[serde(default, deserialize_with = "string_or_f64")]
-    pub avg_score: Option<f64>,
+    pub total_score: Option<f64>,
     #[serde(default, deserialize_with = "string_or_f64")]
-    pub duration_seconds: Option<f64>,
-    #[serde(default)]
-    pub model: Option<String>,
+    pub duration_ms: Option<f64>,
     #[serde(default)]
     pub created_at: Option<String>,
 }
@@ -330,53 +308,67 @@ pub struct EvalRevision {
     #[serde(default)]
     pub revision: Option<String>,
     #[serde(default)]
-    pub message: Option<String>,
+    pub revision_message: Option<String>,
     #[serde(default)]
-    pub date: Option<String>,
+    pub branch: Option<String>,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub latest_started_at: Option<String>,
     #[serde(default, deserialize_with = "string_or_u64")]
-    pub runs: Option<u64>,
+    pub runs_count: Option<u64>,
     #[serde(default, deserialize_with = "string_or_f64")]
     pub avg_score: Option<f64>,
     #[serde(default, deserialize_with = "string_or_u64")]
-    pub passed: Option<u64>,
+    pub total_passed: Option<u64>,
     #[serde(default, deserialize_with = "string_or_u64")]
-    pub failed: Option<u64>,
+    pub total_failed: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct EvalSuite {
     #[serde(default)]
-    pub suite: Option<String>,
+    pub suite_key: Option<String>,
+    #[serde(default)]
+    pub suite_name: Option<String>,
     #[serde(default, deserialize_with = "string_or_u64")]
     pub run_count: Option<u64>,
     #[serde(default)]
-    pub last_run_date: Option<String>,
+    pub last_run_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct EvalCase {
     #[serde(default)]
-    pub suite: Option<String>,
+    pub suite_key: Option<String>,
     #[serde(default)]
-    pub case: Option<String>,
+    pub suite_name: Option<String>,
+    #[serde(default)]
+    pub case_key: Option<String>,
+    #[serde(default)]
+    pub case_name: Option<String>,
     #[serde(default, deserialize_with = "string_or_u64")]
-    pub runs: Option<u64>,
+    pub run_count: Option<u64>,
     #[serde(default, deserialize_with = "string_or_f64")]
     pub pass_rate: Option<f64>,
     #[serde(default)]
-    pub last_run: Option<String>,
+    pub last_run_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct EvalFlaky {
     #[serde(default)]
-    pub suite: Option<String>,
+    pub suite_key: Option<String>,
     #[serde(default)]
-    pub case: Option<String>,
+    pub suite_name: Option<String>,
+    #[serde(default)]
+    pub case_key: Option<String>,
+    #[serde(default)]
+    pub case_name: Option<String>,
     #[serde(default, deserialize_with = "string_or_u64")]
     pub sample_size: Option<u64>,
     #[serde(default, deserialize_with = "string_or_u64")]
-    pub passed: Option<u64>,
+    pub passed_count: Option<u64>,
     #[serde(default, deserialize_with = "string_or_f64")]
     pub pass_rate: Option<f64>,
 }
@@ -395,15 +387,22 @@ pub struct SearchResult {
 
 // --- Features ---
 
+/// A reference to a named entity (category, team, etc.)
+#[derive(Debug, Deserialize, Serialize)]
+pub struct NamedRef {
+    pub id: i64,
+    pub name: String,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Feature {
     pub id: i64,
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
-    pub category: Option<String>,
+    pub category: Option<NamedRef>,
     #[serde(default)]
-    pub teams: Option<Vec<String>>,
+    pub teams: Option<Vec<NamedRef>>,
     #[serde(default)]
     pub status: Option<String>,
     #[serde(default, deserialize_with = "string_or_u64")]
