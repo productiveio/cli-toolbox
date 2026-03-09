@@ -135,16 +135,17 @@ pub async fn run(
     }
 
     println!(
-        "{:<8} {:<6} {:<40} {:<18} {:<20} {:<12}",
-        "ID", "#", "TITLE", "STATUS", "ASSIGNEE", "UPDATED"
+        "{:<8} {:<6} {:<50} {:<18} {:<25} {:<20} {:<12}",
+        "ID", "#", "TITLE", "STATUS", "PROJECT", "ASSIGNEE", "UPDATED"
     );
     for row in &rows {
         println!(
-            "{:<8} {:<6} {:<40} {:<18} {:<20} {:<12}",
+            "{:<8} {:<6} {:<50} {:<18} {:<25} {:<20} {:<12}",
             row.id,
             row.number,
-            output::truncate(&row.title, 38),
+            output::truncate(&row.title, 48),
             output::truncate(&row.status, 16),
+            output::truncate(&row.project, 23),
             output::truncate(&row.assignee, 18),
             output::relative_time(&row.updated),
         );
