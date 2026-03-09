@@ -2,7 +2,7 @@
 name: e2e-triage
 description: Investigate e2e test failures — find what failed on Semaphore, understand the tests, and diagnose root cause (code regression, infrastructure issue, or flag release).
 argument-hint: "<optional: 'last run', 'why is tasks failing', workflow URL, or specific test name>"
-allowed-tools: Bash(tb-sem *), mcp__semaphoreci-dev__*, mcp__claude_ai_Slack__slack_search_public, mcp__claude_ai_Slack__slack_read_channel, Read, Grep, Glob, Bash(git *), Bash(source .envrc && node scripts/backoffice-client.mjs *), Agent, AskUserQuestion
+allowed-tools: Bash(tb-sem *), Bash(tb-bug *), mcp__semaphoreci-dev__*, mcp__claude_ai_Slack__slack_search_public, mcp__claude_ai_Slack__slack_read_channel, Read, Grep, Glob, Bash(git *), Bash(source .envrc && node scripts/backoffice-client.mjs *), Agent, AskUserQuestion
 ---
 
 # E2E Test Failure Triage
@@ -73,7 +73,7 @@ Extract failed scenario names, feature file paths, error messages, and retry cou
 
 | Pattern | Likely cause |
 |---------|-------------|
-| `TimeoutError`, `waiting for selector`, `element not found` | UI change, env slowness, or deploy overlap |
+| `TimeoutError`, `waiting for selector`, `element not found` | UI change, env slowness, deploy overlap, **or hidden API error** (see caveat below) |
 | `net::ERR_CONNECTION_REFUSED`, `502`, `503`, `ECONNRESET` | Infrastructure / env issue / deploy overlap |
 | `AssertionError`, expected vs actual mismatch | Code regression |
 | `403 Forbidden`, `401 Unauthorized` | Permission/auth change |
@@ -81,6 +81,8 @@ Extract failed scenario names, feature file paths, error messages, and retry cou
 | Only specific feature area fails | Targeted regression or flag change |
 | Test fails N/N retries then passes in next run | Deploy overlap (see Phase 4d) |
 | Many scenarios need retries + `USE_CHECK=true` → exit 1 | Flaky; all passed on retry but USE_CHECK mode fails the job |
+
+**Caveat: e2e logs hide API errors.** The test runner only reports the Puppeteer-level symptom (e.g. `TimeoutError: waiting for selector`), not the underlying cause. A 500 error from the API will surface as a generic timeout — the logs won't show the 500 or its stack trace. When you see timeouts that suggest an API issue (hanging requests, page not settling), **always check Bugsnag for API errors in the failure time window** before investigating code. This is often the fastest path to root cause.
 
 ### Phase 3: Understand the Tests
 
@@ -95,7 +97,11 @@ This tells you WHERE in frontend/api to look for the regression.
 
 ### Phase 4: Find Root Cause
 
-Investigate **four possible causes in parallel** using the Agent tool. **Start with 4d (deploy overlap)** — most common and quickest to check.
+Investigate possible causes in parallel using the Agent tool. **Start with 4d (deploy overlap) and 4e (Bugsnag API errors)** — these are the fastest to check and most commonly the answer.
+
+#### 4e. API Errors in Bugsnag (CHECK ALONGSIDE 4d)
+
+When logs show timeouts or hanging API requests, check Bugsnag for API errors on the endtoend environment during the failure window. Use `tb-bug` to search for recent errors. A 500 from the API often manifests as a generic `TimeoutError` in the e2e logs — Bugsnag will show you the actual exception and stack trace, which is the fastest path to root cause.
 
 #### 4a. Code Regression
 

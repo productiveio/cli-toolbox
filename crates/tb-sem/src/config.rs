@@ -96,8 +96,11 @@ impl Config {
     }
 
     pub fn timezone(&self) -> Result<chrono_tz::Tz> {
-        self.timezone
-            .parse()
-            .map_err(|_| TbSemError::Config(format!("Invalid timezone '{}'. Run `tb-sem config set timezone <IANA_TIMEZONE>`", self.timezone)))
+        self.timezone.parse().map_err(|_| {
+            TbSemError::Config(format!(
+                "Invalid timezone '{}'. Run `tb-sem config set timezone <IANA_TIMEZONE>`",
+                self.timezone
+            ))
+        })
     }
 }
