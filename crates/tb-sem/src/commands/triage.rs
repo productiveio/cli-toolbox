@@ -44,10 +44,13 @@ pub struct ErrorDist {
     pub count: usize,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     client: &SemaphoreClient,
     config: &Config,
+    project: &str,
     pipeline_id: Option<&str>,
+    deploy_project: Option<&str>,
     branch: Option<&str>,
     json: bool,
     utc: bool,
@@ -55,20 +58,21 @@ pub async fn run(
     let tz = if utc {
         chrono_tz::UTC
     } else {
-        config.timezone()
+        config.timezone()?
     };
 
-    // Default to e2e-tests project
-    let e2e_id = config.resolve_project("e2e-tests")?;
+    let project_id = config.resolve_project(project)?;
 
     // Step 1: Find pipeline
     let ppl_id = if let Some(id) = pipeline_id {
         id.to_string()
     } else {
         if !json {
-            eprintln!("Finding latest failed e2e run...");
+            eprintln!("Finding latest failed run for {}...", project);
         }
-        let workflows = client.list_workflows(e2e_id, branch, None, None).await?;
+        let workflows = client
+            .list_workflows(project_id, branch, output::branchless_created_after(branch), None)
+            .await?;
         let mut found = None;
         for wf in &workflows {
             let ppl = client.get_pipeline(&wf.initial_ppl_id, false).await?;
@@ -77,7 +81,7 @@ pub async fn run(
                 break;
             }
         }
-        found.ok_or_else(|| crate::error::TbSemError::Other("No failed e2e runs found".into()))?
+        found.ok_or_else(|| crate::error::TbSemError::Other("No failed runs found".into()))?
     };
 
     // Step 2: Pipeline details
@@ -164,50 +168,60 @@ pub async fn run(
         })
         .collect();
 
-    // Step 4: Deploy overlap check
+    // Step 4: Deploy overlap check (only when --deploy-project is given)
     let mut deploy_overlap = false;
     let mut deploy_lines = Vec::new();
 
-    if let Ok(api_id) = config.resolve_project("api") {
-        let api_workflows = client
-            .list_workflows(api_id, None, None, None)
-            .await
-            .unwrap_or_default();
+    if let Some(deploy_proj) = deploy_project {
+        if let Ok(deploy_id) = config.resolve_project(deploy_proj) {
+            // Time-scoped fallback to avoid API 500s on large projects.
+            let created_after = Some(output::days_ago(1));
+            let deploy_workflows = client
+                .list_workflows(deploy_id, None, created_after, None)
+                .await
+                .unwrap_or_default();
 
-        if let (Some(start), Some(end)) = (ppl.created_at_dt(), ppl.done_at_dt()) {
-            for wf in api_workflows.iter().take(10) {
-                let wf_time = wf.created_at.to_datetime();
-                let diff = (wf_time - start).num_hours().abs();
-                if diff > 2 {
-                    continue;
-                }
+            if let (Some(start), Some(end)) = (ppl.created_at_dt(), ppl.done_at_dt()) {
+                for wf in deploy_workflows.iter().take(10) {
+                    let wf_time = wf.created_at.to_datetime();
+                    let diff = (wf_time - start).num_hours().abs();
+                    if diff > 2 {
+                        continue;
+                    }
 
-                let pipelines = client
-                    .list_pipelines_for_workflow(&wf.wf_id)
-                    .await
-                    .unwrap_or_default();
+                    let pipelines = client
+                        .list_pipelines_for_workflow(&wf.wf_id)
+                        .await
+                        .unwrap_or_default();
 
-                for p in &pipelines {
-                    if p.is_promotion() {
-                        let p_start = p.created_at_dt();
-                        let p_end = p.done_at_dt();
-                        let overlaps = p_start < end && p_end > start;
+                    for p in &pipelines {
+                        if p.is_promotion() {
+                            let p_start = p.created_at_dt();
+                            let p_end = p.done_at_dt();
+                            let overlaps = p_start < end && p_end > start;
 
-                        if overlaps {
-                            deploy_overlap = true;
+                            if overlaps {
+                                deploy_overlap = true;
+                            }
+
+                            let status = if overlaps { "!! OVERLAP" } else { "no overlap" };
+                            deploy_lines.push(format!(
+                                "  {} deploy: {} -- {} {} ({})",
+                                deploy_proj.to_uppercase(),
+                                output::epoch_to_local(p.created_at.seconds, &tz),
+                                output::epoch_to_local(p.done_at.seconds, &tz),
+                                p.name,
+                                status
+                            ));
                         }
-
-                        let status = if overlaps { "!! OVERLAP" } else { "no overlap" };
-                        deploy_lines.push(format!(
-                            "  API deploy: {} -- {} {} ({})",
-                            output::epoch_to_local(p.created_at.seconds, &tz),
-                            output::epoch_to_local(p.done_at.seconds, &tz),
-                            p.name,
-                            status
-                        ));
                     }
                 }
             }
+        } else {
+            eprintln!(
+                "Warning: deploy project '{}' not found in config, skipping deploy overlap check",
+                deploy_proj
+            );
         }
     }
 
@@ -216,10 +230,14 @@ pub async fn run(
         "No failures detected.".to_string()
     } else {
         let all_infra = failures.iter().all(|f| f.error_class == "INFRA");
-        let overlap_str = if deploy_overlap {
-            "Deploy overlap detected."
+        let overlap_str = if deploy_project.is_some() {
+            if deploy_overlap {
+                "Deploy overlap detected."
+            } else {
+                "No deploy overlap."
+            }
         } else {
-            "No deploy overlap."
+            "Deploy overlap not checked (use --deploy-project to enable)."
         };
         if all_infra {
             format!(
@@ -255,7 +273,7 @@ pub async fn run(
     if json {
         println!("{}", output::render_json(&result));
     } else {
-        println!("\n=== E2E TRIAGE REPORT ===\n");
+        println!("\n=== TRIAGE REPORT ===\n");
         println!(
             "Pipeline: {} | {} | {}",
             &result.pipeline_id, result.time_window, result.branch
@@ -312,12 +330,14 @@ pub async fn run(
             }
         }
 
-        println!("\nDEPLOY OVERLAP CHECK:");
-        if deploy_lines.is_empty() {
-            println!("  No recent API deploys found in time window.");
-        } else {
-            for line in &deploy_lines {
-                println!("{}", line);
+        if deploy_project.is_some() {
+            println!("\nDEPLOY OVERLAP CHECK:");
+            if deploy_lines.is_empty() {
+                println!("  No recent deploys found in time window.");
+            } else {
+                for line in &deploy_lines {
+                    println!("{}", line);
+                }
             }
         }
 

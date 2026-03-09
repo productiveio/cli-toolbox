@@ -37,12 +37,12 @@ pub async fn run(
     let tz = if utc {
         chrono_tz::UTC
     } else {
-        config.timezone()
+        config.timezone()?
     };
     let project_id = config.resolve_project(project)?;
 
     let workflows = client
-        .list_workflows(project_id, branch, None, None)
+        .list_workflows(project_id, branch, output::branchless_created_after(branch), None)
         .await?;
 
     // Track per-scenario: (flaky_count, failure_count, total_count, feature_file)

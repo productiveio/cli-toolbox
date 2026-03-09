@@ -37,8 +37,10 @@ pub async fn run(
     let tz = if utc {
         chrono_tz::UTC
     } else {
-        config.timezone()
+        config.timezone()?
     };
+
+    let after = after.or_else(|| output::branchless_created_after(branch));
 
     let workflows = client
         .list_workflows(project_id, branch, after, before)

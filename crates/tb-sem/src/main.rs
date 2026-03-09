@@ -33,7 +33,7 @@ enum Commands {
     Runs {
         /// Project name or ID
         project: String,
-        /// Filter by branch
+        /// Filter by branch (omit for cross-branch results from last 7 days)
         #[arg(long)]
         branch: Option<String>,
         /// Show only failed runs
@@ -107,9 +107,9 @@ enum Commands {
     Deploys {
         /// Project name
         project: String,
-        /// Filter by branch
+        /// Branch to check (required — deploys are branch-specific)
         #[arg(long)]
-        branch: Option<String>,
+        branch: String,
         /// Show deploys around a pipeline's run window
         #[arg(long)]
         around: Option<String>,
@@ -122,9 +122,15 @@ enum Commands {
     },
     /// Full triage of a failed pipeline
     Triage {
-        /// Pipeline ID (defaults to latest failed e2e run)
-        pipeline_id: Option<String>,
-        /// Filter by branch (only used when auto-finding latest failed run)
+        /// Project name
+        project: String,
+        /// Pipeline ID (auto-finds latest failed run if omitted)
+        #[arg(long)]
+        pipeline: Option<String>,
+        /// Project to check for deploy overlap (e.g., api)
+        #[arg(long)]
+        deploy_project: Option<String>,
+        /// Filter by branch (omit for cross-branch results from last 7 days)
         #[arg(long)]
         branch: Option<String>,
         /// JSON output
@@ -182,10 +188,9 @@ enum Commands {
     History {
         /// Test name (partial match)
         test_name: String,
-        /// Project name (default: e2e-tests)
-        #[arg(long, default_value = "e2e-tests")]
+        /// Project name
         project: String,
-        /// Filter by branch
+        /// Filter by branch (omit for cross-branch results from last 7 days)
         #[arg(long)]
         branch: Option<String>,
         /// Number of runs to check
@@ -200,10 +205,9 @@ enum Commands {
     },
     /// Show flaky tests across recent runs
     Flaky {
-        /// Project name (default: e2e-tests)
-        #[arg(default_value = "e2e-tests")]
+        /// Project name
         project: String,
-        /// Filter by branch
+        /// Filter by branch (omit for cross-branch results from last 7 days)
         #[arg(long)]
         branch: Option<String>,
         /// Number of runs to check
@@ -220,6 +224,9 @@ enum Commands {
     Branches {
         /// Project name
         project: String,
+        /// Number of days to look back (default: 7)
+        #[arg(long, default_value = "7")]
+        days: u32,
     },
     /// AI-optimized context dump
     Prime {
@@ -251,7 +258,7 @@ enum ConfigAction {
         /// API token (prompted interactively if omitted)
         #[arg(long)]
         token: Option<String>,
-        /// Organization ID/subdomain (default: productive)
+        /// Organization ID/subdomain
         #[arg(long)]
         org: Option<String>,
     },
@@ -392,7 +399,7 @@ async fn run() -> tb_sem::error::Result<()> {
                 &client,
                 &config,
                 &project,
-                branch.as_deref(),
+                &branch,
                 around.as_deref(),
                 json,
                 utc,
@@ -400,7 +407,9 @@ async fn run() -> tb_sem::error::Result<()> {
             .await?;
         }
         Commands::Triage {
-            pipeline_id,
+            project,
+            pipeline,
+            deploy_project,
             branch,
             json,
             utc,
@@ -408,7 +417,9 @@ async fn run() -> tb_sem::error::Result<()> {
             commands::triage::run(
                 &client,
                 &config,
-                pipeline_id.as_deref(),
+                &project,
+                pipeline.as_deref(),
+                deploy_project.as_deref(),
                 branch.as_deref(),
                 json,
                 utc,
@@ -480,8 +491,8 @@ async fn run() -> tb_sem::error::Result<()> {
             )
             .await?;
         }
-        Commands::Branches { project } => {
-            commands::branches::run(&client, &config, &project).await?;
+        Commands::Branches { project, days } => {
+            commands::branches::run(&client, &config, &project, days).await?;
         }
         Commands::Prime { mcp, utc } => {
             commands::prime::run(&client, &config, mcp, utc).await?;

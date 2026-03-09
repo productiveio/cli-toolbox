@@ -35,7 +35,7 @@ pub async fn run(
     let tz = if utc {
         chrono_tz::UTC
     } else {
-        config.timezone()
+        config.timezone()?
     };
 
     // Fetch both pipelines and their test results

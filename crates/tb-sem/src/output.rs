@@ -41,6 +41,21 @@ pub fn format_duration_secs(total_secs: i64) -> String {
     }
 }
 
+/// Returns a Unix timestamp N days before now.
+pub fn days_ago(days: u32) -> i64 {
+    Utc::now().timestamp() - i64::from(days) * 86400
+}
+
+/// When no branch is given, returns a `created_after` timestamp (7 days ago)
+/// to avoid Semaphore API 500s on large projects with many branches.
+pub fn branchless_created_after(branch: Option<&str>) -> Option<i64> {
+    if branch.is_none() {
+        Some(days_ago(7))
+    } else {
+        None
+    }
+}
+
 /// Strip ANSI escape codes from text.
 pub fn strip_ansi(text: &str) -> String {
     let re = regex::Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();

@@ -70,7 +70,7 @@ pub async fn init(token: Option<&str>, org_id: Option<&str>) -> Result<()> {
     let default_org = existing
         .as_ref()
         .map(|c| c.org_id.as_str())
-        .unwrap_or("productive");
+        .unwrap_or("");
     let org_id =
         match toolbox_core::prompt::prompt_text("Organization (subdomain):", org_id, default_org) {
             Ok(PromptResult::Ok(o)) => o,

@@ -38,7 +38,7 @@ pub async fn run(
     let tz = if utc {
         chrono_tz::UTC
     } else {
-        config.timezone()
+        config.timezone()?
     };
     let ppl = client.get_pipeline(pipeline_id, true).await?;
 

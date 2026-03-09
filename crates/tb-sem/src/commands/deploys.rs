@@ -31,7 +31,7 @@ pub async fn run(
     client: &SemaphoreClient,
     config: &Config,
     project: &str,
-    branch: Option<&str>,
+    branch: &str,
     around: Option<&str>,
     json: bool,
     utc: bool,
@@ -39,7 +39,7 @@ pub async fn run(
     let tz = if utc {
         chrono_tz::UTC
     } else {
-        config.timezone()
+        config.timezone()?
     };
     let project_id = config.resolve_project(project)?;
 
@@ -54,7 +54,7 @@ pub async fn run(
     };
 
     let workflows = client
-        .list_workflows(project_id, branch, None, None)
+        .list_workflows(project_id, Some(branch), None, None)
         .await?;
 
     let mut deploys = Vec::new();
@@ -119,7 +119,7 @@ pub async fn run(
         println!("{}", output::render_json(&result));
     } else {
         if let Some(ref w) = result.pipeline_window {
-            println!("E2E RUN WINDOW: {} -- {}\n", w.start, w.end);
+            println!("PIPELINE WINDOW: {} -- {}\n", w.start, w.end);
         }
 
         if result.deploys.is_empty() {

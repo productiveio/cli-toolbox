@@ -21,7 +21,7 @@ pub struct Config {
 }
 
 pub fn default_timezone() -> String {
-    iana_time_zone::get_timezone().unwrap_or_else(|_| "Europe/Zagreb".to_string())
+    iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string())
 }
 
 impl Config {
@@ -95,7 +95,9 @@ impl Config {
         toolbox_core::config::masked_token(&self.token)
     }
 
-    pub fn timezone(&self) -> chrono_tz::Tz {
-        self.timezone.parse().unwrap_or(chrono_tz::Europe::Zagreb)
+    pub fn timezone(&self) -> Result<chrono_tz::Tz> {
+        self.timezone
+            .parse()
+            .map_err(|_| TbSemError::Config(format!("Invalid timezone '{}'. Run `tb-sem config set timezone <IANA_TIMEZONE>`", self.timezone)))
     }
 }
