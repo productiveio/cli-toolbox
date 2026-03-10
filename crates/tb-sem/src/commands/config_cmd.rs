@@ -75,9 +75,7 @@ pub async fn init(token: Option<&str>, org_id: Option<&str>) -> Result<()> {
         match toolbox_core::prompt::prompt_text("Organization (subdomain):", org_id, default_org) {
             Ok(PromptResult::Ok(o)) if !o.is_empty() => o,
             Ok(PromptResult::Ok(_)) => {
-                return Err(TbSemError::Config(
-                    "Organization cannot be empty".into(),
-                ));
+                return Err(TbSemError::Config("Organization cannot be empty".into()));
             }
             Ok(PromptResult::Cancelled) => {
                 println!("Cancelled.");
