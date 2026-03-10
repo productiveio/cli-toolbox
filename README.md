@@ -16,6 +16,46 @@ A Cargo workspace monorepo containing CLI tools built for internal use at [Produ
 
 All binaries use the `tb-{domain}` prefix to signal they belong to this toolbox and to avoid name collisions with official CLIs.
 
+## Installing
+
+Requires [GitHub CLI](https://cli.github.com/) (`gh`) authenticated with access to this repo.
+
+```bash
+# Install all tools
+bash <(gh api repos/productiveio/cli-toolbox/contents/scripts/install.sh --jq '.content' | base64 -d) --all
+
+# Install all tools + Claude Code skills
+bash <(gh api repos/productiveio/cli-toolbox/contents/scripts/install.sh --jq '.content' | base64 -d) --all --with-skill
+
+# Install a specific tool
+bash <(gh api repos/productiveio/cli-toolbox/contents/scripts/install.sh --jq '.content' | base64 -d) tb-prod
+```
+
+Or if you have the repo cloned:
+
+```bash
+./scripts/install.sh --all --with-skill
+```
+
+Binaries are installed to `~/.local/bin`. Make sure it's on your `PATH`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+The installer compares local vs latest release and only downloads newer versions. Use `--reinstall` to force re-download.
+
+### Claude Code permissions
+
+Each tool ships with a Claude Code skill that runs `tb-<tool> prime` on load to inject live context. By default this triggers a permission prompt. To allow it automatically, add these to `~/.claude/settings.json` under `permissions.allow`:
+
+```json
+"Bash(tb-bug:*)",
+"Bash(tb-lf:*)",
+"Bash(tb-prod:*)",
+"Bash(tb-sem:*)"
+```
+
 ## Building
 
 ```bash
