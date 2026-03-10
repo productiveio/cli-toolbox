@@ -9,6 +9,10 @@ pub async fn run(
     workflow_status_id: Option<&str>,
     title: Option<&str>,
     assignee_id: Option<&str>,
+    description: Option<&str>,
+    due_date: Option<&str>,
+    starts_on: Option<&str>,
+    task_list_id: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
     let mut relationships = serde_json::Map::new();
@@ -26,8 +30,23 @@ pub async fn run(
             json!({ "data": { "type": "people", "id": aid } }),
         );
     }
+    if let Some(tl_id) = task_list_id {
+        relationships.insert(
+            "task_list".into(),
+            json!({ "data": { "type": "task_lists", "id": tl_id } }),
+        );
+    }
     if let Some(t) = title {
         attributes.insert("title".into(), json!(t));
+    }
+    if let Some(d) = description {
+        attributes.insert("description".into(), json!(d));
+    }
+    if let Some(dd) = due_date {
+        attributes.insert("due_date".into(), json!(dd));
+    }
+    if let Some(so) = starts_on {
+        attributes.insert("starts_on".into(), json!(so));
     }
 
     let mut data = json!({

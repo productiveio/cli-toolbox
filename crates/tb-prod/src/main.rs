@@ -143,6 +143,24 @@ enum TaskAction {
         /// New assignee (ID or name)
         #[arg(long)]
         assignee: Option<String>,
+        /// Description (HTML)
+        #[arg(long)]
+        description: Option<String>,
+        /// Read description from file
+        #[arg(long, conflicts_with = "description")]
+        description_file: Option<String>,
+        /// Read description from stdin
+        #[arg(long, conflicts_with_all = ["description", "description_file"])]
+        description_stdin: bool,
+        /// Due date (YYYY-MM-DD)
+        #[arg(long)]
+        due_date: Option<String>,
+        /// Start date (YYYY-MM-DD)
+        #[arg(long)]
+        starts_on: Option<String>,
+        /// Move to task list (ID or name)
+        #[arg(long)]
+        task_list: Option<String>,
     },
 }
 
@@ -408,19 +426,46 @@ async fn run() -> tb_prod::error::Result<()> {
                 status,
                 title,
                 assignee,
+                description,
+                description_file,
+                description_stdin,
+                due_date,
+                starts_on,
+                task_list,
             } => {
-                if status.is_none() && title.is_none() && assignee.is_none() {
+                let desc = read_text_input(
+                    description.as_deref(),
+                    description_file.as_deref(),
+                    description_stdin,
+                )?;
+
+                if status.is_none()
+                    && title.is_none()
+                    && assignee.is_none()
+                    && desc.is_none()
+                    && due_date.is_none()
+                    && starts_on.is_none()
+                    && task_list.is_none()
+                {
                     return Err(tb_prod::error::TbProdError::Other(
-                        "Provide at least one of --status, --title, or --assignee".into(),
+                        "Provide at least one field to update".into(),
                     ));
                 }
 
                 let cache = Cache::new(client.org_id())?;
                 cache.ensure_fresh(&client).await?;
 
+                // Fetch task for workflow resolution or task-list resolution
+                let task_resp = if status.is_some() || task_list.is_some() {
+                    Some(client.get_task(&id).await?)
+                } else {
+                    None
+                };
+
                 let workflow_id = if status.is_some() {
-                    let task_resp = client.get_task(&id).await?;
-                    let project_id = task_resp.data.relationship_id("project");
+                    let project_id = task_resp
+                        .as_ref()
+                        .and_then(|r| r.data.relationship_id("project"));
                     project_id.and_then(|pid| cache.workflow_id_for_project(pid).ok().flatten())
                 } else {
                     None
@@ -433,6 +478,18 @@ async fn run() -> tb_prod::error::Result<()> {
                     .as_deref()
                     .map(|a| cache.resolve_person(a))
                     .transpose()?;
+                let task_list_id = if let Some(ref tl) = task_list {
+                    let project_id = task_resp
+                        .as_ref()
+                        .and_then(|r| r.data.relationship_id("project"))
+                        .map(|s| s.to_string());
+                    Some(
+                        cache::resolve_task_list(&client, tl, project_id.as_deref())
+                            .await?,
+                    )
+                } else {
+                    None
+                };
 
                 commands::task_update::run(
                     &client,
@@ -440,6 +497,10 @@ async fn run() -> tb_prod::error::Result<()> {
                     status_id.as_deref(),
                     title.as_deref(),
                     assignee_id.as_deref(),
+                    desc.as_deref(),
+                    due_date.as_deref(),
+                    starts_on.as_deref(),
+                    task_list_id.as_deref(),
                     cli.json,
                 )
                 .await?;
