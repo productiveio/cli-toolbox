@@ -483,10 +483,7 @@ async fn run() -> tb_prod::error::Result<()> {
                     .map(|a| cache.resolve_person(a))
                     .transpose()?;
                 let task_list_id = if let Some(ref tl) = task_list {
-                    Some(
-                        cache::resolve_task_list(&client, tl, project_id.as_deref())
-                            .await?,
-                    )
+                    Some(cache::resolve_task_list(&client, tl, project_id.as_deref()).await?)
                 } else {
                     None
                 };
