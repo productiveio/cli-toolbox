@@ -462,11 +462,15 @@ async fn run() -> tb_prod::error::Result<()> {
                     None
                 };
 
+                let project_id = task_resp
+                    .as_ref()
+                    .and_then(|r| r.data.relationship_id("project"))
+                    .map(|s| s.to_string());
+
                 let workflow_id = if status.is_some() {
-                    let project_id = task_resp
-                        .as_ref()
-                        .and_then(|r| r.data.relationship_id("project"));
-                    project_id.and_then(|pid| cache.workflow_id_for_project(pid).ok().flatten())
+                    project_id
+                        .as_deref()
+                        .and_then(|pid| cache.workflow_id_for_project(pid).ok().flatten())
                 } else {
                     None
                 };
@@ -479,10 +483,6 @@ async fn run() -> tb_prod::error::Result<()> {
                     .map(|a| cache.resolve_person(a))
                     .transpose()?;
                 let task_list_id = if let Some(ref tl) = task_list {
-                    let project_id = task_resp
-                        .as_ref()
-                        .and_then(|r| r.data.relationship_id("project"))
-                        .map(|s| s.to_string());
                     Some(
                         cache::resolve_task_list(&client, tl, project_id.as_deref())
                             .await?,
