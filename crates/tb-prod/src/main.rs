@@ -488,19 +488,17 @@ async fn run() -> tb_prod::error::Result<()> {
                     None
                 };
 
-                commands::task_update::run(
-                    &client,
-                    &id,
-                    status_id.as_deref(),
-                    title.as_deref(),
-                    assignee_id.as_deref(),
-                    desc.as_deref(),
-                    due_date.as_deref(),
-                    starts_on.as_deref(),
-                    task_list_id.as_deref(),
-                    cli.json,
-                )
-                .await?;
+                let params = commands::task_update::TaskUpdateParams {
+                    task_id: &id,
+                    workflow_status_id: status_id.as_deref(),
+                    title: title.as_deref(),
+                    assignee_id: assignee_id.as_deref(),
+                    description: desc.as_deref(),
+                    due_date: due_date.as_deref(),
+                    starts_on: starts_on.as_deref(),
+                    task_list_id: task_list_id.as_deref(),
+                };
+                commands::task_update::run(&client, &params, cli.json).await?;
             }
         },
         Commands::Todo { action } => match action {
