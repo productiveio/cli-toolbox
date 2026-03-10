@@ -66,11 +66,19 @@ pub async fn init(token: Option<&str>, org_id: Option<&str>) -> Result<()> {
         Err(e) => return Err(TbSemError::Config(e)),
     };
 
-    // Resolve org
-    let default_org = existing.as_ref().map(|c| c.org_id.as_str()).unwrap_or("");
+    // Resolve org (default to "productive" for first-time setup)
+    let default_org = existing
+        .as_ref()
+        .map(|c| c.org_id.as_str())
+        .unwrap_or("productive");
     let org_id =
         match toolbox_core::prompt::prompt_text("Organization (subdomain):", org_id, default_org) {
-            Ok(PromptResult::Ok(o)) => o,
+            Ok(PromptResult::Ok(o)) if !o.is_empty() => o,
+            Ok(PromptResult::Ok(_)) => {
+                return Err(TbSemError::Config(
+                    "Organization cannot be empty".into(),
+                ));
+            }
             Ok(PromptResult::Cancelled) => {
                 println!("Cancelled.");
                 return Ok(());
