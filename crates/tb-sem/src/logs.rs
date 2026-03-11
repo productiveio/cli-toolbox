@@ -77,13 +77,30 @@ pub fn flatten_log(events: &[LogEvent]) -> String {
 }
 
 /// Extract cucumber summary from flattened log text.
+/// Handles both formats:
+///   - "256 scenarios (4 failed, 252 passed)" (mixed)
+///   - "256 scenarios (256 passed)" (all passed)
 pub fn parse_cucumber_summary(text: &str) -> Option<(u32, u32)> {
-    let re = Regex::new(r"(\d+) scenarios \((\d+) failed, (\d+) passed\)").unwrap();
-    re.captures(text).map(|caps| {
+    // Try mixed format first: "N scenarios (F failed, P passed)"
+    let re_mixed = Regex::new(r"(\d+) scenarios \((\d+) failed, (\d+) passed\)").unwrap();
+    if let Some(caps) = re_mixed.captures(text) {
         let failed: u32 = caps[2].parse().unwrap_or(0);
         let passed: u32 = caps[3].parse().unwrap_or(0);
-        (failed, passed)
+        return Some((failed, passed));
+    }
+
+    // Fall back to passed-only: "N scenarios (P passed)"
+    let re_passed = Regex::new(r"(\d+) scenarios \((\d+) passed\)").unwrap();
+    re_passed.captures(text).map(|caps| {
+        let passed: u32 = caps[2].parse().unwrap_or(0);
+        (0, passed)
     })
+}
+
+/// Detect if log output indicates a skipped (scheduler-skipped) run.
+pub fn is_skipped_run(text: &str) -> bool {
+    text.contains("Scheduler check indicates tests shouldn't run")
+        || text.contains("Scheduler check indicates tests shouldn\u{2019}t run") // curly apostrophe
 }
 
 /// Classify error based on output text.
@@ -448,4 +465,42 @@ pub fn parse_scenarios_best(events: &[LogEvent]) -> Vec<ScenarioResult> {
     });
 
     results
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_cucumber_summary_mixed() {
+        let text = "256 scenarios (4 failed, 252 passed)\n5498 steps";
+        let (failed, passed) = parse_cucumber_summary(text).unwrap();
+        assert_eq!(failed, 4);
+        assert_eq!(passed, 252);
+    }
+
+    #[test]
+    fn parse_cucumber_summary_all_passed() {
+        let text = "256 scenarios (256 passed)\n5498 steps (5498 passed)";
+        let (failed, passed) = parse_cucumber_summary(text).unwrap();
+        assert_eq!(failed, 0);
+        assert_eq!(passed, 256);
+    }
+
+    #[test]
+    fn parse_cucumber_summary_none() {
+        let text = "no cucumber output here";
+        assert!(parse_cucumber_summary(text).is_none());
+    }
+
+    #[test]
+    fn is_skipped_run_detects_scheduler_message() {
+        assert!(is_skipped_run(
+            "Scheduler check indicates tests shouldn't run."
+        ));
+        assert!(!is_skipped_run(
+            "Scheduler check indicates tests should run."
+        ));
+        assert!(!is_skipped_run("All tests passed"));
+    }
 }

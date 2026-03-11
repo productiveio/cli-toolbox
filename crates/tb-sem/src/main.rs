@@ -79,11 +79,17 @@ enum Commands {
     },
     /// Fetch and display job logs
     Logs {
-        /// Job ID
-        job_id: String,
+        /// Job ID or pipeline ID (use --job to select by name when passing pipeline ID)
+        id: String,
+        /// Select job by name (treats positional arg as pipeline ID)
+        #[arg(long)]
+        job: Option<String>,
         /// Filter output by regex
         #[arg(long)]
         grep: Option<String>,
+        /// Case-insensitive grep
+        #[arg(short = 'i', long = "ignore-case")]
+        ignore_case: bool,
         /// Show only last N lines
         #[arg(long)]
         tail: Option<usize>,
@@ -366,8 +372,10 @@ async fn run() -> tb_sem::error::Result<()> {
             commands::failures::run(&client, &pipeline_id, json).await?;
         }
         Commands::Logs {
-            job_id,
+            id,
+            job,
             grep,
+            ignore_case,
             tail,
             head,
             summary,
@@ -377,8 +385,10 @@ async fn run() -> tb_sem::error::Result<()> {
         } => {
             commands::logs::run(
                 &client,
-                &job_id,
+                &id,
+                job.as_deref(),
                 grep.as_deref(),
+                ignore_case,
                 tail,
                 head,
                 summary,

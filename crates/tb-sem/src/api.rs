@@ -108,18 +108,14 @@ impl Pipeline {
         self.promotion_of.as_ref().is_some_and(|s| !s.is_empty())
     }
 
-    /// Find the test job: first failed job, or fallback to any job with "e2e"/"test" in name.
+    /// Find the test job: first failed job, then "e2e" job, then any "test" job.
     pub fn find_test_job(&self) -> Option<&Job> {
-        self.blocks
-            .iter()
-            .flat_map(|b| &b.jobs)
+        let all_jobs = || self.blocks.iter().flat_map(|b| &b.jobs);
+
+        all_jobs()
             .find(|j| j.is_failed())
-            .or_else(|| {
-                self.blocks.iter().flat_map(|b| &b.jobs).find(|j| {
-                    let name = j.name.to_lowercase();
-                    name.contains("e2e") || name.contains("test")
-                })
-            })
+            .or_else(|| all_jobs().find(|j| j.name.to_lowercase().contains("e2e")))
+            .or_else(|| all_jobs().find(|j| j.name.to_lowercase().contains("test")))
     }
 }
 

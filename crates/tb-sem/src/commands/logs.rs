@@ -6,8 +6,10 @@ use crate::output;
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     client: &SemaphoreClient,
-    job_id: &str,
+    id: &str,
+    job_name: Option<&str>,
     grep: Option<&str>,
+    ignore_case: bool,
     tail: Option<usize>,
     head: Option<usize>,
     summary: bool,
@@ -15,7 +17,40 @@ pub async fn run(
     raw: bool,
     json: bool,
 ) -> Result<()> {
-    let events = client.get_job_logs(job_id).await?;
+    // Resolve job ID: if --job is given, treat `id` as pipeline ID
+    let job_id = if let Some(name) = job_name {
+        resolve_job_by_name(client, id, name).await?
+    } else {
+        // Try as pipeline ID first (if it has jobs), fall back to job ID
+        match client.get_pipeline(id, true).await {
+            Ok(ppl) if !ppl.blocks.is_empty() => {
+                let jobs: Vec<_> = ppl.blocks.iter().flat_map(|b| &b.jobs).collect();
+                if jobs.len() == 1 {
+                    // Single job — use it directly
+                    jobs[0].job_id.clone()
+                } else {
+                    // Multiple jobs — list them and ask user to pick
+                    eprintln!(
+                        "Pipeline {} has {} jobs. Use --job to select one:\n",
+                        id,
+                        jobs.len()
+                    );
+                    for j in &jobs {
+                        eprintln!(
+                            "  {:<30} {}  {}",
+                            j.name,
+                            &j.job_id[..8],
+                            j.result.to_uppercase()
+                        );
+                    }
+                    return Ok(());
+                }
+            }
+            _ => id.to_string(), // Not a pipeline — treat as job ID
+        }
+    };
+
+    let events = client.get_job_logs(&job_id).await?;
     let text = log_parser::flatten_log(&events);
 
     let text = if raw { text } else { output::strip_ansi(&text) };
@@ -63,7 +98,12 @@ pub async fn run(
     let lines: Vec<&str> = text.lines().collect();
 
     let filtered: Vec<&str> = if let Some(pattern) = grep {
-        let re = regex::Regex::new(pattern)
+        let pattern = if ignore_case {
+            format!("(?i){}", pattern)
+        } else {
+            pattern.to_string()
+        };
+        let re = regex::Regex::new(&pattern)
             .map_err(|e| crate::error::TbSemError::Other(format!("Invalid regex: {}", e)))?;
         lines.into_iter().filter(|l| re.is_match(l)).collect()
     } else {
@@ -100,4 +140,37 @@ pub async fn run(
     }
 
     Ok(())
+}
+
+/// Resolve a job ID from a pipeline ID and job name (case-insensitive substring match).
+async fn resolve_job_by_name(
+    client: &SemaphoreClient,
+    pipeline_id: &str,
+    job_name: &str,
+) -> Result<String> {
+    let ppl = client.get_pipeline(pipeline_id, true).await?;
+    let name_lower = job_name.to_lowercase();
+
+    let matches: Vec<_> = ppl
+        .blocks
+        .iter()
+        .flat_map(|b| &b.jobs)
+        .filter(|j| j.name.to_lowercase().contains(&name_lower))
+        .collect();
+
+    match matches.len() {
+        0 => Err(crate::error::TbSemError::Other(format!(
+            "No job matching '{}' in pipeline {}",
+            job_name, pipeline_id
+        ))),
+        1 => Ok(matches[0].job_id.clone()),
+        _ => {
+            let names: Vec<_> = matches.iter().map(|j| j.name.as_str()).collect();
+            Err(crate::error::TbSemError::Other(format!(
+                "Multiple jobs match '{}': {}",
+                job_name,
+                names.join(", ")
+            )))
+        }
+    }
 }

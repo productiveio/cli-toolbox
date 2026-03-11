@@ -10,6 +10,7 @@ use crate::output;
 #[derive(Debug, Serialize)]
 pub struct FailuresOutput {
     pub pipeline_id: String,
+    pub run_type: String,
     /// Counts from the cucumber summary line (ground truth)
     pub cucumber_total: u32,
     pub cucumber_passed: u32,
@@ -45,8 +46,8 @@ pub async fn run(client: &SemaphoreClient, pipeline_id: &str, json: bool) -> Res
         .find(|j| j.is_failed());
 
     let Some(job) = failed_job else {
-        println!("No failed jobs in pipeline {}", pipeline_id);
-        return Ok(());
+        // No failed job — determine if this was a passed or skipped run
+        return handle_no_failures(client, &ppl, pipeline_id, json).await;
     };
 
     if !json {
@@ -106,6 +107,7 @@ pub async fn run(client: &SemaphoreClient, pipeline_id: &str, json: bool) -> Res
 
     let result = FailuresOutput {
         pipeline_id: pipeline_id.to_string(),
+        run_type: "failed".to_string(),
         cucumber_total: cucumber_failed + cucumber_passed,
         cucumber_passed,
         cucumber_failed,
@@ -176,5 +178,56 @@ pub async fn run(client: &SemaphoreClient, pipeline_id: &str, json: bool) -> Res
         }
     }
 
+    Ok(())
+}
+
+/// Handle the case where no failed jobs exist: determine if passed or skipped.
+async fn handle_no_failures(
+    client: &SemaphoreClient,
+    ppl: &crate::api::Pipeline,
+    pipeline_id: &str,
+    json: bool,
+) -> Result<()> {
+    let mut run_type = "passed";
+    let mut cucumber_passed = 0u32;
+    let mut cucumber_failed = 0u32;
+
+    // Try to find the test job and check its logs
+    if let Some(test_job) = ppl.find_test_job() {
+        let events = client.get_job_logs(&test_job.job_id).await?;
+        let text = logs::flatten_log(&events);
+
+        if logs::is_skipped_run(&text) {
+            run_type = "skipped";
+        } else if let Some((failed, passed)) = logs::parse_cucumber_summary(&text) {
+            cucumber_failed = failed;
+            cucumber_passed = passed;
+        }
+    }
+
+    let total = cucumber_failed + cucumber_passed;
+
+    if json {
+        let result = FailuresOutput {
+            pipeline_id: pipeline_id.to_string(),
+            run_type: run_type.to_string(),
+            cucumber_total: total,
+            cucumber_passed,
+            cucumber_failed,
+            failures: Vec::new(),
+            retried_passed: Vec::new(),
+            error_distribution: Vec::new(),
+        };
+        println!("{}", output::render_json(&result));
+    } else {
+        match run_type {
+            "skipped" => println!("No failed jobs in pipeline {} (skipped)", pipeline_id),
+            _ if total > 0 => println!(
+                "No failed jobs in pipeline {} (passed: {} scenarios)",
+                pipeline_id, total
+            ),
+            _ => println!("No failed jobs in pipeline {}", pipeline_id),
+        }
+    }
     Ok(())
 }

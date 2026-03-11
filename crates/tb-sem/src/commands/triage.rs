@@ -14,6 +14,7 @@ pub struct TriageOutput {
     pub time_window: String,
     pub branch: String,
     pub result: String,
+    pub run_type: String,
     pub total_scenarios: u32,
     pub passed: u32,
     pub failed: u32,
@@ -100,7 +101,7 @@ pub async fn run(
         _ => output::iso_to_local(&ppl.created_at, &tz),
     };
 
-    // Step 3: Parse failures
+    // Step 3: Parse test results — works for failed, passed, AND skipped runs
     let failed_job = ppl
         .blocks
         .iter()
@@ -113,22 +114,23 @@ pub async fn run(
     let mut failures = Vec::new();
     let mut retried_passed_count = 0usize;
     let mut flaky_scenarios = Vec::new();
+    let run_type;
 
     if let Some(job) = failed_job {
+        // Failed pipeline — parse failure details from logs
         if !json {
             eprintln!("Fetching logs for: {} ...", job.name);
         }
         let events = client.get_job_logs(&job.job_id).await?;
 
-        // Cucumber summary for ground truth counts
         let text = logs::flatten_log(&events);
         let (cucumber_failed, cucumber_passed) =
             logs::parse_cucumber_summary(&text).unwrap_or((0, 0));
         total_scenarios = cucumber_failed + cucumber_passed;
         passed = cucumber_passed;
         failed = cucumber_failed;
+        run_type = "FAILED".to_string();
 
-        // Parsed scenario details (uses cucumber summary section as ground truth)
         let all_scenarios = logs::parse_scenarios_best(&events);
         for s in &all_scenarios {
             match s.result {
@@ -153,6 +155,26 @@ pub async fn run(
                 logs::ScenarioOutcome::Passed => {}
             }
         }
+    } else if let Some(test_job) = ppl.find_test_job() {
+        // No failed job — check if skipped or passed
+        if !json {
+            eprintln!("Fetching logs for: {} ...", test_job.name);
+        }
+        let events = client.get_job_logs(&test_job.job_id).await?;
+        let text = logs::flatten_log(&events);
+
+        if logs::is_skipped_run(&text) {
+            run_type = "SKIPPED".to_string();
+        } else {
+            run_type = "PASSED".to_string();
+            if let Some((cucumber_failed, cucumber_passed)) = logs::parse_cucumber_summary(&text) {
+                total_scenarios = cucumber_failed + cucumber_passed;
+                passed = cucumber_passed;
+                failed = cucumber_failed;
+            }
+        }
+    } else {
+        run_type = ppl.result_normalized().to_uppercase();
     }
 
     // Error distribution
@@ -179,7 +201,6 @@ pub async fn run(
 
     if let Some(deploy_proj) = deploy_project {
         if let Ok(deploy_id) = config.resolve_project(deploy_proj) {
-            // Time-scoped fallback to avoid API 500s on large projects.
             let created_after = Some(output::days_ago(1));
             let deploy_workflows = client
                 .list_workflows(deploy_id, None, created_after, None)
@@ -231,7 +252,11 @@ pub async fn run(
     }
 
     // Diagnosis
-    let diagnosis = if failures.is_empty() {
+    let diagnosis = if run_type == "SKIPPED" {
+        "Run was skipped by scheduler.".to_string()
+    } else if run_type == "PASSED" {
+        format!("All {} scenarios passed.", total_scenarios)
+    } else if failures.is_empty() {
         "No failures detected.".to_string()
     } else {
         let all_infra = failures.iter().all(|f| f.error_class == "INFRA");
@@ -264,6 +289,7 @@ pub async fn run(
         time_window,
         branch: ppl.branch_name.clone(),
         result: ppl.result.to_uppercase(),
+        run_type,
         total_scenarios,
         passed,
         failed,
@@ -283,9 +309,9 @@ pub async fn run(
             "Pipeline: {} | {} | {}",
             &result.pipeline_id, result.time_window, result.branch
         );
-        println!("Result:   {}", result.result);
+        println!("Result:   {} ({})", result.result, result.run_type);
         println!(
-            "Tests:    {} scenarios -- {} passed, {} failed (cucumber summary)",
+            "Tests:    {} scenarios -- {} passed, {} failed",
             result.total_scenarios, result.passed, result.failed
         );
         if result.retried_passed > 0 {
