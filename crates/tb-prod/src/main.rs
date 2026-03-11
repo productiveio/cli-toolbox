@@ -29,6 +29,7 @@ struct Cli {
 #[derive(clap::Subcommand)]
 enum Commands {
     /// Manage tasks
+    #[command(alias = "tasks")]
     Task {
         #[command(subcommand)]
         action: TaskAction,
@@ -74,16 +75,16 @@ enum TaskAction {
     /// List tasks with filters
     List {
         /// Filter by task list (ID or name)
-        #[arg(long)]
+        #[arg(long, alias = "task-list-id")]
         task_list: Option<String>,
         /// Filter by project (ID or name)
-        #[arg(long)]
+        #[arg(long, alias = "project-id")]
         project: Option<String>,
         /// Filter by assignee (ID or name)
         #[arg(long)]
         assignee: Option<String>,
         /// Status category: open (default), all, closed, started, not-started
-        #[arg(long)]
+        #[arg(long = "status-category", alias = "category")]
         category: Option<String>,
         /// Text search in task titles
         #[arg(long)]
@@ -100,13 +101,13 @@ enum TaskAction {
         #[arg(long, required_unless_present = "batch")]
         title: Option<String>,
         /// Project (ID or name)
-        #[arg(long, required_unless_present = "batch")]
+        #[arg(long, required_unless_present = "batch", alias = "project-id")]
         project: Option<String>,
         /// Task list (ID or name)
-        #[arg(long, required_unless_present = "batch")]
+        #[arg(long, required_unless_present = "batch", alias = "task-list-id")]
         task_list: Option<String>,
         /// Workflow status (ID or name)
-        #[arg(long)]
+        #[arg(long, alias = "workflow-status-id")]
         status: Option<String>,
         /// Assignee (ID or name)
         #[arg(long)]
@@ -123,8 +124,11 @@ enum TaskAction {
         /// Due date (YYYY-MM-DD)
         #[arg(long)]
         due_date: Option<String>,
+        /// Mark task as private
+        #[arg(long)]
+        private: bool,
         /// Batch create from JSON file (array of task objects)
-        #[arg(long, conflicts_with_all = ["title", "project", "task_list", "status", "assignee", "description", "description_file", "description_stdin", "due_date"])]
+        #[arg(long, conflicts_with_all = ["title", "project", "task_list", "status", "assignee", "description", "description_file", "description_stdin", "due_date", "private"])]
         batch: Option<String>,
         /// Validate and show resolved payload without creating
         #[arg(long)]
@@ -135,7 +139,7 @@ enum TaskAction {
         /// Task ID
         id: String,
         /// New workflow status (ID or name)
-        #[arg(long)]
+        #[arg(long, alias = "workflow-status-id")]
         status: Option<String>,
         /// New title
         #[arg(long)]
@@ -159,7 +163,7 @@ enum TaskAction {
         #[arg(long)]
         starts_on: Option<String>,
         /// Move to task list (ID or name)
-        #[arg(long)]
+        #[arg(long, alias = "task-list-id")]
         task_list: Option<String>,
     },
 }
@@ -355,6 +359,7 @@ async fn run() -> tb_prod::error::Result<()> {
                 description_file,
                 description_stdin,
                 due_date,
+                private,
                 batch,
                 dry_run,
             } => {
@@ -402,6 +407,7 @@ async fn run() -> tb_prod::error::Result<()> {
                             "assignee_id": assignee_id,
                             "description": desc.as_deref().map(|d| if d.len() > 100 { format!("{}...", &d[..100]) } else { d.to_string() }),
                             "due_date": due_date,
+                            "private": private,
                         });
                         println!("{}", serde_json::to_string_pretty(&resolved)?);
                         eprintln!("Dry run — no task created.");
@@ -415,6 +421,7 @@ async fn run() -> tb_prod::error::Result<()> {
                             assignee_id.as_deref(),
                             desc.as_deref(),
                             due_date.as_deref(),
+                            private,
                             cli.json,
                         )
                         .await?;

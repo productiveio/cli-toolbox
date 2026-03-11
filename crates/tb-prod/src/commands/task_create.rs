@@ -23,6 +23,7 @@ pub async fn run(
     assignee_id: Option<&str>,
     description: Option<&str>,
     due_date: Option<&str>,
+    private: bool,
     json: bool,
 ) -> Result<()> {
     let mut relationships = json!({
@@ -40,7 +41,7 @@ pub async fn run(
 
     let mut attributes = json!({
         "title": title,
-        "private": false
+        "private": private
     });
 
     if let Some(desc) = description {
