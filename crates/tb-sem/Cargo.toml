@@ -3,6 +3,9 @@ name = "tb-sem"
 version = "0.2.1"
 edition = "2024"
 description = "Semaphore CI insights CLI"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "tb-sem"

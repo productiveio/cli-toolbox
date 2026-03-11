@@ -3,6 +3,9 @@ name = "tb-bug"
 version = "0.1.5"
 edition = "2024"
 description = "Bugsnag insights CLI"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "tb-bug"

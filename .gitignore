@@ -1,2 +1,4 @@
 /target
 secrets.toml
+benchmark-results/
+docs/

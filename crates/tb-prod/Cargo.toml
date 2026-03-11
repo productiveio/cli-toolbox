@@ -3,6 +3,9 @@ name = "tb-prod"
 version = "0.1.8"
 edition = "2024"
 description = "Productive.io API CLI"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "tb-prod"

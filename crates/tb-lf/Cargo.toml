@@ -3,6 +3,9 @@ name = "tb-lf"
 version = "0.1.7"
 edition = "2024"
 description = "Langfuse insights CLI — devportal-backed"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "tb-lf"

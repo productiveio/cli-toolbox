@@ -2,6 +2,11 @@
 members = ["crates/*"]
 resolver = "2"
 
+[workspace.package]
+authors = ["Tibor Rogulja"]
+license = "MIT"
+repository = "https://github.com/productiveio/cli-toolbox"
+
 [workspace.dependencies]
 # CLI
 clap = { version = "4.5", features = ["derive"] }

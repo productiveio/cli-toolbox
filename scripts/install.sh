@@ -17,7 +17,7 @@ Usage: $0 [OPTIONS] <tool> [<tool>...]
 
 Install or update cli-toolbox binaries from GitHub releases.
 
-Requires: gh (GitHub CLI) — for authenticated access to the private repo.
+Requires: curl
 
 Options:
   --all          Install all tools ($ALL_TOOLS)
@@ -51,9 +51,8 @@ if [[ ${#tools[@]} -eq 0 ]]; then
 fi
 
 # --- Prerequisites ---
-if ! command -v gh &>/dev/null; then
-  echo "Error: gh (GitHub CLI) is required but not installed"
-  echo "Install it: https://cli.github.com/"
+if ! command -v curl &>/dev/null; then
+  echo "Error: curl is required but not installed"
   exit 1
 fi
 
@@ -92,19 +91,30 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
   echo ""
 fi
 
-# --- GitHub API helpers (using gh for auth) ---
+# --- GitHub API helpers (using curl, no auth needed for public repo) ---
 get_latest_release() {
   local tool="$1"
-  gh api "repos/$REPO/releases" --jq \
-    "[.[] | select(.tag_name | startswith(\"${tool}-v\")) | select(.draft == false) | select(.prerelease == false)] | .[0].tag_name // empty" \
-    2>/dev/null | sed "s/^${tool}-v//"
+  curl -fsSL "https://api.github.com/repos/$REPO/releases" \
+    | python3 -c "
+import sys, json
+tool = '${tool}'
+prefix = tool + '-v'
+for r in json.load(sys.stdin):
+    if r.get('draft') or r.get('prerelease'):
+        continue
+    tag = r.get('tag_name', '')
+    if tag.startswith(prefix):
+        print(tag[len(prefix):])
+        break
+" 2>/dev/null
 }
 
 download_asset() {
   local tool="$1" version="$2" platform="$3" dest="$4"
   local tag="${tool}-v${version}"
   local asset="${tool}-${platform}"
-  gh release download "$tag" --repo "$REPO" --pattern "$asset" --output "$dest" --clobber
+  local url="https://github.com/$REPO/releases/download/${tag}/${asset}"
+  curl -fsSL -o "$dest" "$url"
 }
 
 get_local_version() {

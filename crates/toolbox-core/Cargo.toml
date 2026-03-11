@@ -3,6 +3,9 @@ name = "toolbox-core"
 version = "0.1.0"
 edition = "2024"
 description = "Shared infrastructure for cli-toolbox crates"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [lib]
 doctest = false

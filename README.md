@@ -18,17 +18,15 @@ All binaries use the `tb-{domain}` prefix to signal they belong to this toolbox 
 
 ## Installing
 
-Requires [GitHub CLI](https://cli.github.com/) (`gh`) authenticated with access to this repo.
-
 ```bash
 # Install all tools
-bash <(gh api repos/productiveio/cli-toolbox/contents/scripts/install.sh --jq '.content' | base64 -d) --all
+curl -fsSL https://raw.githubusercontent.com/productiveio/cli-toolbox/main/scripts/install.sh | bash -s -- --all
 
 # Install all tools + Claude Code skills
-bash <(gh api repos/productiveio/cli-toolbox/contents/scripts/install.sh --jq '.content' | base64 -d) --all --with-skill
+curl -fsSL https://raw.githubusercontent.com/productiveio/cli-toolbox/main/scripts/install.sh | bash -s -- --all --with-skill
 
 # Install a specific tool
-bash <(gh api repos/productiveio/cli-toolbox/contents/scripts/install.sh --jq '.content' | base64 -d) tb-prod
+curl -fsSL https://raw.githubusercontent.com/productiveio/cli-toolbox/main/scripts/install.sh | bash -s -- tb-prod
 ```
 
 Or if you have the repo cloned:
@@ -53,8 +51,8 @@ Grab your token from:
 
 - **tb-prod** — [Productive.io](https://app.productive.io) → click your avatar → Profile settings → API access
 - **tb-sem** — [Semaphore CI](https://semaphoreci.com) → click your avatar → Profile Settings → API Token
-- **tb-bug** — [Bugsnag](https://app.bugsnag.com) → Settings → My account → [Personal auth tokens](https://app.bugsnag.com/settings/productive/my-account/auth-tokens)
-- **tb-lf** — [DevPortal](https://devportal.productive.io) → AI Tools → click your avatar → [API Tokens](https://devportal.productive.io/ai/settings/user)
+- **tb-bug** — [Bugsnag](https://app.bugsnag.com) → Settings → My account → Personal auth tokens
+- **tb-lf** — [DevPortal](https://devportal.productive.io) → AI Tools → click your avatar → API Tokens
 
 Config files are stored in `~/.config/tb-<tool>/config.toml`. Run `tb-<tool> doctor` to verify connectivity.
 
