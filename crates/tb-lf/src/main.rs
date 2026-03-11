@@ -103,7 +103,7 @@ enum Commands {
     Session { id: String },
     /// List observations
     #[command(
-        after_help = "Examples:\n  tb-lf observations --trace abc123\n  tb-lf observations --type GENERATION --model gpt-4\n  tb-lf observations --level ERROR"
+        after_help = "Examples:\n  tb-lf observations --trace abc123\n  tb-lf observations --type GENERATION --model gpt-4\n  tb-lf observations --level ERROR\n  tb-lf observations --since 7d"
     )]
     Observations {
         #[arg(long)]
@@ -116,6 +116,8 @@ enum Commands {
         level: Option<String>,
         #[arg(long)]
         env: Option<String>,
+        #[command(flatten)]
+        time: TimeRange,
     },
     /// Fetch a single observation (Langfuse proxy)
     #[command(
@@ -143,7 +145,7 @@ enum Commands {
     },
     /// List comments
     #[command(
-        after_help = "Examples:\n  tb-lf comments --trace abc123\n  tb-lf comments --type trace\n  tb-lf comments --json"
+        after_help = "Examples:\n  tb-lf comments --trace abc123\n  tb-lf comments --type trace\n  tb-lf comments --since 7d\n  tb-lf comments --json"
     )]
     Comments {
         #[arg(long)]
@@ -152,6 +154,8 @@ enum Commands {
         r#type: Option<String>,
         #[arg(long)]
         object: Option<String>,
+        #[command(flatten)]
+        time: TimeRange,
     },
     /// Show dashboard overview
     #[command(
@@ -176,7 +180,7 @@ enum Commands {
     },
     /// List triage queue items
     #[command(
-        after_help = "Examples:\n  tb-lf queue --status pending_review\n  tb-lf queue --category bug --confidence high\n  tb-lf queue --full --limit 5"
+        after_help = "Examples:\n  tb-lf queue --status pending_review\n  tb-lf queue --category bug --confidence high\n  tb-lf queue --since 7d\n  tb-lf queue --from 2026-03-01 --to 2026-03-10\n  tb-lf queue --full --limit 5"
     )]
     Queue {
         #[arg(long)]
@@ -193,6 +197,8 @@ enum Commands {
         #[arg(long)]
         full: bool,
         #[command(flatten)]
+        time: TimeRange,
+        #[command(flatten)]
         pagination: Pagination,
     },
     /// Triage queue statistics
@@ -203,13 +209,15 @@ enum Commands {
     QueueItem { id: i64 },
     /// List triage runs
     #[command(
-        after_help = "Examples:\n  tb-lf triage-runs\n  tb-lf triage-runs --status completed --limit 5\n  tb-lf triage-runs --json"
+        after_help = "Examples:\n  tb-lf triage-runs\n  tb-lf triage-runs --status completed --limit 5\n  tb-lf triage-runs --since 7d\n  tb-lf triage-runs --json"
     )]
     TriageRuns {
         #[arg(long)]
         status: Option<String>,
         #[arg(long, default_value = "20")]
         limit: u32,
+        #[command(flatten)]
+        time: TimeRange,
     },
     /// Triage run statistics
     #[command(
@@ -298,7 +306,7 @@ enum Commands {
 enum EvalAction {
     /// List eval runs
     #[command(
-        after_help = "Examples:\n  tb-lf eval runs\n  tb-lf eval runs --status failed --branch main\n  tb-lf eval runs --mode regression --limit 10"
+        after_help = "Examples:\n  tb-lf eval runs\n  tb-lf eval runs --status failed --branch main\n  tb-lf eval runs --since 7d\n  tb-lf eval runs --mode regression --limit 10"
     )]
     Runs {
         #[arg(long)]
@@ -309,6 +317,8 @@ enum EvalAction {
         mode: Option<String>,
         #[arg(long, default_value = "20")]
         limit: u32,
+        #[command(flatten)]
+        time: TimeRange,
     },
     /// Show a single eval run
     #[command(
@@ -733,18 +743,18 @@ async fn run() -> tb_lf::error::Result<()> {
             model,
             level,
             env,
+            time,
         } => {
-            let path = DevPortalClient::build_path(
-                "/observations",
-                &[
-                    ("project_id", pid),
-                    ("trace_id", trace),
-                    ("type", r#type),
-                    ("model", model),
-                    ("level", level),
-                    ("environment", env),
-                ],
-            );
+            let mut params: Vec<(&str, Option<String>)> = vec![
+                ("project_id", pid),
+                ("trace_id", trace),
+                ("type", r#type),
+                ("model", model),
+                ("level", level),
+                ("environment", env),
+            ];
+            time.push_params(&mut params);
+            let path = DevPortalClient::build_path("/observations", &params);
             let obs: Vec<Observation> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -854,16 +864,16 @@ async fn run() -> tb_lf::error::Result<()> {
             trace,
             r#type,
             object,
+            time,
         } => {
-            let path = DevPortalClient::build_path(
-                "/comments",
-                &[
-                    ("project_id", pid),
-                    ("trace_id", trace),
-                    ("object_type", r#type),
-                    ("object_id", object),
-                ],
-            );
+            let mut params: Vec<(&str, Option<String>)> = vec![
+                ("project_id", pid),
+                ("trace_id", trace),
+                ("object_type", r#type),
+                ("object_id", object),
+            ];
+            time.push_params(&mut params);
+            let path = DevPortalClient::build_path("/comments", &params);
             let comments: Vec<Comment> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -1035,6 +1045,7 @@ async fn run() -> tb_lf::error::Result<()> {
             run,
             feature,
             full,
+            time,
             pagination,
         } => {
             let mut params: Vec<(&str, Option<String>)> = vec![
@@ -1045,6 +1056,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("triage_run_id", run),
                 ("feature_id", feature),
             ];
+            time.push_params(&mut params);
             pagination.push_params(&mut params);
             let path = DevPortalClient::build_path("/queue_items", &params);
             let items: Vec<QueueItem> = client.get(&path, CacheTtl::Short).await?;
@@ -1168,15 +1180,18 @@ async fn run() -> tb_lf::error::Result<()> {
             }
         }
 
-        Commands::TriageRuns { status, limit } => {
-            let path = DevPortalClient::build_path(
-                "/triage_runs",
-                &[
-                    ("project_id", pid),
-                    ("status", status),
-                    ("per_page", Some(limit.to_string())),
-                ],
-            );
+        Commands::TriageRuns {
+            status,
+            limit,
+            time,
+        } => {
+            let mut params: Vec<(&str, Option<String>)> = vec![
+                ("project_id", pid),
+                ("status", status),
+                ("per_page", Some(limit.to_string())),
+            ];
+            time.push_params(&mut params);
+            let path = DevPortalClient::build_path("/triage_runs", &params);
             let resp: tb_lf::api::PaginatedResponse<TriageRun> =
                 client.get(&path, CacheTtl::Short).await?;
             let runs = resp.data;
@@ -1289,17 +1304,17 @@ async fn run() -> tb_lf::error::Result<()> {
                 branch,
                 mode,
                 limit,
+                time,
             } => {
-                let path = DevPortalClient::build_path(
-                    "/eval/runs",
-                    &[
-                        ("project_id", pid),
-                        ("status", status),
-                        ("branch", branch),
-                        ("mode", mode),
-                        ("per_page", Some(limit.to_string())),
-                    ],
-                );
+                let mut params: Vec<(&str, Option<String>)> = vec![
+                    ("project_id", pid),
+                    ("status", status),
+                    ("branch", branch),
+                    ("mode", mode),
+                    ("per_page", Some(limit.to_string())),
+                ];
+                time.push_params(&mut params);
+                let path = DevPortalClient::build_path("/eval/runs", &params);
                 let resp: tb_lf::api::PaginatedResponse<EvalRun> =
                     client.get(&path, CacheTtl::Short).await?;
                 let runs = resp.data;
