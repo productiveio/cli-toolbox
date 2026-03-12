@@ -2,7 +2,8 @@ use clap::Parser;
 use colored::Colorize;
 use tb_lf::api::{DevPortalClient, PaginatedResponse};
 use tb_lf::cache::CacheTtl;
-use tb_lf::cli::{Pagination, TimeRange};
+use tb_lf::cli::Pagination;
+use toolbox_core::time_range::TimeRange;
 use tb_lf::config::{self, Config};
 use tb_lf::output;
 use tb_lf::types::*;
@@ -38,7 +39,7 @@ struct Cli {
 enum Commands {
     /// List traces
     #[command(
-        after_help = "Examples:\n  tb-lf traces --since 1d\n  tb-lf traces --triage flagged --limit 50\n  tb-lf traces --name my-agent --env production\n  tb-lf traces --stats --since 7d"
+        after_help = "Examples:\n  tb-lf traces --from 1d\n  tb-lf traces --triage flagged --limit 50\n  tb-lf traces --name my-agent --env production\n  tb-lf traces --stats --from 7d"
     )]
     Traces {
         #[arg(long)]
@@ -78,7 +79,7 @@ enum Commands {
     },
     /// List sessions
     #[command(
-        after_help = "Examples:\n  tb-lf sessions --since 7d\n  tb-lf sessions --user user@example.com\n  tb-lf sessions --stats"
+        after_help = "Examples:\n  tb-lf sessions --from 7d\n  tb-lf sessions --user user@example.com\n  tb-lf sessions --stats"
     )]
     Sessions {
         #[arg(long)]
@@ -103,7 +104,7 @@ enum Commands {
     Session { id: String },
     /// List observations
     #[command(
-        after_help = "Examples:\n  tb-lf observations --trace abc123\n  tb-lf observations --type GENERATION --model gpt-4\n  tb-lf observations --level ERROR\n  tb-lf observations --since 7d"
+        after_help = "Examples:\n  tb-lf observations --trace abc123\n  tb-lf observations --type GENERATION --model gpt-4\n  tb-lf observations --level ERROR\n  tb-lf observations --from 7d"
     )]
     Observations {
         #[arg(long)]
@@ -145,7 +146,7 @@ enum Commands {
     },
     /// List comments
     #[command(
-        after_help = "Examples:\n  tb-lf comments --trace abc123\n  tb-lf comments --type trace\n  tb-lf comments --since 7d\n  tb-lf comments --json"
+        after_help = "Examples:\n  tb-lf comments --trace abc123\n  tb-lf comments --type trace\n  tb-lf comments --from 7d\n  tb-lf comments --json"
     )]
     Comments {
         #[arg(long)]
@@ -167,7 +168,7 @@ enum Commands {
     },
     /// Show daily metrics
     #[command(
-        after_help = "Examples:\n  tb-lf metrics --days 14\n  tb-lf metrics --env production --since 30d\n  tb-lf metrics --json | jq '.[] | .date'"
+        after_help = "Examples:\n  tb-lf metrics --days 14\n  tb-lf metrics --env production --from 30d\n  tb-lf metrics --json | jq '.[] | .date'"
     )]
     Metrics {
         /// Number of days back
@@ -180,7 +181,7 @@ enum Commands {
     },
     /// List triage queue items
     #[command(
-        after_help = "Examples:\n  tb-lf queue --status pending_review\n  tb-lf queue --category bug --confidence high\n  tb-lf queue --since 7d\n  tb-lf queue --from 2026-03-01 --to 2026-03-10\n  tb-lf queue --full --limit 5"
+        after_help = "Examples:\n  tb-lf queue --status pending_review\n  tb-lf queue --category bug --confidence high\n  tb-lf queue --from 7d\n  tb-lf queue --from 2026-03-01 --to 2026-03-10\n  tb-lf queue --full --limit 5"
     )]
     Queue {
         #[arg(long)]
@@ -209,7 +210,7 @@ enum Commands {
     QueueItem { id: i64 },
     /// List triage runs
     #[command(
-        after_help = "Examples:\n  tb-lf triage-runs\n  tb-lf triage-runs --status completed --limit 5\n  tb-lf triage-runs --since 7d\n  tb-lf triage-runs --json"
+        after_help = "Examples:\n  tb-lf triage-runs\n  tb-lf triage-runs --status completed --limit 5\n  tb-lf triage-runs --from 7d\n  tb-lf triage-runs --json"
     )]
     TriageRuns {
         #[arg(long)]
@@ -231,7 +232,7 @@ enum Commands {
     },
     /// Search traces
     #[command(
-        after_help = "Examples:\n  tb-lf search \"login error\"\n  tb-lf search \"john smith\" --ids-only\n  tb-lf search \"timeout\" --since 3d --limit 50"
+        after_help = "Examples:\n  tb-lf search \"login error\"\n  tb-lf search \"john smith\" --ids-only\n  tb-lf search \"timeout\" --from 3d --limit 50"
     )]
     Search {
         query: String,
@@ -244,7 +245,7 @@ enum Commands {
         pagination: Pagination,
     },
     /// List distinct trace names
-    #[command(after_help = "Examples:\n  tb-lf tags\n  tb-lf tags --since 7d\n  tb-lf tags --json")]
+    #[command(after_help = "Examples:\n  tb-lf tags\n  tb-lf tags --from 7d\n  tb-lf tags --json")]
     Tags {
         #[command(flatten)]
         time: TimeRange,
@@ -306,7 +307,7 @@ enum Commands {
 enum EvalAction {
     /// List eval runs
     #[command(
-        after_help = "Examples:\n  tb-lf eval runs\n  tb-lf eval runs --status failed --branch main\n  tb-lf eval runs --since 7d\n  tb-lf eval runs --mode regression --limit 10"
+        after_help = "Examples:\n  tb-lf eval runs\n  tb-lf eval runs --status failed --branch main\n  tb-lf eval runs --from 7d\n  tb-lf eval runs --mode regression --limit 10"
     )]
     Runs {
         #[arg(long)]
@@ -459,7 +460,7 @@ async fn run() -> tb_lf::error::Result<()> {
             if stats {
                 let mut params: Vec<(&str, Option<String>)> =
                     vec![("project_id", pid), ("name", name), ("environment", env)];
-                time.push_params(&mut params);
+                time.push_date_params_or_exit(&mut params);
                 let path = DevPortalClient::build_path("/traces/stats", &params);
                 let s: TraceStats = client.get(&path, CacheTtl::Short).await?;
                 if cli.json {
@@ -487,7 +488,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("satisfaction", satisfaction),
                 ("sort", sort),
             ];
-            time.push_params(&mut params);
+            time.push_date_params_or_exit(&mut params);
             pagination.push_params(&mut params);
             let path = DevPortalClient::build_path("/traces", &params);
             let resp: PaginatedResponse<Trace> = client.get(&path, CacheTtl::Short).await?;
@@ -632,7 +633,7 @@ async fn run() -> tb_lf::error::Result<()> {
             if stats {
                 let mut params: Vec<(&str, Option<String>)> =
                     vec![("project_id", pid), ("environment", env)];
-                time.push_params(&mut params);
+                time.push_date_params_or_exit(&mut params);
                 let path = DevPortalClient::build_path("/sessions/stats", &params);
                 let s: serde_json::Value = client.get(&path, CacheTtl::Short).await?;
                 println!("{}", output::render_json(&s));
@@ -646,7 +647,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("satisfaction", satisfaction),
                 ("sort", sort),
             ];
-            time.push_params(&mut params);
+            time.push_date_params_or_exit(&mut params);
             pagination.push_params(&mut params);
             let path = DevPortalClient::build_path("/sessions", &params);
             let resp: PaginatedResponse<Session> = client.get(&path, CacheTtl::Short).await?;
@@ -753,7 +754,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("level", level),
                 ("environment", env),
             ];
-            time.push_params(&mut params);
+            time.push_date_params_or_exit(&mut params);
             let path = DevPortalClient::build_path("/observations", &params);
             let obs: Vec<Observation> = client.get(&path, CacheTtl::Short).await?;
 
@@ -822,7 +823,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("environment", env),
                 ("per_page", Some(limit.to_string())),
             ];
-            time.push_params(&mut params);
+            time.push_date_params_or_exit(&mut params);
             let path = DevPortalClient::build_path("/scores", &params);
             let scores: Vec<Score> = client.get(&path, CacheTtl::Short).await?;
 
@@ -872,7 +873,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("object_type", r#type),
                 ("object_id", object),
             ];
-            time.push_params(&mut params);
+            time.push_date_params_or_exit(&mut params);
             let path = DevPortalClient::build_path("/comments", &params);
             let comments: Vec<Comment> = client.get(&path, CacheTtl::Short).await?;
 
@@ -912,7 +913,7 @@ async fn run() -> tb_lf::error::Result<()> {
 
         Commands::Dashboard { time } => {
             let mut params: Vec<(&str, Option<String>)> = vec![("project_id", pid)];
-            time.push_params(&mut params);
+            time.push_date_params_or_exit(&mut params);
             let path = DevPortalClient::build_path("/dashboard", &params);
             let dash: Dashboard = client.get(&path, CacheTtl::Medium).await?;
 
@@ -984,15 +985,14 @@ async fn run() -> tb_lf::error::Result<()> {
         Commands::Metrics { days, env, time } => {
             let effective_time = if let Some(d) = days {
                 TimeRange {
-                    since: Some(format!("{}d", d)),
-                    from: time.from,
+                    from: Some(format!("{}d", d)),
                     to: time.to,
+                    ..Default::default()
                 }
-            } else if time.since.is_none() && time.from.is_none() {
+            } else if !time.has_from() {
                 TimeRange {
-                    since: Some("7d".into()),
-                    from: None,
-                    to: None,
+                    from: Some("7d".into()),
+                    ..Default::default()
                 }
             } else {
                 time
@@ -1000,7 +1000,7 @@ async fn run() -> tb_lf::error::Result<()> {
 
             let mut params: Vec<(&str, Option<String>)> =
                 vec![("project_id", pid), ("environment", env)];
-            effective_time.push_params(&mut params);
+            effective_time.push_date_params_or_exit(&mut params);
             let path = DevPortalClient::build_path("/daily_metrics", &params);
             let metrics: Vec<DailyMetric> = client.get(&path, CacheTtl::Short).await?;
 
@@ -1056,7 +1056,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("triage_run_id", run),
                 ("feature_id", feature),
             ];
-            time.push_params(&mut params);
+            time.push_date_params_or_exit(&mut params);
             pagination.push_params(&mut params);
             let path = DevPortalClient::build_path("/queue_items", &params);
             let items: Vec<QueueItem> = client.get(&path, CacheTtl::Short).await?;
@@ -1190,7 +1190,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("status", status),
                 ("per_page", Some(limit.to_string())),
             ];
-            time.push_params(&mut params);
+            time.push_date_params_or_exit(&mut params);
             let path = DevPortalClient::build_path("/triage_runs", &params);
             let resp: tb_lf::api::PaginatedResponse<TriageRun> =
                 client.get(&path, CacheTtl::Short).await?;
@@ -1313,7 +1313,7 @@ async fn run() -> tb_lf::error::Result<()> {
                     ("mode", mode),
                     ("per_page", Some(limit.to_string())),
                 ];
-                time.push_params(&mut params);
+                time.push_date_params_or_exit(&mut params);
                 let path = DevPortalClient::build_path("/eval/runs", &params);
                 let resp: tb_lf::api::PaginatedResponse<EvalRun> =
                     client.get(&path, CacheTtl::Short).await?;
@@ -1661,7 +1661,7 @@ async fn run() -> tb_lf::error::Result<()> {
             // Try devportal search endpoint, fall back to traces with name filter
             let mut params: Vec<(&str, Option<String>)> =
                 vec![("project_id", pid.clone()), ("q", Some(query.clone()))];
-            time.push_params(&mut params);
+            time.push_date_params_or_exit(&mut params);
             pagination.push_params(&mut params);
             let path = DevPortalClient::build_path("/search", &params);
 
@@ -1736,7 +1736,7 @@ async fn run() -> tb_lf::error::Result<()> {
                     // Search endpoint not deployed — fall back to traces name filter
                     let mut params: Vec<(&str, Option<String>)> =
                         vec![("project_id", pid), ("name", Some(query.clone()))];
-                    time.push_params(&mut params);
+                    time.push_date_params_or_exit(&mut params);
                     pagination.push_params(&mut params);
                     let path = DevPortalClient::build_path("/traces", &params);
                     let resp: PaginatedResponse<Trace> = client.get(&path, CacheTtl::Short).await?;
@@ -1795,7 +1795,7 @@ async fn run() -> tb_lf::error::Result<()> {
 
         Commands::Tags { time } => {
             let mut params: Vec<(&str, Option<String>)> = vec![("project_id", pid)];
-            time.push_params(&mut params);
+            time.push_date_params_or_exit(&mut params);
             let path = DevPortalClient::build_path("/traces/names", &params);
             let names: Vec<String> = client.get(&path, CacheTtl::Short).await?;
 
@@ -1981,7 +1981,7 @@ async fn run() -> tb_lf::error::Result<()> {
             println!();
             println!("{}", "Daily Use".bold().underline());
             println!("  tb-lf dashboard                    Overview KPIs");
-            println!("  tb-lf traces --since 1d            Today's traces");
+            println!("  tb-lf traces --from 1d            Today's traces");
             println!("  tb-lf traces --triage flagged      Flagged traces");
             println!("  tb-lf metrics --days 7             Weekly trends");
             println!();
@@ -2009,7 +2009,7 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("  --json        Machine-readable output (pipe to jq)");
             println!("  --no-cache    Bypass cache for fresh data");
             println!("  --project <p> Override default project");
-            println!("  --since 7d    Relative time filter");
+            println!("  --from 7d    Relative time filter");
             println!("  --page 2      Paginate through results");
         }
 

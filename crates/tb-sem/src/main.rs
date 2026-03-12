@@ -1,16 +1,8 @@
-use chrono::NaiveDate;
 use clap::Parser;
 
 use tb_sem::api::SemaphoreClient;
 use tb_sem::commands;
 use tb_sem::config::Config;
-
-fn parse_date_to_timestamp(s: &str) -> Option<i64> {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d")
-        .ok()
-        .and_then(|d| d.and_hms_opt(0, 0, 0))
-        .map(|dt| dt.and_utc().timestamp())
-}
 
 #[derive(Parser)]
 #[command(
@@ -42,12 +34,8 @@ enum Commands {
         /// Number of runs to show
         #[arg(long, default_value = "5")]
         limit: usize,
-        /// Only show runs after this date (YYYY-MM-DD)
-        #[arg(long)]
-        after: Option<String>,
-        /// Only show runs before this date (YYYY-MM-DD)
-        #[arg(long)]
-        before: Option<String>,
+        #[command(flatten)]
+        time: toolbox_core::time_range::TimeRange,
         /// JSON output
         #[arg(long)]
         json: bool,
@@ -339,13 +327,12 @@ async fn run() -> tb_sem::error::Result<()> {
             branch,
             failed,
             limit,
-            after,
-            before,
+            time,
             json,
             utc,
         } => {
-            let after_ts = after.as_deref().and_then(parse_date_to_timestamp);
-            let before_ts = before.as_deref().and_then(parse_date_to_timestamp);
+            let range = time.resolve_or_exit();
+            let (after_ts, before_ts) = range.to_timestamps();
             commands::runs::run(
                 &client,
                 &config,

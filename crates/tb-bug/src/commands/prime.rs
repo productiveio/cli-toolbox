@@ -29,7 +29,7 @@ async fn run_overview(config: &Config) -> Result<()> {
     println!(
         "- `tb-bug prime --project <name>` — detailed project context (errors, stability, releases)"
     );
-    println!("- `tb-bug errors --project <name> --since 1d --status open` — today's open errors");
+    println!("- `tb-bug errors --project <name> --from 1d --status open` — today's open errors");
     println!("- `tb-bug report dashboard --project <name>` — full dashboard overview");
     println!("- `tb-bug search --project <name> <query>` — search error classes and messages");
 
@@ -115,7 +115,11 @@ async fn run_project(client: &BugsnagClient, config: &Config, project: &str) -> 
 
     println!("## Quick Commands");
     println!(
-        "- `tb-bug errors --project {} --since 1d --status open` — today's open errors",
+        "- `tb-bug errors --project {} --from 1d --status open` — today's open errors",
+        project
+    );
+    println!(
+        "- `tb-bug errors --project {} --from 7d --to yesterday` — last week's errors",
         project
     );
     println!(

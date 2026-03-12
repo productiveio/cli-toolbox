@@ -1,27 +1,9 @@
-use chrono::{NaiveDate, Utc};
+use toolbox_core::time_range::TimeRange;
 
 use crate::api::BugsnagClient;
 use crate::config::Config;
 use crate::error::Result;
 use crate::output;
-
-/// Normalize a `--since` value into a format the Bugsnag API accepts.
-///
-/// Bugsnag accepts: full ISO8601 (`2026-03-07T00:00:00Z`) and relative
-/// durations (`1d`, `7d`, `24h`). This function converts human-friendly
-/// shortcuts so the user doesn't have to type full ISO8601.
-fn parse_since(value: &str) -> String {
-    match value {
-        "today" => Utc::now().format("%Y-%m-%dT00:00:00Z").to_string(),
-        "yesterday" => (Utc::now() - chrono::Duration::days(1))
-            .format("%Y-%m-%dT00:00:00Z")
-            .to_string(),
-        v if NaiveDate::parse_from_str(v, "%Y-%m-%d").is_ok() => {
-            format!("{v}T00:00:00Z")
-        }
-        other => other.to_string(),
-    }
-}
 
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
@@ -30,7 +12,7 @@ pub async fn run(
     project: &str,
     status: Option<&str>,
     severity: Option<&str>,
-    since: Option<&str>,
+    time: &TimeRange,
     stage: Option<&str>,
     class: Option<&str>,
     sort: Option<&str>,
@@ -40,6 +22,9 @@ pub async fn run(
 ) -> Result<()> {
     let project_id = config.resolve_project(project)?;
 
+    let range = time.resolve_or_exit();
+    let (from_iso, to_iso) = range.to_iso8601();
+
     let mut filters = Vec::new();
     if let Some(s) = status {
         filters.push(("error.status", s));
@@ -47,9 +32,11 @@ pub async fn run(
     if let Some(s) = severity {
         filters.push(("event.severity", s));
     }
-    let since_value = since.map(parse_since);
-    if let Some(ref s) = since_value {
+    if let Some(ref s) = from_iso {
         filters.push(("event.since", s));
+    }
+    if let Some(ref s) = to_iso {
+        filters.push(("event.before", s));
     }
     if let Some(s) = stage {
         filters.push(("app.release_stage", s));

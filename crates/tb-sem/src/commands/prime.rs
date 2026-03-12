@@ -35,6 +35,10 @@ pub async fn run(_client: &SemaphoreClient, config: &Config, mcp: bool, _utc: bo
             "- `tb-sem runs {} --failed --limit 5` - Recent failed runs (last 7 days, all branches)",
             p1
         );
+        println!(
+            "- `tb-sem runs {} --from 2026-03-01 --to 2026-03-10` - Runs in date range",
+            p1
+        );
         println!("- `tb-sem failures <pipeline-id>` - Parsed failure summary");
         println!(
             "- `tb-sem deploys {} --branch master --around <pipeline-id>` - Deploy overlap check",

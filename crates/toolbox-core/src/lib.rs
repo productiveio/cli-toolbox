@@ -2,6 +2,7 @@ pub mod config;
 pub mod error;
 pub mod output;
 pub mod skill;
+pub mod time_range;
 
 // Note: consumer crates need `thiserror` as a direct dependency for the
 // define_error! macro's #[derive(thiserror::Error)] to resolve.

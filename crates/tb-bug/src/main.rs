@@ -36,9 +36,8 @@ enum Commands {
         /// Filter by severity: error, warning, info
         #[arg(long)]
         severity: Option<String>,
-        /// Only errors seen after this time (e.g., today, yesterday, 1d, 7d, 24h, 2026-03-01)
-        #[arg(long)]
-        since: Option<String>,
+        #[command(flatten)]
+        time: toolbox_core::time_range::TimeRange,
         /// Filter by release stage (e.g., production)
         #[arg(long)]
         stage: Option<String>,
@@ -288,7 +287,7 @@ async fn run() -> tb_bug::error::Result<()> {
             project,
             status,
             severity,
-            since,
+            time,
             stage,
             class,
             sort,
@@ -302,7 +301,7 @@ async fn run() -> tb_bug::error::Result<()> {
                 project,
                 status.as_deref(),
                 severity.as_deref(),
-                since.as_deref(),
+                time,
                 stage.as_deref(),
                 class.as_deref(),
                 sort.as_deref(),
