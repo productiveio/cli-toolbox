@@ -38,15 +38,15 @@ impl TimeRange {
     ///
     /// Errors if conflicting aliases are provided (e.g. both `--from` and `--since`).
     pub fn resolve(&self) -> Result<ResolvedRange, String> {
-        let from_raw = merge_aliases("--from", &[
-            (&self.from, "--from"),
-            (&self.since, "--since"),
-            (&self.after, "--after"),
-        ])?;
-        let to_raw = merge_aliases("--to", &[
-            (&self.to, "--to"),
-            (&self.before, "--before"),
-        ])?;
+        let from_raw = merge_aliases(
+            "--from",
+            &[
+                (&self.from, "--from"),
+                (&self.since, "--since"),
+                (&self.after, "--after"),
+            ],
+        )?;
+        let to_raw = merge_aliases("--to", &[(&self.to, "--to"), (&self.before, "--before")])?;
 
         let from = from_raw.map(|s| parse_date(&s)).transpose()?;
         let to = to_raw
@@ -90,8 +90,12 @@ impl ResolvedRange {
     /// Format as Unix timestamps (seconds since epoch).
     pub fn to_timestamps(&self) -> (Option<i64>, Option<i64>) {
         (
-            self.from.and_then(|d| d.and_hms_opt(0, 0, 0)).map(|dt| dt.and_utc().timestamp()),
-            self.to.and_then(|d| d.and_hms_opt(0, 0, 0)).map(|dt| dt.and_utc().timestamp()),
+            self.from
+                .and_then(|d| d.and_hms_opt(0, 0, 0))
+                .map(|dt| dt.and_utc().timestamp()),
+            self.to
+                .and_then(|d| d.and_hms_opt(0, 0, 0))
+                .map(|dt| dt.and_utc().timestamp()),
         )
     }
 
@@ -144,22 +148,32 @@ fn parse_date(s: &str) -> Result<NaiveDate, String> {
 
     // Relative: Nd, Nw, Nh
     if let Some(num_str) = s.strip_suffix('d') {
-        let n: i64 = num_str.parse().map_err(|_| format!("invalid relative date: {}", s))?;
+        let n: i64 = num_str
+            .parse()
+            .map_err(|_| format!("invalid relative date: {}", s))?;
         return Ok(Utc::now().date_naive() - chrono::Duration::days(n));
     }
     if let Some(num_str) = s.strip_suffix('w') {
-        let n: i64 = num_str.parse().map_err(|_| format!("invalid relative date: {}", s))?;
+        let n: i64 = num_str
+            .parse()
+            .map_err(|_| format!("invalid relative date: {}", s))?;
         return Ok(Utc::now().date_naive() - chrono::Duration::days(n * 7));
     }
     if let Some(num_str) = s.strip_suffix('h') {
-        let n: i64 = num_str.parse().map_err(|_| format!("invalid relative date: {}", s))?;
+        let n: i64 = num_str
+            .parse()
+            .map_err(|_| format!("invalid relative date: {}", s))?;
         let dt = Utc::now() - chrono::Duration::hours(n);
         return Ok(dt.date_naive());
     }
 
     // Absolute: YYYY-MM-DD
-    NaiveDate::parse_from_str(s, "%Y-%m-%d")
-        .map_err(|_| format!("invalid date '{}' — expected YYYY-MM-DD or relative (7d, 2w, today, yesterday)", s))
+    NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|_| {
+        format!(
+            "invalid date '{}' — expected YYYY-MM-DD or relative (7d, 2w, today, yesterday)",
+            s
+        )
+    })
 }
 
 #[cfg(test)]
@@ -168,7 +182,10 @@ mod tests {
 
     #[test]
     fn parse_absolute_date() {
-        assert_eq!(parse_date("2026-03-10").unwrap(), NaiveDate::from_ymd_opt(2026, 3, 10).unwrap());
+        assert_eq!(
+            parse_date("2026-03-10").unwrap(),
+            NaiveDate::from_ymd_opt(2026, 3, 10).unwrap()
+        );
     }
 
     #[test]
@@ -215,7 +232,10 @@ mod tests {
             ..Default::default()
         };
         let r = tr.resolve().unwrap();
-        assert_eq!(r.from.unwrap(), NaiveDate::from_ymd_opt(2026, 3, 1).unwrap());
+        assert_eq!(
+            r.from.unwrap(),
+            NaiveDate::from_ymd_opt(2026, 3, 1).unwrap()
+        );
         // to is exclusive: input 2026-03-10 → stored as 2026-03-11
         assert_eq!(r.to.unwrap(), NaiveDate::from_ymd_opt(2026, 3, 11).unwrap());
     }
@@ -280,13 +300,22 @@ mod tests {
         let empty = TimeRange::default();
         assert!(!empty.has_from());
 
-        let with_from = TimeRange { from: Some("7d".into()), ..Default::default() };
+        let with_from = TimeRange {
+            from: Some("7d".into()),
+            ..Default::default()
+        };
         assert!(with_from.has_from());
 
-        let with_since = TimeRange { since: Some("7d".into()), ..Default::default() };
+        let with_since = TimeRange {
+            since: Some("7d".into()),
+            ..Default::default()
+        };
         assert!(with_since.has_from());
 
-        let with_after = TimeRange { after: Some("7d".into()), ..Default::default() };
+        let with_after = TimeRange {
+            after: Some("7d".into()),
+            ..Default::default()
+        };
         assert!(with_after.has_from());
     }
 }
