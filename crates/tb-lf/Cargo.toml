@@ -1,6 +1,6 @@
 [package]
 name = "tb-lf"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2024"
 description = "Langfuse insights CLI — devportal-backed"
 authors.workspace = true
