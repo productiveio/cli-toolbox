@@ -329,10 +329,7 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 3, 1).unwrap()
         );
         // to is inclusive: input 2026-03-10 → stored as 2026-03-10 (no +1 day)
-        assert_eq!(
-            r.to.unwrap(),
-            NaiveDate::from_ymd_opt(2026, 3, 10).unwrap()
-        );
+        assert_eq!(r.to.unwrap(), NaiveDate::from_ymd_opt(2026, 3, 10).unwrap());
     }
 
     #[test]
