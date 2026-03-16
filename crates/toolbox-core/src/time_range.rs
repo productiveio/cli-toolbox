@@ -25,8 +25,13 @@ pub struct TimeRange {
 }
 
 /// Resolved time range with dates ready for API consumption.
-/// `to` is the **exclusive** upper bound: user input `--to 2026-03-10`
-/// resolves to `2026-03-11` so APIs with `< to` semantics work correctly.
+///
+/// When created via `resolve()`, `to` is the **exclusive** upper bound:
+/// user input `--to 2026-03-10` resolves to `2026-03-11` so APIs with
+/// `< to` / "before" semantics work correctly (Bugsnag, Semaphore).
+///
+/// When created via `resolve_inclusive()`, `to` is the user's literal date
+/// with no offset — for APIs that handle end-of-day snapping server-side (DevPortal).
 #[derive(Debug, Clone)]
 pub struct ResolvedRange {
     pub from: Option<NaiveDate>,
@@ -60,10 +65,20 @@ impl TimeRange {
     /// Resolve, printing error and exiting on invalid input.
     /// Suitable for CLI entry points.
     pub fn resolve_or_exit(&self) -> ResolvedRange {
-        self.resolve().unwrap_or_else(|e| {
-            eprintln!("error: {}", e);
-            std::process::exit(2);
-        })
+        unwrap_or_exit(self.resolve())
+    }
+
+    /// Resolve with **inclusive** `to` — no +1 day offset.
+    /// Use for APIs that handle end-of-day snapping server-side (e.g. DevPortal).
+    pub fn resolve_inclusive(&self) -> Result<ResolvedRange, String> {
+        let mut r = self.resolve()?;
+        r.to = r.to.map(|d| d - chrono::Duration::days(1));
+        Ok(r)
+    }
+
+    /// Resolve inclusive, printing error and exiting on invalid input.
+    pub fn resolve_inclusive_or_exit(&self) -> ResolvedRange {
+        unwrap_or_exit(self.resolve_inclusive())
     }
 
     /// Returns true if any "from" alias (`--from`, `--since`, `--after`) is set.
@@ -71,10 +86,9 @@ impl TimeRange {
         self.from.is_some() || self.since.is_some() || self.after.is_some()
     }
 
-    /// Resolve and append `("from", ...)` and `("to", ...)` date string params.
-    /// Prints error and exits on invalid input — suitable for CLI entry points.
-    pub fn push_date_params_or_exit(&self, params: &mut Vec<(&str, Option<String>)>) {
-        self.resolve_or_exit().push_date_params(params);
+    /// Resolve inclusive and append `("from", ...)` and `("to", ...)` date string params.
+    pub fn push_date_params_inclusive_or_exit(&self, params: &mut Vec<(&str, Option<String>)>) {
+        self.resolve_inclusive_or_exit().push_date_params(params);
     }
 }
 
@@ -113,6 +127,13 @@ impl ResolvedRange {
         params.push(("from", from));
         params.push(("to", to));
     }
+}
+
+fn unwrap_or_exit(r: Result<ResolvedRange, String>) -> ResolvedRange {
+    r.unwrap_or_else(|e| {
+        eprintln!("error: {}", e);
+        std::process::exit(2);
+    })
 }
 
 /// Pick a single value from multiple alias sources, erroring on conflicts.
@@ -293,6 +314,25 @@ mod tests {
         let (from, to) = r.to_date_strings();
         assert_eq!(from.unwrap(), "2026-03-01");
         assert_eq!(to.unwrap(), "2026-03-11");
+    }
+
+    #[test]
+    fn resolve_inclusive_no_offset() {
+        let tr = TimeRange {
+            from: Some("2026-03-01".into()),
+            to: Some("2026-03-10".into()),
+            ..Default::default()
+        };
+        let r = tr.resolve_inclusive().unwrap();
+        assert_eq!(
+            r.from.unwrap(),
+            NaiveDate::from_ymd_opt(2026, 3, 1).unwrap()
+        );
+        // to is inclusive: input 2026-03-10 → stored as 2026-03-10 (no +1 day)
+        assert_eq!(
+            r.to.unwrap(),
+            NaiveDate::from_ymd_opt(2026, 3, 10).unwrap()
+        );
     }
 
     #[test]

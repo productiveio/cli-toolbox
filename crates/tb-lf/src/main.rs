@@ -460,7 +460,7 @@ async fn run() -> tb_lf::error::Result<()> {
             if stats {
                 let mut params: Vec<(&str, Option<String>)> =
                     vec![("project_id", pid), ("name", name), ("environment", env)];
-                time.push_date_params_or_exit(&mut params);
+                time.push_date_params_inclusive_or_exit(&mut params);
                 let path = DevPortalClient::build_path("/traces/stats", &params);
                 let s: TraceStats = client.get(&path, CacheTtl::Short).await?;
                 if cli.json {
@@ -488,7 +488,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("satisfaction", satisfaction),
                 ("sort", sort),
             ];
-            time.push_date_params_or_exit(&mut params);
+            time.push_date_params_inclusive_or_exit(&mut params);
             pagination.push_params(&mut params);
             let path = DevPortalClient::build_path("/traces", &params);
             let resp: PaginatedResponse<Trace> = client.get(&path, CacheTtl::Short).await?;
@@ -633,7 +633,7 @@ async fn run() -> tb_lf::error::Result<()> {
             if stats {
                 let mut params: Vec<(&str, Option<String>)> =
                     vec![("project_id", pid), ("environment", env)];
-                time.push_date_params_or_exit(&mut params);
+                time.push_date_params_inclusive_or_exit(&mut params);
                 let path = DevPortalClient::build_path("/sessions/stats", &params);
                 let s: serde_json::Value = client.get(&path, CacheTtl::Short).await?;
                 println!("{}", output::render_json(&s));
@@ -647,7 +647,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("satisfaction", satisfaction),
                 ("sort", sort),
             ];
-            time.push_date_params_or_exit(&mut params);
+            time.push_date_params_inclusive_or_exit(&mut params);
             pagination.push_params(&mut params);
             let path = DevPortalClient::build_path("/sessions", &params);
             let resp: PaginatedResponse<Session> = client.get(&path, CacheTtl::Short).await?;
@@ -754,7 +754,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("level", level),
                 ("environment", env),
             ];
-            time.push_date_params_or_exit(&mut params);
+            time.push_date_params_inclusive_or_exit(&mut params);
             let path = DevPortalClient::build_path("/observations", &params);
             let obs: Vec<Observation> = client.get(&path, CacheTtl::Short).await?;
 
@@ -823,7 +823,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("environment", env),
                 ("per_page", Some(limit.to_string())),
             ];
-            time.push_date_params_or_exit(&mut params);
+            time.push_date_params_inclusive_or_exit(&mut params);
             let path = DevPortalClient::build_path("/scores", &params);
             let scores: Vec<Score> = client.get(&path, CacheTtl::Short).await?;
 
@@ -873,7 +873,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("object_type", r#type),
                 ("object_id", object),
             ];
-            time.push_date_params_or_exit(&mut params);
+            time.push_date_params_inclusive_or_exit(&mut params);
             let path = DevPortalClient::build_path("/comments", &params);
             let comments: Vec<Comment> = client.get(&path, CacheTtl::Short).await?;
 
@@ -913,7 +913,7 @@ async fn run() -> tb_lf::error::Result<()> {
 
         Commands::Dashboard { time } => {
             let mut params: Vec<(&str, Option<String>)> = vec![("project_id", pid)];
-            time.push_date_params_or_exit(&mut params);
+            time.push_date_params_inclusive_or_exit(&mut params);
             let path = DevPortalClient::build_path("/dashboard", &params);
             let dash: Dashboard = client.get(&path, CacheTtl::Medium).await?;
 
@@ -1000,7 +1000,7 @@ async fn run() -> tb_lf::error::Result<()> {
 
             let mut params: Vec<(&str, Option<String>)> =
                 vec![("project_id", pid), ("environment", env)];
-            effective_time.push_date_params_or_exit(&mut params);
+            effective_time.push_date_params_inclusive_or_exit(&mut params);
             let path = DevPortalClient::build_path("/daily_metrics", &params);
             let metrics: Vec<DailyMetric> = client.get(&path, CacheTtl::Short).await?;
 
@@ -1056,7 +1056,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("triage_run_id", run),
                 ("feature_id", feature),
             ];
-            time.push_date_params_or_exit(&mut params);
+            time.push_date_params_inclusive_or_exit(&mut params);
             pagination.push_params(&mut params);
             let path = DevPortalClient::build_path("/queue_items", &params);
             let items: Vec<QueueItem> = client.get(&path, CacheTtl::Short).await?;
@@ -1190,7 +1190,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("status", status),
                 ("per_page", Some(limit.to_string())),
             ];
-            time.push_date_params_or_exit(&mut params);
+            time.push_date_params_inclusive_or_exit(&mut params);
             let path = DevPortalClient::build_path("/triage_runs", &params);
             let resp: tb_lf::api::PaginatedResponse<TriageRun> =
                 client.get(&path, CacheTtl::Short).await?;
@@ -1313,7 +1313,7 @@ async fn run() -> tb_lf::error::Result<()> {
                     ("mode", mode),
                     ("per_page", Some(limit.to_string())),
                 ];
-                time.push_date_params_or_exit(&mut params);
+                time.push_date_params_inclusive_or_exit(&mut params);
                 let path = DevPortalClient::build_path("/eval/runs", &params);
                 let resp: tb_lf::api::PaginatedResponse<EvalRun> =
                     client.get(&path, CacheTtl::Short).await?;
@@ -1661,7 +1661,7 @@ async fn run() -> tb_lf::error::Result<()> {
             // Try devportal search endpoint, fall back to traces with name filter
             let mut params: Vec<(&str, Option<String>)> =
                 vec![("project_id", pid.clone()), ("q", Some(query.clone()))];
-            time.push_date_params_or_exit(&mut params);
+            time.push_date_params_inclusive_or_exit(&mut params);
             pagination.push_params(&mut params);
             let path = DevPortalClient::build_path("/search", &params);
 
@@ -1736,7 +1736,7 @@ async fn run() -> tb_lf::error::Result<()> {
                     // Search endpoint not deployed — fall back to traces name filter
                     let mut params: Vec<(&str, Option<String>)> =
                         vec![("project_id", pid), ("name", Some(query.clone()))];
-                    time.push_date_params_or_exit(&mut params);
+                    time.push_date_params_inclusive_or_exit(&mut params);
                     pagination.push_params(&mut params);
                     let path = DevPortalClient::build_path("/traces", &params);
                     let resp: PaginatedResponse<Trace> = client.get(&path, CacheTtl::Short).await?;
@@ -1795,7 +1795,7 @@ async fn run() -> tb_lf::error::Result<()> {
 
         Commands::Tags { time } => {
             let mut params: Vec<(&str, Option<String>)> = vec![("project_id", pid)];
-            time.push_date_params_or_exit(&mut params);
+            time.push_date_params_inclusive_or_exit(&mut params);
             let path = DevPortalClient::build_path("/traces/names", &params);
             let names: Vec<String> = client.get(&path, CacheTtl::Short).await?;
 
