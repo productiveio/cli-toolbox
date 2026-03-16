@@ -49,6 +49,11 @@ enum Commands {
         #[command(subcommand)]
         action: ProjectAction,
     },
+    /// Search people by name or email
+    People {
+        /// Name or email to search for
+        query: Option<String>,
+    },
     /// AI context dump — quick command reference
     Prime,
     /// Manage cache
@@ -133,6 +138,22 @@ enum TaskAction {
         /// Validate and show resolved payload without creating
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Add subscribers to a task
+    Subscribe {
+        /// Task ID
+        id: String,
+        /// People to subscribe (name, email, or ID)
+        #[arg(required = true)]
+        people: Vec<String>,
+    },
+    /// Remove subscribers from a task
+    Unsubscribe {
+        /// Task ID
+        id: String,
+        /// People to unsubscribe (name, email, or ID)
+        #[arg(required = true)]
+        people: Vec<String>,
     },
     /// Update a task
     Update {
@@ -348,6 +369,18 @@ async fn run() -> tb_prod::error::Result<()> {
             }
             TaskAction::Show { id } => {
                 commands::task::run(&client, &id, cli.json).await?;
+            }
+            TaskAction::Subscribe { id, people } => {
+                let cache = Cache::new(client.org_id())?;
+                cache.ensure_fresh(&client).await?;
+                commands::task_subscribe::subscribe(&client, &cache, &id, &people, cli.json)
+                    .await?;
+            }
+            TaskAction::Unsubscribe { id, people } => {
+                let cache = Cache::new(client.org_id())?;
+                cache.ensure_fresh(&client).await?;
+                commands::task_subscribe::unsubscribe(&client, &cache, &id, &people, cli.json)
+                    .await?;
             }
             TaskAction::Create {
                 title,
@@ -568,6 +601,11 @@ async fn run() -> tb_prod::error::Result<()> {
                 commands::project::run(&client, &project, cli.json).await?;
             }
         },
+        Commands::People { query } => {
+            let cache = Cache::new(client.org_id())?;
+            cache.ensure_fresh(&client).await?;
+            commands::people::run(&cache, query.as_deref(), cli.json)?;
+        }
         Commands::Prime => {
             commands::prime::run(&client, &config).await?;
             toolbox_core::version_check::print_update_hint("tb-prod", env!("CARGO_PKG_VERSION"));

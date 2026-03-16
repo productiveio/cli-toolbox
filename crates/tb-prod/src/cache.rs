@@ -43,6 +43,14 @@ pub struct CachedPerson {
     pub email: String,
 }
 
+impl CachedPerson {
+    pub fn display_name(&self) -> String {
+        format!("{} {}", self.first_name, self.last_name)
+            .trim()
+            .to_string()
+    }
+}
+
 pub struct Cache {
     dir: PathBuf,
 }

@@ -44,6 +44,20 @@ impl Resource {
             .and_then(|d| d.get("id"))
             .and_then(|id| id.as_str())
     }
+
+    /// Extract IDs from a to-many relationship (where `data` is an array).
+    pub fn relationship_ids(&self, name: &str) -> Vec<&str> {
+        self.relationships
+            .get(name)
+            .and_then(|r| r.get("data"))
+            .and_then(|d| d.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| item.get("id").and_then(|id| id.as_str()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 }
 
 /// A JSONAPI list response with pagination meta.
@@ -329,7 +343,7 @@ impl ProductiveClient {
 
     pub async fn get_task(&self, id: &str) -> Result<JsonApiSingleResponse> {
         let path = format!(
-            "/tasks/{}?include=project,assignee,workflow_status,task_list,parent_task,creator",
+            "/tasks/{}?include=project,assignee,workflow_status,task_list,parent_task,creator,subscribers",
             id
         );
         self.get_one(&path).await

@@ -13,6 +13,8 @@ struct TaskDetail {
     assignee: String,
     project: String,
     creator: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    subscribers: Vec<String>,
     task_list: String,
     due_date: String,
     created_at: String,
@@ -61,6 +63,14 @@ pub async fn run(client: &ProductiveClient, task_id: &str, json: bool) -> Result
     let assignee_name = resolve_person(&resp.included, task.relationship_id("assignee"));
     let project_name = resolve_name(&resp.included, "projects", task.relationship_id("project"));
     let creator_name = resolve_person(&resp.included, task.relationship_id("creator"));
+    let subscriber_names: Vec<String> = task
+        .relationship_ids("subscribers")
+        .iter()
+        .filter_map(|id| {
+            let name = resolve_person(&resp.included, Some(id));
+            if name.is_empty() { None } else { Some(name) }
+        })
+        .collect();
     let task_list_name = resolve_name(
         &resp.included,
         "task_lists",
@@ -142,6 +152,7 @@ pub async fn run(client: &ProductiveClient, task_id: &str, json: bool) -> Result
         assignee: assignee_name,
         project: project_name,
         creator: creator_name,
+        subscribers: subscriber_names,
         task_list: task_list_name,
         due_date: task.attr_str("due_date").to_string(),
         created_at: task.attr_str("created_at").to_string(),
@@ -164,6 +175,13 @@ pub async fn run(client: &ProductiveClient, task_id: &str, json: bool) -> Result
     println!("Task list: {}", detail.task_list);
     println!("Assignee:  {}", detail.assignee);
     println!("Creator:   {}", detail.creator);
+    if !detail.subscribers.is_empty() {
+        println!(
+            "Subscribers: {} ({})",
+            detail.subscribers.join(", "),
+            detail.subscribers.len()
+        );
+    }
     if !detail.due_date.is_empty() {
         println!("Due:       {}", detail.due_date);
     }
