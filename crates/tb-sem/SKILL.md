@@ -14,6 +14,7 @@ CLI for querying Semaphore CI pipelines, jobs, and test results. Surfaces failur
 - **Flaky detection** — identify tests that flip across recent runs
 - **Deploy tracking** — recent deploys with overlap detection
 - **Comparison** — diff two pipeline runs side by side
+- **Workflow run** — trigger a new workflow on a branch (`tb-sem workflow run <project> --branch <branch>`)
 
 ## Branch filtering
 

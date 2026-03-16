@@ -13,3 +13,4 @@ pub mod promotions;
 pub mod runs;
 pub mod tests;
 pub mod triage;
+pub mod workflow;

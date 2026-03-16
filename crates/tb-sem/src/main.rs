@@ -222,6 +222,11 @@ enum Commands {
         #[arg(long, default_value = "7")]
         days: u32,
     },
+    /// Workflow operations (run, etc.)
+    Workflow {
+        #[command(subcommand)]
+        action: WorkflowAction,
+    },
     /// AI-optimized context dump
     Prime {
         /// Minimal output for hooks
@@ -242,6 +247,27 @@ enum Commands {
     Config {
         #[command(subcommand)]
         action: ConfigAction,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum WorkflowAction {
+    /// Trigger a new workflow run
+    Run {
+        /// Project name or ID
+        project: String,
+        /// Branch to run on
+        #[arg(long)]
+        branch: String,
+        /// Specific commit SHA (uses HEAD of branch if omitted)
+        #[arg(long)]
+        commit: Option<String>,
+        /// Pipeline file path (defaults to .semaphore/semaphore.yml)
+        #[arg(long)]
+        file: Option<String>,
+        /// JSON output
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -488,6 +514,26 @@ async fn run() -> tb_sem::error::Result<()> {
             )
             .await?;
         }
+        Commands::Workflow { action } => match action {
+            WorkflowAction::Run {
+                project,
+                branch,
+                commit,
+                file,
+                json,
+            } => {
+                commands::workflow::run(
+                    &client,
+                    &config,
+                    &project,
+                    &branch,
+                    commit.as_deref(),
+                    file.as_deref(),
+                    json,
+                )
+                .await?;
+            }
+        },
         Commands::Branches { project, days } => {
             commands::branches::run(&client, &config, &project, days).await?;
         }

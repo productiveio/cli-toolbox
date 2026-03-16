@@ -1,7 +1,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 use regex::Regex;
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 use crate::error::{Result, TbSemError};
@@ -237,6 +237,32 @@ impl SemaphoreClient {
         }
     }
 
+    async fn post<B: Serialize, T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Token {}", self.token))
+            .json(body)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(TbSemError::Api {
+                status,
+                message: body,
+            });
+        }
+
+        Ok(resp.json().await?)
+    }
+
     async fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
@@ -378,4 +404,24 @@ impl SemaphoreClient {
         let resp: LogResponse = self.get(&format!("/logs/{}", job_id)).await?;
         Ok(resp.events)
     }
+
+    pub async fn run_workflow(&self, request: &RunWorkflowRequest) -> Result<RunWorkflowResponse> {
+        self.post("/plumber-workflows", request).await
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct RunWorkflowRequest {
+    pub project_id: String,
+    pub reference: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit_sha: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pipeline_file: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RunWorkflowResponse {
+    pub workflow_id: String,
+    pub pipeline_id: String,
 }
