@@ -1,4 +1,33 @@
+use serde::ser::Serializer;
 use serde::{Deserialize, Deserializer, Serialize};
+
+/// Tri-state for nullable fields in update payloads.
+/// - `Nullable::Absent` → field omitted from JSON
+/// - `Nullable::Null` → field serialized as `null` (clears the value)
+/// - `Nullable::Value(v)` → field serialized with the value
+#[derive(Debug, Clone, Default)]
+pub enum Nullable<T> {
+    #[default]
+    Absent,
+    Null,
+    Value(T),
+}
+
+impl<T> Nullable<T> {
+    pub fn is_absent(&self) -> bool {
+        matches!(self, Nullable::Absent)
+    }
+}
+
+impl<T: Serialize> Serialize for Nullable<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        match self {
+            Nullable::Absent => unreachable!("Absent should be skipped by skip_serializing_if"),
+            Nullable::Null => serializer.serialize_none(),
+            Nullable::Value(v) => v.serialize(serializer),
+        }
+    }
+}
 
 /// Deserialize a value that may come as a number or a string representation of a number.
 fn string_or_f64<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Option<f64>, D::Error> {
@@ -219,6 +248,59 @@ pub struct QueueItem {
     pub feature_id: Option<i64>,
     #[serde(default)]
     pub created_at: Option<String>,
+    // --- new fields ---
+    #[serde(default)]
+    pub ai_team: Option<NamedRef>,
+    #[serde(default)]
+    pub team: Option<NamedRef>,
+    #[serde(default)]
+    pub ai_feature: Option<NamedRef>,
+    #[serde(default)]
+    pub feature: Option<NamedRef>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub reviewed_at: Option<String>,
+    #[serde(default)]
+    pub triage_run_id: Option<i64>,
+    #[serde(default)]
+    pub trace_timestamp: Option<String>,
+    #[serde(default)]
+    pub trace_user_id: Option<String>,
+    #[serde(default)]
+    pub trace_user_satisfied: Option<bool>,
+}
+
+/// Payload for PATCH /queue_items/:id and PATCH /queue_items/bulk_update
+#[derive(Debug, Default, Serialize)]
+pub struct QueueItemUpdate {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(skip_serializing_if = "Nullable::is_absent")]
+    pub feature_id: Nullable<i64>,
+    #[serde(skip_serializing_if = "Nullable::is_absent")]
+    pub team_id: Nullable<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reviewed_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reviewed_at: Option<String>,
+}
+
+/// Response from GET /teams
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Team {
+    pub id: i64,
+    pub name: String,
+    #[serde(default)]
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

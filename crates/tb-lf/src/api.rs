@@ -1,5 +1,5 @@
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::cache::{Cache, CacheTtl};
 use crate::config::Config;
@@ -24,6 +24,16 @@ pub struct PaginationMeta {
     pub page: u32,
     pub per_page: u32,
     pub total: u32,
+}
+
+fn api_error(status: u16, body: String) -> TbLfError {
+    let message = match status {
+        401 => "Invalid token. Run `tb-lf config show` to check.".into(),
+        404 => "Not found.".into(),
+        s if s >= 500 => format!("DevPortal error ({}): {}", s, body),
+        _ => body,
+    };
+    TbLfError::Api { status, message }
 }
 
 impl DevPortalClient {
@@ -57,13 +67,7 @@ impl DevPortalClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let body = resp.text().await.unwrap_or_default();
-            let message = match status {
-                401 => "Invalid token. Run `tb-lf config show` to check.".into(),
-                404 => "Not found.".into(),
-                s if s >= 500 => format!("DevPortal error ({}): {}", s, body),
-                _ => body,
-            };
-            return Err(TbLfError::Api { status, message });
+            return Err(api_error(status, body));
         }
 
         let body = resp.text().await?;
@@ -92,6 +96,48 @@ impl DevPortalClient {
         } else {
             format!("{}?{}", base, pairs.join("&"))
         }
+    }
+
+    pub async fn patch<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &impl Serialize,
+    ) -> Result<T> {
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .client
+            .patch(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .header("Accept", "application/json")
+            .json(body)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(api_error(status, body));
+        }
+        let body = resp.text().await?;
+        Ok(serde_json::from_str(&body)?)
+    }
+
+    pub async fn delete(&self, path: &str) -> Result<()> {
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .client
+            .delete(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .header("Accept", "application/json")
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(api_error(status, body));
+        }
+        Ok(())
     }
 
     pub fn cache(&self) -> &Cache {

@@ -8,6 +8,18 @@ use tb_lf::output;
 use tb_lf::types::*;
 use toolbox_core::time_range::TimeRange;
 
+/// Convert (Option<i64>, --no-* flag) into Nullable<i64>.
+fn to_nullable(value: Option<i64>, clear: bool) -> Nullable<i64> {
+    if clear {
+        Nullable::Null
+    } else {
+        match value {
+            Some(v) => Nullable::Value(v),
+            None => Nullable::Absent,
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(
     name = "tb-lf",
@@ -194,6 +206,9 @@ enum Commands {
         run: Option<String>,
         #[arg(long)]
         feature: Option<String>,
+        /// Filter by team ID, or "unassigned" for items with no team
+        #[arg(long)]
+        team: Option<String>,
         /// Show full AI reasoning
         #[arg(long)]
         full: bool,
@@ -208,6 +223,79 @@ enum Commands {
     /// Show a single queue item
     #[command(after_help = "Examples:\n  tb-lf queue-item 42\n  tb-lf queue-item 42 --json")]
     QueueItem { id: i64 },
+    /// Update a queue item
+    #[command(
+        after_help = "Examples:\n  tb-lf queue-update 42 --status confirmed\n  tb-lf queue-update 42 --team 3 --note 'needs follow-up'\n  tb-lf queue-update 42 --no-team                        Clear team\n  tb-lf queue-update 42 --category bug --reviewed-by tibor"
+    )]
+    QueueUpdate {
+        id: i64,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        category: Option<String>,
+        #[arg(long)]
+        note: Option<String>,
+        #[arg(long)]
+        feature: Option<i64>,
+        /// Clear the feature assignment
+        #[arg(long, conflicts_with = "feature")]
+        no_feature: bool,
+        #[arg(long)]
+        team: Option<i64>,
+        /// Clear the team assignment
+        #[arg(long, conflicts_with = "team")]
+        no_team: bool,
+        #[arg(long)]
+        reviewed_by: Option<String>,
+    },
+    /// Bulk-update queue items matching filters
+    #[command(
+        after_help = "Examples:\n  tb-lf queue-bulk-update --filter-status pending_review --set-team 3\n  tb-lf queue-bulk-update --filter-category bug --set-status confirmed --set-reviewed-by tibor\n  tb-lf queue-bulk-update --filter-confidence high --filter-category feature_request --set-team 5 --dry-run"
+    )]
+    QueueBulkUpdate {
+        #[arg(long)]
+        filter_status: Option<String>,
+        #[arg(long)]
+        filter_category: Option<String>,
+        #[arg(long)]
+        filter_confidence: Option<String>,
+        #[arg(long)]
+        filter_feature: Option<String>,
+        #[arg(long)]
+        filter_team: Option<String>,
+        #[arg(long)]
+        set_status: Option<String>,
+        #[arg(long)]
+        set_category: Option<String>,
+        #[arg(long)]
+        set_note: Option<String>,
+        #[arg(long)]
+        set_feature: Option<i64>,
+        /// Clear the feature assignment
+        #[arg(long, conflicts_with = "set_feature")]
+        no_feature: bool,
+        #[arg(long)]
+        set_team: Option<i64>,
+        /// Clear the team assignment
+        #[arg(long, conflicts_with = "set_team")]
+        no_team: bool,
+        #[arg(long)]
+        set_reviewed_by: Option<String>,
+        /// Preview changes without applying them
+        #[arg(long)]
+        dry_run: bool,
+        #[command(flatten)]
+        time: TimeRange,
+    },
+    /// Delete a queue item
+    #[command(after_help = "Examples:\n  tb-lf queue-delete 42")]
+    QueueDelete { id: i64 },
+    /// List teams
+    #[command(after_help = "Examples:\n  tb-lf teams\n  tb-lf teams --json")]
+    Teams {
+        #[arg(long)]
+        status: Option<String>,
+    },
     /// List triage runs
     #[command(
         after_help = "Examples:\n  tb-lf triage-runs\n  tb-lf triage-runs --status completed --limit 5\n  tb-lf triage-runs --from 7d\n  tb-lf triage-runs --json"
@@ -1044,6 +1132,7 @@ async fn run() -> tb_lf::error::Result<()> {
             confidence,
             run,
             feature,
+            team,
             full,
             time,
             pagination,
@@ -1055,6 +1144,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("confidence", confidence),
                 ("triage_run_id", run),
                 ("feature_id", feature),
+                ("team_id", team),
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
             pagination.push_params(&mut params);
@@ -1086,13 +1176,20 @@ async fn run() -> tb_lf::error::Result<()> {
                 let cat = item.ai_category.as_deref().unwrap_or("");
                 let conf = item.ai_confidence.as_deref().unwrap_or("");
                 let trace = item.trace_langfuse_id.as_deref().unwrap_or("");
+                let team_name = item
+                    .team
+                    .as_ref()
+                    .or(item.ai_team.as_ref())
+                    .map(|t| t.name.as_str())
+                    .unwrap_or("");
 
                 println!(
-                    "  {} [{}] {} {}  {}",
+                    "  {} [{}] {} {}  {}  {}",
                     trace.dimmed(),
                     status_colored,
                     cat,
                     conf.dimmed(),
+                    team_name.cyan(),
                     item.reviewed_by.as_deref().unwrap_or("").dimmed()
                 );
 
@@ -1164,9 +1261,42 @@ async fn run() -> tb_lf::error::Result<()> {
                 "  Confidence: {}",
                 item.ai_confidence.as_deref().unwrap_or("—")
             );
+            let team_display = item
+                .team
+                .as_ref()
+                .map(|t| format!("{} (id:{})", t.name, t.id))
+                .unwrap_or_else(|| "—".into());
+            let ai_team_display = item
+                .ai_team
+                .as_ref()
+                .map(|t| t.name.clone())
+                .unwrap_or_else(|| "—".into());
+            println!("  Team:       {} (AI: {})", team_display, ai_team_display);
+            let feature_display = item
+                .feature
+                .as_ref()
+                .map(|f| format!("{} (id:{})", f.name, f.id))
+                .unwrap_or_else(|| "—".into());
+            let ai_feature_display = item
+                .ai_feature
+                .as_ref()
+                .map(|f| f.name.clone())
+                .unwrap_or_else(|| "—".into());
+            println!(
+                "  Feature:    {} (AI: {})",
+                feature_display, ai_feature_display
+            );
             println!(
                 "  Reviewed:   {}",
                 item.reviewed_by.as_deref().unwrap_or("—")
+            );
+            if let Some(note) = &item.note {
+                println!("  Note:       {}", note);
+            }
+            println!("  Source:     {}", item.source.as_deref().unwrap_or("—"));
+            println!(
+                "  Created:    {}",
+                item.created_at.as_deref().unwrap_or("—")
             );
             if let Some(reasoning) = &item.ai_reasoning {
                 println!("\n  {}", "AI Reasoning:".bold());
@@ -1177,6 +1307,163 @@ async fn run() -> tb_lf::error::Result<()> {
                     "\n  {}",
                     format!("Run `tb-lf trace {}` to see the full trace.", trace_id).dimmed()
                 );
+            }
+        }
+
+        Commands::QueueUpdate {
+            id,
+            status,
+            category,
+            note,
+            feature,
+            no_feature,
+            team,
+            no_team,
+            reviewed_by,
+        } => {
+            let update = QueueItemUpdate {
+                status,
+                category,
+                note,
+                feature_id: to_nullable(feature, no_feature),
+                team_id: to_nullable(team, no_team),
+                reviewed_by,
+                ..Default::default()
+            };
+            let path = format!("/queue_items/{}", id);
+            let item: QueueItem = client.patch(&path, &update).await?;
+
+            if cli.json {
+                println!("{}", output::render_json(&item));
+                return Ok(());
+            }
+
+            println!("{} Queue item #{} updated.", "OK".green().bold(), id);
+            println!(
+                "  Status: {}  Category: {}  Team: {}",
+                item.status.as_deref().unwrap_or("—"),
+                item.category.as_deref().unwrap_or("—"),
+                item.team.as_ref().map(|t| t.name.as_str()).unwrap_or("—"),
+            );
+        }
+
+        Commands::QueueBulkUpdate {
+            filter_status,
+            filter_category,
+            filter_confidence,
+            filter_feature,
+            filter_team,
+            set_status,
+            set_category,
+            set_note,
+            set_feature,
+            no_feature,
+            set_team,
+            no_team,
+            set_reviewed_by,
+            dry_run,
+            time,
+        } => {
+            // Fetch all matching items, paginating through all pages
+            let mut items: Vec<QueueItem> = Vec::new();
+            let mut page = 1u32;
+            loop {
+                let mut params: Vec<(&str, Option<String>)> = vec![
+                    ("project_id", pid.clone()),
+                    ("status", filter_status.clone()),
+                    ("category", filter_category.clone()),
+                    ("confidence", filter_confidence.clone()),
+                    ("feature_id", filter_feature.clone()),
+                    ("team_id", filter_team.clone()),
+                    ("per_page", Some("200".into())),
+                    ("page", Some(page.to_string())),
+                ];
+                time.push_date_params_inclusive_or_exit(&mut params);
+                let path = DevPortalClient::build_path("/queue_items", &params);
+                let batch: Vec<QueueItem> = client.get(&path, CacheTtl::Short).await?;
+                let batch_len = batch.len();
+                items.extend(batch);
+                if batch_len < 200 {
+                    break;
+                }
+                page += 1;
+            }
+
+            if items.is_empty() {
+                println!(
+                    "{}",
+                    output::empty_hint("queue items", "No items match those filters.")
+                );
+                return Ok(());
+            }
+
+            let update = QueueItemUpdate {
+                status: set_status,
+                category: set_category,
+                note: set_note,
+                feature_id: to_nullable(set_feature, no_feature),
+                team_id: to_nullable(set_team, no_team),
+                reviewed_by: set_reviewed_by,
+                ..Default::default()
+            };
+
+            if dry_run {
+                println!(
+                    "{} Would update {} items. Sample IDs: {:?}",
+                    "DRY RUN".yellow().bold(),
+                    items.len(),
+                    items.iter().take(10).map(|i| i.id).collect::<Vec<_>>()
+                );
+                println!("  Payload: {}", serde_json::to_string_pretty(&update)?);
+                return Ok(());
+            }
+
+            let ids: Vec<i64> = items.iter().map(|i| i.id).collect();
+            println!("Updating {} items...", ids.len());
+
+            let mut total_updated = 0u32;
+            for chunk in ids.chunks(500) {
+                let payload = serde_json::json!({
+                    "ids": chunk,
+                    "updates": &update,
+                });
+                let resp: serde_json::Value =
+                    client.patch("/queue_items/bulk_update", &payload).await?;
+                let updated = resp
+                    .get("updated_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32;
+                total_updated += updated;
+            }
+            println!("{} {} updated.", "Done.".green().bold(), total_updated,);
+        }
+
+        Commands::QueueDelete { id } => {
+            let path = format!("/queue_items/{}", id);
+            client.delete(&path).await?;
+            println!("{} Queue item #{} deleted.", "OK".green().bold(), id);
+        }
+
+        Commands::Teams { status } => {
+            let params: Vec<(&str, Option<String>)> = vec![("project_id", pid), ("status", status)];
+            let path = DevPortalClient::build_path("/teams", &params);
+            let resp: PaginatedResponse<Team> = client.get(&path, CacheTtl::Short).await?;
+            let teams = resp.data;
+
+            if cli.json {
+                println!("{}", output::render_json(&teams));
+                return Ok(());
+            }
+
+            if teams.is_empty() {
+                println!("{}", output::empty_hint("teams", "No teams found."));
+                return Ok(());
+            }
+
+            println!("{} ({})\n", "Teams".bold(), teams.len());
+            for team in &teams {
+                let status = team.status.as_deref().unwrap_or("");
+                println!("  {:>4}  {}  {}", team.id, team.name, status.dimmed());
             }
         }
 
@@ -1954,6 +2241,9 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("- `tb-lf dashboard` — KPI overview");
             println!("- `tb-lf eval runs --limit 5` — recent eval runs");
             println!("- `tb-lf queue --status pending_review` — pending triage items");
+            println!("- `tb-lf queue-update <id> --team <id>` — assign team to queue item");
+            println!("- `tb-lf queue-bulk-update --filter-* --set-* --dry-run` — bulk update");
+            println!("- `tb-lf teams` — list teams");
             println!("- `tb-lf search <query>` — search traces");
             println!("- `tb-lf trace <id> --project <p>` — full trace detail");
 
@@ -2002,8 +2292,19 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("{}", "Triage".bold().underline());
             println!("  tb-lf queue                        Pending queue items");
             println!("  tb-lf queue --status confirmed     Confirmed items");
+            println!("  tb-lf queue --team 25              Filter by team");
+            println!("  tb-lf queue --team unassigned      Unassigned items");
             println!("  tb-lf queue-stats                  Queue breakdown");
+            println!("  tb-lf teams                        List teams");
             println!("  tb-lf triage-runs                  Recent triage runs");
+            println!();
+            println!("{}", "Queue Management".bold().underline());
+            println!("  tb-lf queue-update 42 --team 25    Assign team");
+            println!("  tb-lf queue-update 42 --no-team    Clear team");
+            println!("  tb-lf queue-update 42 --status confirmed");
+            println!("  tb-lf queue-bulk-update --filter-status pending_review --set-team 25");
+            println!("  tb-lf queue-bulk-update ... --dry-run  Preview first");
+            println!("  tb-lf queue-delete 42              Delete an item");
             println!();
             println!("{}", "Tips".bold().underline());
             println!("  --json        Machine-readable output (pipe to jq)");
