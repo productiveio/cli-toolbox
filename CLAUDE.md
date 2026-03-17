@@ -3,6 +3,7 @@
 ## Git Workflow
 
 - Commit directly to `main` — no branches or PRs needed for now.
+- **Before publishing a tool**, always check for uncommitted changes in its crate directory and commit them first. The bump script only commits the version change — any pending code changes will be left out of the tagged release.
 
 ## Bugs and Issues
 

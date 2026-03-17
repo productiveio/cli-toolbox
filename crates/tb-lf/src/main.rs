@@ -250,9 +250,12 @@ enum Commands {
     },
     /// Bulk-update queue items matching filters
     #[command(
-        after_help = "Examples:\n  tb-lf queue-bulk-update --filter-status pending_review --set-team 3\n  tb-lf queue-bulk-update --filter-category bug --set-status confirmed --set-reviewed-by tibor\n  tb-lf queue-bulk-update --filter-confidence high --filter-category feature_request --set-team 5 --dry-run"
+        after_help = "Examples:\n  tb-lf queue-bulk-update --ids 1,2,3 --set-team 5\n  tb-lf queue-bulk-update --filter-status pending_review --set-team 3\n  tb-lf queue-bulk-update --filter-category bug --set-status confirmed --set-reviewed-by tibor\n  tb-lf queue-bulk-update --filter-confidence high --filter-category feature_request --set-team 5 --dry-run"
     )]
     QueueBulkUpdate {
+        /// Update specific items by ID (comma-separated), skipping filter query
+        #[arg(long, value_delimiter = ',', conflicts_with_all = ["filter_status", "filter_category", "filter_confidence", "filter_feature", "filter_team"])]
+        ids: Vec<i64>,
         #[arg(long)]
         filter_status: Option<String>,
         #[arg(long)]
@@ -1348,6 +1351,7 @@ async fn run() -> tb_lf::error::Result<()> {
         }
 
         Commands::QueueBulkUpdate {
+            ids,
             filter_status,
             filter_category,
             filter_confidence,
@@ -1364,38 +1368,44 @@ async fn run() -> tb_lf::error::Result<()> {
             dry_run,
             time,
         } => {
-            // Fetch all matching items, paginating through all pages
-            let mut items: Vec<QueueItem> = Vec::new();
-            let mut page = 1u32;
-            loop {
-                let mut params: Vec<(&str, Option<String>)> = vec![
-                    ("project_id", pid.clone()),
-                    ("status", filter_status.clone()),
-                    ("category", filter_category.clone()),
-                    ("confidence", filter_confidence.clone()),
-                    ("feature_id", filter_feature.clone()),
-                    ("team_id", filter_team.clone()),
-                    ("per_page", Some("200".into())),
-                    ("page", Some(page.to_string())),
-                ];
-                time.push_date_params_inclusive_or_exit(&mut params);
-                let path = DevPortalClient::build_path("/queue_items", &params);
-                let batch: Vec<QueueItem> = client.get(&path, CacheTtl::Short).await?;
-                let batch_len = batch.len();
-                items.extend(batch);
-                if batch_len < 200 {
-                    break;
+            let target_ids: Vec<i64> = if !ids.is_empty() {
+                ids
+            } else {
+                // Fetch all matching items, paginating through all pages
+                let mut collected_ids: Vec<i64> = Vec::new();
+                let mut page = 1u32;
+                loop {
+                    let mut params: Vec<(&str, Option<String>)> = vec![
+                        ("project_id", pid.clone()),
+                        ("status", filter_status.clone()),
+                        ("category", filter_category.clone()),
+                        ("confidence", filter_confidence.clone()),
+                        ("feature_id", filter_feature.clone()),
+                        ("team_id", filter_team.clone()),
+                        ("per_page", Some("200".into())),
+                        ("page", Some(page.to_string())),
+                    ];
+                    time.push_date_params_inclusive_or_exit(&mut params);
+                    let path = DevPortalClient::build_path("/queue_items", &params);
+                    let batch: Vec<QueueItem> = client.get(&path, CacheTtl::Short).await?;
+                    let batch_len = batch.len();
+                    collected_ids.extend(batch.iter().map(|i| i.id));
+                    if batch_len < 200 {
+                        break;
+                    }
+                    page += 1;
                 }
-                page += 1;
-            }
 
-            if items.is_empty() {
-                println!(
-                    "{}",
-                    output::empty_hint("queue items", "No items match those filters.")
-                );
-                return Ok(());
-            }
+                if collected_ids.is_empty() {
+                    println!(
+                        "{}",
+                        output::empty_hint("queue items", "No items match those filters.")
+                    );
+                    return Ok(());
+                }
+
+                collected_ids
+            };
 
             let update = QueueItemUpdate {
                 status: set_status,
@@ -1411,18 +1421,17 @@ async fn run() -> tb_lf::error::Result<()> {
                 println!(
                     "{} Would update {} items. Sample IDs: {:?}",
                     "DRY RUN".yellow().bold(),
-                    items.len(),
-                    items.iter().take(10).map(|i| i.id).collect::<Vec<_>>()
+                    target_ids.len(),
+                    &target_ids[..target_ids.len().min(10)]
                 );
                 println!("  Payload: {}", serde_json::to_string_pretty(&update)?);
                 return Ok(());
             }
 
-            let ids: Vec<i64> = items.iter().map(|i| i.id).collect();
-            println!("Updating {} items...", ids.len());
+            println!("Updating {} items...", target_ids.len());
 
             let mut total_updated = 0u32;
-            for chunk in ids.chunks(500) {
+            for chunk in target_ids.chunks(500) {
                 let payload = serde_json::json!({
                     "ids": chunk,
                     "updates": &update,
