@@ -384,10 +384,6 @@ fn calculate_booked_hours(date: &str, bookings: &[&Resource], capacity: f64, sal
 }
 
 fn booking_time_for_date(booking: &Resource, date: &str, capacity: f64, salaries: &[&Resource]) -> f64 {
-    let method = booking.attributes.get("booking_method_id").and_then(|v| v.as_str()).unwrap_or(
-        booking.attributes.get("booking_method_id").and_then(|v| v.as_u64()).map(|_| "").unwrap_or("")
-    );
-
     // booking_method_id: 1=per_day, 2=percentage, 3=total_hours
     let method_id = booking.attributes.get("booking_method_id")
         .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
@@ -395,22 +391,17 @@ fn booking_time_for_date(booking: &Resource, date: &str, capacity: f64, salaries
 
     match method_id {
         1 => {
-            // Per day: time is in minutes
             let time = booking.attributes.get("time").and_then(|v| v.as_f64()).unwrap_or(0.0);
             time / 60.0
         }
         2 => {
-            // Percentage
             let pct = booking.attributes.get("percentage").and_then(|v| v.as_f64()).unwrap_or(0.0);
             capacity * (pct / 100.0)
         }
         3 => {
-            // Total hours — distribute across working days
             distribute_total_hours(booking, date, salaries)
         }
         _ => {
-            // Fallback: try per_day
-            let _ = method;
             let time = booking.attributes.get("time").and_then(|v| v.as_f64()).unwrap_or(0.0);
             time / 60.0
         }
@@ -589,9 +580,14 @@ fn date_to_days(date: &str) -> i64 {
     if parts.len() != 3 {
         return 0;
     }
-    let (y, m, d) = (parts[0], parts[1], parts[2]);
-    // Approximate days since epoch for comparison
-    y * 365 + y / 4 - y / 100 + y / 400 + m * 30 + d
+    let (mut y, mut m, d) = (parts[0], parts[1], parts[2]);
+    // Normalize: shift Jan/Feb to months 13/14 of previous year for leap day handling
+    if m <= 2 {
+        y -= 1;
+        m += 12;
+    }
+    // Days since a fixed epoch using the Gaussian civil calendar formula
+    365 * y + y / 4 - y / 100 + y / 400 + (153 * (m - 3) + 2) / 5 + d
 }
 
 fn round2(v: f64) -> f64 {

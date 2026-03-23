@@ -43,7 +43,7 @@ impl GenericCache {
 
         for resource in schema.resources.values() {
             if let Some(cache_config) = &resource.cache {
-                if cache_config.scope == CacheScope::Org {
+                if cache_config.enabled && cache_config.scope == CacheScope::Org {
                     futures.push(self.sync_resource(client, resource));
                 }
             }
@@ -431,29 +431,51 @@ fn display_name(record: &CachedRecord, display_field: &str, resource_type: &str)
 /// Two-pass name resolution for filter values.
 /// Pass 1: resolve org-wide types.
 /// Pass 2: resolve project-scoped types using context from pass 1.
+/// Recurses into nested FilterGroup entries.
 pub fn resolve_filter_names(
     cache: &GenericCache,
     conditions: &mut [crate::filter::FilterEntry],
     resource: &ResourceDef,
     schema: &Schema,
 ) -> std::result::Result<(), String> {
-    // Pass 1: collect project_id from resolved conditions for scoping
     let mut resolved_project_id: Option<String> = None;
 
-    for entry in conditions.iter_mut() {
-        if let crate::filter::FilterEntry::Condition(cond) = entry {
-            if let Some(field) = crate::filter::resolve_filter_field(&cond.field, resource) {
-                if field.type_category == schema::TypeCategory::Resource {
-                    if let Some(target_resource) = schema.resources.get(&field.field_type) {
-                        if let Some(cache_config) = &target_resource.cache {
-                            if cache_config.scope == CacheScope::Org {
-                                // Resolve org-wide names
-                                resolve_condition_values(cache, cond, &field.field_type, None)?;
+    // Pass 1: resolve org-wide names, collect project_id for scoping
+    resolve_pass(cache, conditions, resource, schema, CacheScope::Org, &mut resolved_project_id)?;
 
-                                // Track project_id for pass 2
-                                if field.field_type == "projects" {
-                                    if let crate::filter::FilterValue::Single(ref v) = cond.value {
-                                        resolved_project_id = Some(v.clone());
+    // Pass 2: resolve project-scoped names using context from pass 1
+    resolve_pass(cache, conditions, resource, schema, CacheScope::Project, &mut resolved_project_id)?;
+
+    Ok(())
+}
+
+fn resolve_pass(
+    cache: &GenericCache,
+    conditions: &mut [crate::filter::FilterEntry],
+    resource: &ResourceDef,
+    schema: &Schema,
+    target_scope: CacheScope,
+    resolved_project_id: &mut Option<String>,
+) -> std::result::Result<(), String> {
+    for entry in conditions.iter_mut() {
+        match entry {
+            crate::filter::FilterEntry::Condition(cond) => {
+                if let Some(field) = crate::filter::resolve_filter_field(&cond.field, resource) {
+                    if field.type_category == schema::TypeCategory::Resource {
+                        if let Some(target_resource) = schema.resources.get(&field.field_type) {
+                            if let Some(cache_config) = &target_resource.cache {
+                                if cache_config.enabled && cache_config.scope == target_scope {
+                                    let project_ctx = if target_scope == CacheScope::Project {
+                                        resolved_project_id.as_deref()
+                                    } else {
+                                        None
+                                    };
+                                    resolve_condition_values(cache, cond, &field.field_type, project_ctx)?;
+
+                                    if target_scope == CacheScope::Org && field.field_type == "projects" {
+                                        if let crate::filter::FilterValue::Single(ref v) = cond.value {
+                                            *resolved_project_id = Some(v.clone());
+                                        }
                                     }
                                 }
                             }
@@ -461,31 +483,11 @@ pub fn resolve_filter_names(
                     }
                 }
             }
-        }
-    }
-
-    // Pass 2: resolve project-scoped names
-    for entry in conditions.iter_mut() {
-        if let crate::filter::FilterEntry::Condition(cond) = entry {
-            if let Some(field) = crate::filter::resolve_filter_field(&cond.field, resource) {
-                if field.type_category == schema::TypeCategory::Resource {
-                    if let Some(target_resource) = schema.resources.get(&field.field_type) {
-                        if let Some(cache_config) = &target_resource.cache {
-                            if cache_config.scope == CacheScope::Project {
-                                resolve_condition_values(
-                                    cache,
-                                    cond,
-                                    &field.field_type,
-                                    resolved_project_id.as_deref(),
-                                )?;
-                            }
-                        }
-                    }
-                }
+            crate::filter::FilterEntry::Group(group) => {
+                resolve_pass(cache, &mut group.conditions, resource, schema, target_scope, resolved_project_id)?;
             }
         }
     }
-
     Ok(())
 }
 

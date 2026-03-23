@@ -12,7 +12,8 @@ pub async fn run(client: &ProductiveClient, resource: &ResourceDef, id: &str, in
 
     let mut path = format!("{}/{}", resource.api_path(), id);
     if let Some(includes) = include {
-        path = format!("{}?include={}", path, includes);
+        let encoded = urlencoding::encode(includes);
+        path = format!("{}?include={}", path, encoded);
     }
 
     match client.get_one(&path).await {
