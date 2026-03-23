@@ -92,7 +92,7 @@ enum Commands {
 
     /// Resume a session (execs into claude --resume)
     Resume {
-        /// Session ID
+        /// Session ID, UUID prefix, or search term (matches summary/first prompt)
         session_id: String,
     },
 
