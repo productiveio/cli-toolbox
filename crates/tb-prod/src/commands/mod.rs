@@ -4,6 +4,7 @@ pub mod doctor;
 pub mod people;
 pub mod prime;
 pub mod project;
+pub mod resource;
 pub mod task;
 pub mod task_batch;
 pub mod task_comment;

@@ -6,6 +6,8 @@ use tb_prod::api::ProductiveClient;
 use tb_prod::cache::{self, Cache};
 use tb_prod::commands;
 use tb_prod::config::Config;
+use tb_prod::input;
+use tb_prod::schema;
 
 #[derive(Parser)]
 #[command(
@@ -54,6 +56,94 @@ enum Commands {
         /// Name or email to search for
         query: Option<String>,
     },
+
+    // --- Generic resource commands ---
+
+    /// Describe a resource type — schema, fields, filters, actions
+    Describe {
+        /// Resource type (e.g. tasks, projects, people)
+        resource_type: String,
+        /// Include additional sections: schema, actions, related (comma-separated)
+        #[arg(long)]
+        include: Option<String>,
+    },
+    /// Query resources with filtering, sorting, and pagination
+    #[command(alias = "list")]
+    Query {
+        /// Resource type
+        resource_type: String,
+        /// JSON filter (FilterGroup or flat object)
+        #[arg(long)]
+        filter: Option<String>,
+        /// Sort field (prefix with - for descending)
+        #[arg(long)]
+        sort: Option<String>,
+        /// Page number (default: 1)
+        #[arg(long, default_value = "1")]
+        page: usize,
+        /// Include relationships (comma-separated)
+        #[arg(long)]
+        include: Option<String>,
+    },
+    /// Get a single resource by ID
+    Get {
+        /// Resource type
+        resource_type: String,
+        /// Resource ID
+        id: String,
+        /// Include relationships (comma-separated)
+        #[arg(long)]
+        include: Option<String>,
+    },
+    /// Create a resource from JSON data
+    Create {
+        /// Resource type
+        resource_type: String,
+        /// JSON data (object for single, array for bulk)
+        #[arg(long)]
+        data: Option<String>,
+    },
+    /// Update a resource by ID
+    Update {
+        /// Resource type
+        resource_type: String,
+        /// Resource ID
+        id: String,
+        /// JSON data (partial fields to update)
+        #[arg(long)]
+        data: Option<String>,
+    },
+    /// Delete a resource by ID
+    Delete {
+        /// Resource type
+        resource_type: String,
+        /// Resource ID
+        id: String,
+        /// Actually delete (default: dry run)
+        #[arg(long)]
+        confirm: bool,
+    },
+    /// Search resources by keyword
+    Search {
+        /// Resource type
+        resource_type: String,
+        /// Search query text
+        #[arg(long)]
+        query: String,
+    },
+    /// Execute a custom action on a resource
+    Action {
+        /// Resource type
+        resource_type: String,
+        /// Resource ID
+        id: String,
+        /// Action name (e.g. archive, restore, move)
+        action_name: String,
+        /// Optional JSON parameters for the action
+        #[arg(long)]
+        data: Option<String>,
+    },
+
     /// AI context dump — quick command reference
     Prime,
     /// Manage cache
@@ -290,6 +380,20 @@ fn read_text_input(
             Ok(Some(buf))
         }
         _ => Ok(None),
+    }
+}
+
+fn resolve_resource_or_exit(resource_type: &str) -> &'static schema::ResourceDef {
+    let s = schema::schema();
+    match s.resolve_resource(resource_type) {
+        Some(r) => r,
+        None => {
+            commands::resource::describe::print_all_types();
+            tb_prod::json_error::exit_with_error(
+                "unknown_resource_type",
+                &format!("Unknown resource type: '{}'", resource_type),
+            );
+        }
     }
 }
 
@@ -606,6 +710,105 @@ async fn run() -> tb_prod::error::Result<()> {
             cache.ensure_fresh(&client).await?;
             commands::people::run(&cache, query.as_deref(), cli.json)?;
         }
+
+        // --- Generic resource commands ---
+
+        Commands::Describe {
+            resource_type,
+            include,
+        } => {
+            let s = schema::schema();
+            match s.resolve_resource(&resource_type) {
+                Some(resource) => {
+                    commands::resource::describe::run(resource, include.as_deref());
+                }
+                None => {
+                    commands::resource::describe::print_all_types();
+                }
+            }
+        }
+        Commands::Query {
+            resource_type,
+            filter,
+            sort,
+            page,
+            include,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            // Try --filter flag, then stdin for filter JSON
+            let filter_value = match &filter {
+                Some(f) => Some(f.clone()),
+                None => input::read_json_input(None).map(|v| v.to_string()),
+            };
+            commands::resource::query::run(
+                &client,
+                resource,
+                filter_value.as_deref(),
+                sort.as_deref(),
+                Some(page),
+                include.as_deref(),
+            )
+            .await;
+        }
+        Commands::Get {
+            resource_type,
+            id,
+            include,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            commands::resource::get::run(&client, resource, &id, include.as_deref()).await;
+        }
+        Commands::Create {
+            resource_type,
+            data,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            let json_data = input::require_json_input(data.as_deref(), "create");
+            commands::resource::create::run(&client, resource, &json_data).await;
+        }
+        Commands::Update {
+            resource_type,
+            id,
+            data,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            let json_data = input::require_json_input(data.as_deref(), "update");
+            commands::resource::update::run(&client, resource, &id, &json_data).await;
+        }
+        Commands::Delete {
+            resource_type,
+            id,
+            confirm,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            commands::resource::delete::run(&client, resource, &id, confirm).await;
+        }
+        Commands::Search {
+            resource_type,
+            query,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            commands::resource::search::run(&client, resource, &query).await;
+        }
+        Commands::Action {
+            resource_type,
+            id,
+            action_name,
+            data,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            let json_data = data.as_deref().map(|d| {
+                serde_json::from_str::<serde_json::Value>(d).unwrap_or_else(|e| {
+                    tb_prod::json_error::exit_with_error(
+                        "invalid_json",
+                        &format!("Invalid action data JSON: {e}"),
+                    );
+                })
+            });
+            commands::resource::action::run(&client, resource, &id, &action_name, json_data.as_ref())
+                .await;
+        }
+
         Commands::Prime => {
             commands::prime::run(&client, &config).await?;
             toolbox_core::version_check::print_update_hint("tb-prod", env!("CARGO_PKG_VERSION"));
