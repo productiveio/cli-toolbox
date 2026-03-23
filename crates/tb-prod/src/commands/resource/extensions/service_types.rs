@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::api::ProductiveClient;
 
@@ -33,7 +33,10 @@ async fn merge(client: &ProductiveClient, data: Option<&Value>) -> Result<Extens
     });
 
     let path = "/service_types/merge";
-    client.custom_action(path, "PATCH", Some(&body)).await.map_err(|e| e.to_string())?;
+    client
+        .custom_action(path, "PATCH", Some(&body))
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(ExtensionResult::Json(json!({
         "success": true,

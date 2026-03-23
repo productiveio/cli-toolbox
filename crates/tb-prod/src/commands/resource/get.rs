@@ -2,7 +2,12 @@ use crate::api::ProductiveClient;
 use crate::json_error;
 use crate::schema::ResourceDef;
 
-pub async fn run(client: &ProductiveClient, resource: &ResourceDef, id: &str, include: Option<&str>) {
+pub async fn run(
+    client: &ProductiveClient,
+    resource: &ResourceDef,
+    id: &str,
+    include: Option<&str>,
+) {
     if !resource.supports_action("show") {
         json_error::exit_with_error(
             "operation_not_supported",

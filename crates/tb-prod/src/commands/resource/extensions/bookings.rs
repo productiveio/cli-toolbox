@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::api::{ProductiveClient, Query, Resource};
 
@@ -68,13 +68,9 @@ async fn find_conflicts(
         .iter()
         .filter(|r| r.resource_type == "people")
         .map(|r| {
-            let name = format!(
-                "{} {}",
-                r.attr_str("first_name"),
-                r.attr_str("last_name")
-            )
-            .trim()
-            .to_string();
+            let name = format!("{} {}", r.attr_str("first_name"), r.attr_str("last_name"))
+                .trim()
+                .to_string();
             (r.id.as_str(), name)
         })
         .collect();
@@ -261,8 +257,14 @@ async fn capacity_availability(
         .trim()
         .to_string();
 
-        let person_salaries = salaries_by_person.get(pid).map(|v| v.as_slice()).unwrap_or(&[]);
-        let person_bookings = bookings_by_person.get(pid).map(|v| v.as_slice()).unwrap_or(&[]);
+        let person_salaries = salaries_by_person
+            .get(pid)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        let person_bookings = bookings_by_person
+            .get(pid)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
 
         let dates = generate_date_range(started_on, ended_on);
         let mut days = Vec::new();
@@ -277,7 +279,13 @@ async fn capacity_availability(
             let booked = calculate_booked_hours(date, person_bookings, capacity, person_salaries);
             let availability = capacity - booked;
 
-            let booking_details = extract_booking_details(date, person_bookings, capacity, person_salaries, &booking_resp.included);
+            let booking_details = extract_booking_details(
+                date,
+                person_bookings,
+                capacity,
+                person_salaries,
+                &booking_resp.included,
+            );
 
             days.push(json!({
                 "date": date,
@@ -287,7 +295,11 @@ async fn capacity_availability(
             }));
         }
 
-        let key = if person_name.is_empty() { pid.to_string() } else { person_name };
+        let key = if person_name.is_empty() {
+            pid.to_string()
+        } else {
+            person_name
+        };
         result.insert(key, days);
     }
 
@@ -296,7 +308,12 @@ async fn capacity_availability(
     let overbooked: usize = result
         .values()
         .flat_map(|d| d.iter())
-        .filter(|d| d.get("availability").and_then(|v| v.as_f64()).unwrap_or(0.0) < 0.0)
+        .filter(|d| {
+            d.get("availability")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0)
+                < 0.0
+        })
         .count();
 
     let output = json!({
@@ -322,7 +339,11 @@ fn calculate_capacity_for_date(date: &str, salaries: &[&Resource]) -> f64 {
         None => return 0.0,
     };
 
-    let working_hours = match salary.attributes.get("working_hours").and_then(|v| v.as_array()) {
+    let working_hours = match salary
+        .attributes
+        .get("working_hours")
+        .and_then(|v| v.as_array())
+    {
         Some(wh) if !wh.is_empty() => wh,
         _ => return 0.0,
     };
@@ -370,7 +391,12 @@ fn find_salary_for_date<'a>(salaries: &[&'a Resource], date: &str) -> Option<&'a
     matching.first().copied()
 }
 
-fn calculate_booked_hours(date: &str, bookings: &[&Resource], capacity: f64, salaries: &[&Resource]) -> f64 {
+fn calculate_booked_hours(
+    date: &str,
+    bookings: &[&Resource],
+    capacity: f64,
+    salaries: &[&Resource],
+) -> f64 {
     let mut total = 0.0;
     for b in bookings {
         let bs = b.attr_str("started_on");
@@ -383,26 +409,46 @@ fn calculate_booked_hours(date: &str, bookings: &[&Resource], capacity: f64, sal
     total
 }
 
-fn booking_time_for_date(booking: &Resource, date: &str, capacity: f64, salaries: &[&Resource]) -> f64 {
+fn booking_time_for_date(
+    booking: &Resource,
+    date: &str,
+    capacity: f64,
+    salaries: &[&Resource],
+) -> f64 {
     // booking_method_id: 1=per_day, 2=percentage, 3=total_hours
-    let method_id = booking.attributes.get("booking_method_id")
-        .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+    let method_id = booking
+        .attributes
+        .get("booking_method_id")
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        })
         .unwrap_or(0);
 
     match method_id {
         1 => {
-            let time = booking.attributes.get("time").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let time = booking
+                .attributes
+                .get("time")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
             time / 60.0
         }
         2 => {
-            let pct = booking.attributes.get("percentage").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let pct = booking
+                .attributes
+                .get("percentage")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
             capacity * (pct / 100.0)
         }
-        3 => {
-            distribute_total_hours(booking, date, salaries)
-        }
+        3 => distribute_total_hours(booking, date, salaries),
         _ => {
-            let time = booking.attributes.get("time").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let time = booking
+                .attributes
+                .get("time")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
             time / 60.0
         }
     }
@@ -427,7 +473,11 @@ fn distribute_total_hours(booking: &Resource, target_date: &str, salaries: &[&Re
         None => return 0.0,
     };
 
-    let total_minutes = booking.attributes.get("time").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let total_minutes = booking
+        .attributes
+        .get("time")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
     let mut remaining = total_minutes;
 
     for i in 0..=target_index {

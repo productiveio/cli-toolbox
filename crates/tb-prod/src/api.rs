@@ -219,7 +219,11 @@ impl ProductiveClient {
     /// GET a single JSONAPI resource.
     pub async fn get_one(&self, path: &str) -> Result<JsonApiSingleResponse> {
         let url = format!("{}{}", self.base_url, path);
-        let resp = self.request(reqwest::Method::GET, &url).send().await.map_err(map_middleware_err)?;
+        let resp = self
+            .request(reqwest::Method::GET, &url)
+            .send()
+            .await
+            .map_err(map_middleware_err)?;
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -248,7 +252,11 @@ impl ProductiveClient {
             format!("{}&{}", qs, &page_qs[1..])
         };
         let url = format!("{}{}{}", self.base_url, path, full_qs);
-        let resp = self.request(reqwest::Method::GET, &url).send().await.map_err(map_middleware_err)?;
+        let resp = self
+            .request(reqwest::Method::GET, &url)
+            .send()
+            .await
+            .map_err(map_middleware_err)?;
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -284,7 +292,11 @@ impl ProductiveClient {
             let url = format!("{}{}{}", self.base_url, path, full_qs);
 
             eprintln!("Fetching page {}...", page_num);
-            let resp = self.request(reqwest::Method::GET, &url).send().await.map_err(map_middleware_err)?;
+            let resp = self
+                .request(reqwest::Method::GET, &url)
+                .send()
+                .await
+                .map_err(map_middleware_err)?;
             let status = resp.status().as_u16();
             if !resp.status().is_success() {
                 let body = resp.text().await.unwrap_or_default();

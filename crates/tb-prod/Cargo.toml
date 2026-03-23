@@ -1,6 +1,6 @@
 [package]
 name = "tb-prod"
-version = "0.1.10"
+version = "1.0.0"
 edition = "2024"
 description = "Productive.io API CLI"
 authors.workspace = true

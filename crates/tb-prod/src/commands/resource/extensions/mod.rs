@@ -4,8 +4,8 @@ pub mod notifications;
 pub mod pages;
 pub mod people;
 pub mod scenarios;
-pub mod services;
 pub mod service_types;
+pub mod services;
 pub mod slack;
 pub mod tasks;
 

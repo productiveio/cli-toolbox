@@ -8,17 +8,28 @@ use tb_prod::filter::{
 #[tokio::test]
 async fn get_page() {
     let client = harness::test_client("projects_get_page");
-    let resp = client.get_page("/projects", &Query::new(), 1, 5).await.unwrap();
+    let resp = client
+        .get_page("/projects", &Query::new(), 1, 5)
+        .await
+        .unwrap();
 
     assert!(!resp.data.is_empty());
     assert_eq!(resp.data[0].resource_type, "projects");
-    assert!(resp.meta.get("total_count").and_then(|v| v.as_u64()).is_some());
+    assert!(
+        resp.meta
+            .get("total_count")
+            .and_then(|v| v.as_u64())
+            .is_some()
+    );
 }
 
 #[tokio::test]
 async fn get_one() {
     let client = harness::test_client("projects_get_one");
-    let list = client.get_page("/projects", &Query::new(), 1, 1).await.unwrap();
+    let list = client
+        .get_page("/projects", &Query::new(), 1, 1)
+        .await
+        .unwrap();
     let id = &list.data[0].id;
 
     let single = client.get_one(&format!("/projects/{}", id)).await.unwrap();
@@ -124,7 +135,11 @@ async fn pagination_page_2() {
     let query = Query::new().filter("status", "1");
     let page1 = client.get_page("/projects", &query, 1, 2).await.unwrap();
 
-    let total = page1.meta.get("total_count").and_then(|v| v.as_u64()).unwrap_or(0);
+    let total = page1
+        .meta
+        .get("total_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     if total <= 2 {
         eprintln!("Not enough projects for pagination test, skipping");
         return;
@@ -143,5 +158,9 @@ async fn get_nonexistent_returns_error() {
 
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert!(err.to_string().contains("404"), "expected 404, got: {}", err);
+    assert!(
+        err.to_string().contains("404"),
+        "expected 404, got: {}",
+        err
+    );
 }

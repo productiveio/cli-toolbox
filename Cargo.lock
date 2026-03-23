@@ -1967,7 +1967,7 @@ dependencies = [
 
 [[package]]
 name = "tb-prod"
-version = "0.1.10"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "clap",

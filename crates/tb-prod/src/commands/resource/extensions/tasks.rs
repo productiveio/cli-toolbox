@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::api::{ProductiveClient, Query};
 
@@ -17,16 +17,25 @@ pub async fn dispatch(
     }
 }
 
-async fn load_activity(client: &ProductiveClient, task_id: &str) -> Result<ExtensionResult, String> {
+async fn load_activity(
+    client: &ProductiveClient,
+    task_id: &str,
+) -> Result<ExtensionResult, String> {
     // Fetch task
     let task_path = format!("/tasks/{}?include=project", task_id);
-    let task_resp = client.get_one(&task_path).await.map_err(|e| e.to_string())?;
+    let task_resp = client
+        .get_one(&task_path)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Fetch activities
     let query = Query::new()
         .filter_array("task_id", task_id)
         .sort("-created_at");
-    let activities_resp = client.get_page("/activities", &query, 1, 200).await.map_err(|e| e.to_string())?;
+    let activities_resp = client
+        .get_page("/activities", &query, 1, 200)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let output = json!({
         "task": task_resp.data,
@@ -40,13 +49,19 @@ async fn load_activity(client: &ProductiveClient, task_id: &str) -> Result<Exten
     Ok(ExtensionResult::Json(output))
 }
 
-async fn resolve_subscriber_ids(client: &ProductiveClient, task_id: &str) -> Result<ExtensionResult, String> {
+async fn resolve_subscriber_ids(
+    client: &ProductiveClient,
+    task_id: &str,
+) -> Result<ExtensionResult, String> {
     // Fetch people subscribed to this task
     let query = Query::new()
         .filter("subscribable_type", "Task")
         .filter("subscribable_id", task_id)
         .filter("status", "1");
-    let resp = client.get_all("/people", &query, 5).await.map_err(|e| e.to_string())?;
+    let resp = client
+        .get_all("/people", &query, 5)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let ids: Vec<&str> = resp.data.iter().map(|r| r.id.as_str()).collect();
 

@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::api::ProductiveClient;
 
@@ -16,7 +16,10 @@ pub async fn dispatch(
     }
 }
 
-async fn send_message(client: &ProductiveClient, data: Option<&Value>) -> Result<ExtensionResult, String> {
+async fn send_message(
+    client: &ProductiveClient,
+    data: Option<&Value>,
+) -> Result<ExtensionResult, String> {
     let channel_id = data
         .and_then(|d| d.get("channel_id"))
         .and_then(|v| v.as_str())
@@ -36,7 +39,10 @@ async fn send_message(client: &ProductiveClient, data: Option<&Value>) -> Result
         }
     });
 
-    client.create("/slack_messages", &body).await.map_err(|e| e.to_string())?;
+    client
+        .create("/slack_messages", &body)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(ExtensionResult::Json(json!({
         "success": true,
