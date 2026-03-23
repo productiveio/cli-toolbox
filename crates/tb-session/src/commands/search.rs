@@ -70,6 +70,8 @@ pub fn run(
 
     let where_sql = where_clauses.join(" AND ");
 
+    // Use a subquery to find best-matching sessions first, then fetch snippets.
+    // snippet() cannot be used with GROUP BY directly in FTS5.
     let sql = format!(
         "SELECT
             s.session_id,
@@ -80,15 +82,26 @@ pub fn run(
             s.message_count,
             s.created_at,
             s.modified_at,
-            rank,
-            snippet(messages_fts, 2, '...', '...', '...', 20),
+            best.best_rank,
+            snippet(messages_fts, 2, '«', '»', '…', 20),
             messages_fts.role
-         FROM messages_fts
-         JOIN sessions s ON s.session_id = messages_fts.session_id
-         WHERE {where_sql}
-         GROUP BY s.session_id
-         ORDER BY rank
-         LIMIT ?{param_idx}"
+         FROM (
+             SELECT messages_fts.session_id, MIN(rank) AS best_rank
+             FROM messages_fts
+             JOIN sessions s ON s.session_id = messages_fts.session_id
+             WHERE {where_sql}
+             GROUP BY messages_fts.session_id
+             ORDER BY best_rank
+             LIMIT ?{param_idx}
+         ) best
+         JOIN sessions s ON s.session_id = best.session_id
+         JOIN messages_fts ON messages_fts.rowid = (
+             SELECT rowid FROM messages_fts
+             WHERE messages_fts.session_id = best.session_id
+               AND messages_fts MATCH ?1
+             LIMIT 1
+         )
+         ORDER BY best.best_rank"
     );
 
     params.push(Box::new(limit as i64));
