@@ -52,7 +52,13 @@ impl GenericCache {
         eprintln!("Syncing {} org-wide cache types...", futures.len());
         // Execute sequentially to avoid hammering the API
         for fut in futures {
-            fut.await?;
+            match fut.await {
+                Ok(()) => {}
+                Err(TbProdError::Api { status: 403, .. }) => {
+                    // Access denied — skip this type (user lacks permission)
+                }
+                Err(e) => return Err(e),
+            }
         }
         eprintln!("Cache synced.");
         Ok(())
