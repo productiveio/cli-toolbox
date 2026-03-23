@@ -287,14 +287,16 @@ pub fn resolve_filter_field<'a>(
     }
     // Try by param
     if let Some(f) = resource.field_by_param(field_name)
-        && f.filter.is_some() {
-            return Some(f);
-        }
+        && f.filter.is_some()
+    {
+        return Some(f);
+    }
     // Try by key
     if let Some(f) = resource.fields.get(field_name)
-        && f.filter.is_some() {
-            return Some(f);
-        }
+        && f.filter.is_some()
+    {
+        return Some(f);
+    }
     None
 }
 

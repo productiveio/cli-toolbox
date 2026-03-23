@@ -31,11 +31,14 @@ pub fn validate_create(resource: &ResourceDef, input: &Value, schema: &Schema) -
 
     // Check required fields
     for field in resource.fields.values() {
-        if field.required && !field.id && !field.readonly
+        if field.required
+            && !field.id
+            && !field.readonly
             && let Some(param) = &field.param
-                && !map.contains_key(param.as_str()) {
-                    errors.push(format!("Required field '{}' is missing.", param));
-                }
+            && !map.contains_key(param.as_str())
+        {
+            errors.push(format!("Required field '{}' is missing.", param));
+        }
     }
 
     // Validate exclusive groups
@@ -131,27 +134,28 @@ fn validate_enum_values(
     for (key, value) in input {
         if let Some(field) = resource.field_by_param(key)
             && field.type_category == TypeCategory::Enum
-                && let Some(enum_def) = schema.enums.get(&field.field_type) {
-                    let val_str = value
-                        .as_str()
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| value.to_string().trim_matches('"').to_string());
+            && let Some(enum_def) = schema.enums.get(&field.field_type)
+        {
+            let val_str = value
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| value.to_string().trim_matches('"').to_string());
 
-                    if !enum_def.values.contains_key(&val_str) {
-                        let valid: Vec<String> = enum_def
-                            .values
-                            .iter()
-                            .map(|(k, v)| format!("{}={}", k, v.label))
-                            .collect();
-                        errors.push(format!(
-                            "Invalid value '{}' for enum field '{}' ({}). Valid values: {}",
-                            val_str,
-                            key,
-                            field.field_type,
-                            valid.join(", ")
-                        ));
-                    }
-                }
+            if !enum_def.values.contains_key(&val_str) {
+                let valid: Vec<String> = enum_def
+                    .values
+                    .iter()
+                    .map(|(k, v)| format!("{}={}", k, v.label))
+                    .collect();
+                errors.push(format!(
+                    "Invalid value '{}' for enum field '{}' ({}). Valid values: {}",
+                    val_str,
+                    key,
+                    field.field_type,
+                    valid.join(", ")
+                ));
+            }
+        }
     }
 
     errors

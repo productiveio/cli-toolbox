@@ -52,9 +52,10 @@ pub async fn run(
                 &mut group.conditions,
                 resource,
                 schema,
-            ) {
-                json_error::exit_with_error("name_resolution_error", &e);
-            }
+            )
+        {
+            json_error::exit_with_error("name_resolution_error", &e);
+        }
 
         // Serialize to query params
         query = filter::filter_group_to_query(&group, query);

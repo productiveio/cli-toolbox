@@ -11,9 +11,10 @@ pub fn run(resource: &ResourceDef, include: Option<&str>) {
     // Header
     println!("{} — {}", resource.type_name, resource.description_short);
     if let Some(aliases) = &resource.aliases
-        && !aliases.is_empty() {
-            println!("Aliases: {}", aliases.join(", "));
-        }
+        && !aliases.is_empty()
+    {
+        println!("Aliases: {}", aliases.join(", "));
+    }
     println!();
 
     // Operations

@@ -49,9 +49,11 @@ impl GenericCache {
 
         for resource in schema.resources.values() {
             if let Some(cache_config) = &resource.cache
-                && cache_config.enabled && cache_config.scope == CacheScope::Org {
-                    futures.push(self.sync_resource(client, resource));
-                }
+                && cache_config.enabled
+                && cache_config.scope == CacheScope::Org
+            {
+                futures.push(self.sync_resource(client, resource));
+            }
         }
 
         eprintln!("Syncing {} org-wide cache types...", futures.len());
@@ -108,42 +110,43 @@ impl GenericCache {
 
         for resource in schema.resources.values() {
             if let Some(cache_config) = &resource.cache
-                && cache_config.scope == CacheScope::Project {
-                    let mut query = Query::new();
+                && cache_config.scope == CacheScope::Project
+            {
+                let mut query = Query::new();
 
-                    // Build scope filter based on resource type
-                    match resource.type_name.as_str() {
-                        "task_lists" | "folders" => {
-                            query = query.filter("project_id", project_id);
-                        }
-                        "workflow_statuses" => {
-                            if let Some(wid) = workflow_id {
-                                query = query.filter_array("workflow_id", wid);
-                            } else {
-                                continue; // skip if no workflow context
-                            }
-                        }
-                        "workflows" => {
-                            if let Some(wid) = workflow_id {
-                                query = query.filter("id", wid);
-                            } else {
-                                continue;
-                            }
-                        }
-                        _ => continue,
+                // Build scope filter based on resource type
+                match resource.type_name.as_str() {
+                    "task_lists" | "folders" => {
+                        query = query.filter("project_id", project_id);
                     }
-
-                    let path = resource.api_path();
-                    let resp = client.get_all(&path, &query, 5).await?;
-
-                    let records: Vec<CachedRecord> = resp
-                        .data
-                        .iter()
-                        .map(|r| extract_cached_record(r, &cache_config.fields, resource))
-                        .collect();
-
-                    self.write_project_cache(project_id, &resource.type_name, &records)?;
+                    "workflow_statuses" => {
+                        if let Some(wid) = workflow_id {
+                            query = query.filter_array("workflow_id", wid);
+                        } else {
+                            continue; // skip if no workflow context
+                        }
+                    }
+                    "workflows" => {
+                        if let Some(wid) = workflow_id {
+                            query = query.filter("id", wid);
+                        } else {
+                            continue;
+                        }
+                    }
+                    _ => continue,
                 }
+
+                let path = resource.api_path();
+                let resp = client.get_all(&path, &query, 5).await?;
+
+                let records: Vec<CachedRecord> = resp
+                    .data
+                    .iter()
+                    .map(|r| extract_cached_record(r, &cache_config.fields, resource))
+                    .collect();
+
+                self.write_project_cache(project_id, &resource.type_name, &records)?;
+            }
         }
 
         Ok(())
@@ -335,12 +338,12 @@ fn extract_cached_record(
             f.attribute.as_deref() == Some(field_name)
                 || f.key == *field_name
                 || f.param.as_deref() == Some(field_name)
-        })
-            && let Some(rel_name) = &field_def.relationship
-                && let Some(id) = resource.relationship_id(rel_name) {
-                    field_map.insert(field_name.clone(), id.to_string());
-                    continue;
-                }
+        }) && let Some(rel_name) = &field_def.relationship
+            && let Some(id) = resource.relationship_id(rel_name)
+        {
+            field_map.insert(field_name.clone(), id.to_string());
+            continue;
+        }
 
         // Try as direct relationship name
         if let Some(id) = resource.relationship_id(field_name) {
@@ -497,46 +500,41 @@ fn resolve_pass(
             crate::filter::FilterEntry::Condition(cond) => {
                 if let Some(field) = crate::filter::resolve_filter_field(&cond.field, resource)
                     && field.type_category == schema::TypeCategory::Resource
-                        && let Some(target_resource) = schema.resources.get(&field.field_type)
-                            && let Some(cache_config) = &target_resource.cache
-                                && cache_config.enabled && cache_config.scope == target_scope {
-                                    let project_ctx = if target_scope == CacheScope::Project {
-                                        if resolved_project_ids.is_empty() {
-                                            None
-                                        } else {
-                                            // Resolve against all collected projects
-                                            resolve_condition_values_multi_project(
-                                                cache,
-                                                cond,
-                                                &field.field_type,
-                                                resolved_project_ids,
-                                            )?;
-                                            continue;
-                                        }
-                                    } else {
-                                        None
-                                    };
-                                    resolve_condition_values(
-                                        cache,
-                                        cond,
-                                        &field.field_type,
-                                        project_ctx,
-                                    )?;
+                    && let Some(target_resource) = schema.resources.get(&field.field_type)
+                    && let Some(cache_config) = &target_resource.cache
+                    && cache_config.enabled
+                    && cache_config.scope == target_scope
+                {
+                    let project_ctx = if target_scope == CacheScope::Project {
+                        if resolved_project_ids.is_empty() {
+                            None
+                        } else {
+                            // Resolve against all collected projects
+                            resolve_condition_values_multi_project(
+                                cache,
+                                cond,
+                                &field.field_type,
+                                resolved_project_ids,
+                            )?;
+                            continue;
+                        }
+                    } else {
+                        None
+                    };
+                    resolve_condition_values(cache, cond, &field.field_type, project_ctx)?;
 
-                                    // Collect resolved project IDs for pass 2
-                                    if target_scope == CacheScope::Org
-                                        && field.field_type == "projects"
-                                    {
-                                        match &cond.value {
-                                            crate::filter::FilterValue::Single(v) => {
-                                                resolved_project_ids.push(v.clone());
-                                            }
-                                            crate::filter::FilterValue::Array(values) => {
-                                                resolved_project_ids.extend(values.iter().cloned());
-                                            }
-                                        }
-                                    }
-                                }
+                    // Collect resolved project IDs for pass 2
+                    if target_scope == CacheScope::Org && field.field_type == "projects" {
+                        match &cond.value {
+                            crate::filter::FilterValue::Single(v) => {
+                                resolved_project_ids.push(v.clone());
+                            }
+                            crate::filter::FilterValue::Array(values) => {
+                                resolved_project_ids.extend(values.iter().cloned());
+                            }
+                        }
+                    }
+                }
             }
             crate::filter::FilterEntry::Group(group) => {
                 resolve_pass(
