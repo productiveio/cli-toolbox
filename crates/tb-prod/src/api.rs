@@ -335,7 +335,7 @@ impl ProductiveClient {
         Ok(resp.json().await?)
     }
 
-    // --- Convenience methods ---
+    // --- Legacy convenience methods (to be removed when old commands are replaced) ---
 
     pub async fn list_tasks(&self, query: &Query) -> Result<JsonApiResponse> {
         self.get_all("/tasks", query, 10).await
@@ -354,26 +354,7 @@ impl ProductiveClient {
     }
 
     pub async fn bulk_create_tasks(&self, payload: &serde_json::Value) -> Result<JsonApiResponse> {
-        let url = format!("{}/tasks", self.base_url);
-        let resp = self
-            .client
-            .post(&url)
-            .header("Content-Type", "application/vnd.api+json; ext=bulk")
-            .header("Accept", "application/vnd.api+json; ext=bulk")
-            .header("X-Auth-Token", &self.token)
-            .header("X-Organization-Id", &self.org_id)
-            .json(payload)
-            .send()
-            .await?;
-        let status = resp.status().as_u16();
-        if !resp.status().is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(TbProdError::Api {
-                status,
-                message: body,
-            });
-        }
-        Ok(resp.json().await?)
+        self.bulk_create("/tasks", payload).await
     }
 
     pub async fn update_task(
@@ -414,5 +395,92 @@ impl ProductiveClient {
     pub async fn get_todos(&self, task_id: &str) -> Result<JsonApiResponse> {
         let query = Query::new().filter_array("task_id", task_id);
         self.get_all("/todos", &query, 5).await
+    }
+
+    // --- Generic resource operations ---
+
+    /// DELETE a JSONAPI resource.
+    pub async fn delete(&self, path: &str) -> Result<()> {
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .request(reqwest::Method::DELETE, &url)
+            .send()
+            .await?;
+        let status = resp.status().as_u16();
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(TbProdError::Api {
+                status,
+                message: body,
+            });
+        }
+        Ok(())
+    }
+
+    /// Execute a custom action on a resource (arbitrary method + path).
+    pub async fn custom_action(
+        &self,
+        path: &str,
+        method: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<Option<JsonApiSingleResponse>> {
+        let url = format!("{}{}", self.base_url, path);
+        let http_method = match method.to_uppercase().as_str() {
+            "POST" => reqwest::Method::POST,
+            "PUT" => reqwest::Method::PUT,
+            "PATCH" => reqwest::Method::PATCH,
+            "DELETE" => reqwest::Method::DELETE,
+            _ => reqwest::Method::POST,
+        };
+        let mut req = self.request(http_method, &url);
+        if let Some(b) = body {
+            req = req.json(b);
+        }
+        let resp = req.send().await?;
+        let status = resp.status().as_u16();
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(TbProdError::Api {
+                status,
+                message: body,
+            });
+        }
+        // Some actions return 204 No Content
+        if status == 204 {
+            return Ok(None);
+        }
+        let text = resp.text().await?;
+        if text.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(serde_json::from_str(&text)?))
+    }
+
+    /// POST with JSONAPI bulk extension. Works for any resource type.
+    pub async fn bulk_create(
+        &self,
+        path: &str,
+        payload: &serde_json::Value,
+    ) -> Result<JsonApiResponse> {
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/vnd.api+json; ext=bulk")
+            .header("Accept", "application/vnd.api+json; ext=bulk")
+            .header("X-Auth-Token", &self.token)
+            .header("X-Organization-Id", &self.org_id)
+            .json(payload)
+            .send()
+            .await?;
+        let status = resp.status().as_u16();
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(TbProdError::Api {
+                status,
+                message: body,
+            });
+        }
+        Ok(resp.json().await?)
     }
 }
