@@ -1519,6 +1519,7 @@ dependencies = [
  "async-trait",
  "http",
  "reqwest",
+ "serde",
  "thiserror 2.0.18",
  "tower-service",
 ]
@@ -1980,6 +1981,7 @@ dependencies = [
  "rvcr",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "toml",

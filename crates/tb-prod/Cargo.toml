@@ -36,3 +36,4 @@ urlencoding = "2"
 [dev-dependencies]
 http.workspace = true
 rvcr.workspace = true
+tempfile.workspace = true

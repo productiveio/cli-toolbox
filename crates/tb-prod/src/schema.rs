@@ -319,16 +319,9 @@ mod tests {
     #[test]
     fn resolve_resource_by_alias() {
         let s = schema();
-        // "task" is an alias for "tasks" (itemName)
-        // Check if any resource has aliases
-        let has_aliases = s.resources.values().any(|r| r.aliases.as_ref().is_some_and(|a| !a.is_empty()));
-        if has_aliases {
-            // Find a resource with aliases and test resolution
-            let r = s.resources.values().find(|r| r.aliases.as_ref().is_some_and(|a| !a.is_empty())).unwrap();
-            let alias = &r.aliases.as_ref().unwrap()[0];
-            let resolved = s.resolve_resource(alias).expect("alias should resolve");
-            assert_eq!(resolved.type_name, r.type_name);
-        }
+        // "event" is a known alias for "events" (absence categories)
+        let resolved = s.resolve_resource("event").expect("alias 'event' should resolve");
+        assert_eq!(resolved.type_name, "events");
     }
 
     #[test]
@@ -338,9 +331,8 @@ mod tests {
         assert_eq!(tasks.api_path(), "/tasks");
 
         // search-quick-results has an endpoint override
-        if let Some(sqr) = s.resolve_resource("search-quick-results") {
-            assert_eq!(sqr.api_path(), "/search/quick");
-        }
+        let sqr = s.resolve_resource("search-quick-results").expect("search-quick-results should exist");
+        assert_eq!(sqr.api_path(), "/search/quick");
     }
 
     #[test]

@@ -205,23 +205,10 @@ mod tests {
     #[test]
     fn validate_update_create_only_rejected() {
         let s = schema();
-        // Find a resource with createOnly fields
-        let has_create_only = s.resources.values().any(|r| {
-            r.fields.values().any(|f| f.create_only && f.param.is_some())
-        });
-        if !has_create_only {
-            return; // skip if no createOnly fields in schema
-        }
-
-        let resource = s.resources.values().find(|r| {
-            r.fields.values().any(|f| f.create_only && f.param.is_some())
-        }).unwrap();
-
-        let field = resource.fields.values().find(|f| f.create_only && f.param.is_some()).unwrap();
-        let param = field.param.as_ref().unwrap();
-
-        let input = json!({param: "x"});
-        let errors = validate_update(resource, &input, s);
+        // pages.body is a known createOnly field
+        let pages = s.resolve_resource("pages").expect("pages should exist");
+        let input = json!({"body": "x"});
+        let errors = validate_update(pages, &input, s);
         assert!(errors.iter().any(|e| e.contains("create")), "errors: {:?}", errors);
     }
 

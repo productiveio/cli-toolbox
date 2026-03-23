@@ -1,0 +1,70 @@
+{
+  "http_interactions": [
+    {
+      "response": {
+        "body": {
+          "encoding": null,
+          "string": "{\"errors\":[{\"status\":\"404\",\"code\":\"record_not_found\",\"title\":\"Record Not Found\",\"detail\":\"The requested record was not found\",\"meta\":{},\"source\":{}}]}"
+        },
+        "http_version": "2",
+        "status": {
+          "code": 404,
+          "message": "Not Found"
+        },
+        "headers": {
+          "x-request-id": [
+            "01332920-08df-43ea-8c9e-fea923a4e609"
+          ],
+          "x-content-type-options": [
+            "nosniff"
+          ],
+          "x-runtime": [
+            "0.031983"
+          ],
+          "x-xss-protection": [
+            "0"
+          ],
+          "referrer-policy": [
+            "strict-origin-when-cross-origin"
+          ],
+          "cache-control": [
+            "no-cache"
+          ],
+          "date": [
+            "Mon, 23 Mar 2026 19:43:23 GMT"
+          ],
+          "content-type": [
+            "application/vnd.api+json; charset=utf-8"
+          ],
+          "x-permitted-cross-domain-policies": [
+            "none"
+          ],
+          "x-frame-options": [
+            "SAMEORIGIN"
+          ],
+          "vary": [
+            "Accept,Origin,Accept-Encoding"
+          ],
+          "content-length": [
+            "150"
+          ]
+        }
+      },
+      "request": {
+        "uri": "https://api.productive.io/api/v2/comments/999999999",
+        "body": {
+          "encoding": null,
+          "string": ""
+        },
+        "method": "delete",
+        "headers": {
+          "content-type": [
+            "application/vnd.api+json"
+          ]
+        }
+      },
+      "recorded_at": "Mon, 23 Mar 2026 19:43:23 +0000"
+    }
+  ],
+  "recorded_with": "rVCR 0.2.2"
+}

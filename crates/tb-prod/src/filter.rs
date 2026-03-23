@@ -203,50 +203,72 @@ fn validate_condition(
 // --- Serialization to Query builder ---
 
 /// Convert a validated FilterGroup into Query builder calls.
+/// Produces the indexed bracket format expected by the Productive API:
+///   filter[$op]=and
+///   filter[0][field][op][]=value
+///   filter[1][$op]=or          (nested group)
+///   filter[1][0][field][op][]=value
 pub fn filter_group_to_query(group: &FilterGroup, query: Query) -> Query {
     if group.conditions.is_empty() {
         return query;
     }
-    let mut q = query.filter_op(&group.op);
-    let mut index = 0;
-    q = serialize_entries(&group.conditions, q, &mut index);
-    q
+    serialize_group(group, "filter", query)
 }
 
-fn serialize_entries(
-    entries: &[FilterEntry],
-    mut query: Query,
-    index: &mut usize,
-) -> Query {
-    for entry in entries {
+fn serialize_group(group: &FilterGroup, prefix: &str, mut query: Query) -> Query {
+    query = query.filter_raw(format!("{}[$op]", prefix), group.op.clone());
+
+    for (i, entry) in group.conditions.iter().enumerate() {
+        let item_prefix = format!("{}[{}]", prefix, i);
         match entry {
             FilterEntry::Condition(cond) => {
-                let filter_key = &cond.field;
-                match &cond.value {
-                    FilterValue::Single(v) => {
-                        query = query.filter_indexed(*index, filter_key, &cond.operator, v);
-                    }
-                    FilterValue::Array(values) => {
-                        for v in values {
-                            query = query.filter_indexed(*index, filter_key, &cond.operator, v);
-                        }
-                    }
-                }
-                *index += 1;
+                query = serialize_condition(cond, &item_prefix, query);
             }
             FilterEntry::Group(sub) => {
-                // Nested groups are flattened — the inner group's $op is lost.
-                // This means nested AND/OR semantics are NOT preserved.
-                // Log a warning to stderr so the caller knows.
-                eprintln!(
-                    "Warning: nested filter group (op: {}) flattened into parent — inner operator ignored. Use flat conditions for correct semantics.",
-                    sub.op
-                );
-                query = serialize_entries(&sub.conditions, query, index);
+                query = serialize_group(sub, &item_prefix, query);
             }
         }
     }
     query
+}
+
+fn serialize_condition(cond: &FilterCondition, prefix: &str, mut query: Query) -> Query {
+    let field_path = build_field_path(&cond.field);
+    let key = format!("{}{}[{}][]", prefix, field_path, cond.operator);
+    match &cond.value {
+        FilterValue::Single(v) => {
+            query = query.filter_raw(key, v.clone());
+        }
+        FilterValue::Array(values) => {
+            let joined = values.join(",");
+            query = query.filter_raw(key, joined);
+        }
+    }
+    query
+}
+
+/// Build bracket-notation path for a field key.
+/// - Plain keys: "date" → "[date]"
+/// - Dot notation: "person.company.name" → "[person.company.name]"
+/// - Bracket notation: "formulas[profit]" → "[formulas][profit]"
+fn build_field_path(field: &str) -> String {
+    match field.find('[') {
+        None => format!("[{}]", field),
+        Some(base_end) => {
+            let mut parts = vec![&field[..base_end]];
+            // Extract all bracket contents
+            let mut rest = &field[base_end..];
+            while let Some(start) = rest.find('[') {
+                if let Some(end) = rest[start..].find(']') {
+                    parts.push(&rest[start + 1..start + end]);
+                    rest = &rest[start + end + 1..];
+                } else {
+                    break;
+                }
+            }
+            parts.iter().map(|p| format!("[{}]", p)).collect()
+        }
+    }
 }
 
 /// Get the FieldDef for a filter condition's field, checking multiple resolution paths.
@@ -365,6 +387,82 @@ mod tests {
         assert!(qs.contains("filter%5B%24op%5D=and") || qs.contains("filter[$op]=and"));
         assert!(qs.contains("project_id"));
         assert!(qs.contains("due_date"));
+    }
+
+    #[test]
+    fn filter_nested_group_serialization() {
+        // filter[$op]=or
+        // filter[0][status][eq][]=active
+        // filter[1][$op]=and
+        // filter[1][0][department_id][eq][]=100
+        // filter[1][1][department_id][eq][]=200
+        let group = FilterGroup {
+            op: "or".to_string(),
+            conditions: vec![
+                FilterEntry::Condition(FilterCondition {
+                    field: "status".to_string(),
+                    operator: "eq".to_string(),
+                    value: FilterValue::Single("active".to_string()),
+                }),
+                FilterEntry::Group(FilterGroup {
+                    op: "and".to_string(),
+                    conditions: vec![
+                        FilterEntry::Condition(FilterCondition {
+                            field: "department_id".to_string(),
+                            operator: "eq".to_string(),
+                            value: FilterValue::Single("100".to_string()),
+                        }),
+                        FilterEntry::Condition(FilterCondition {
+                            field: "department_id".to_string(),
+                            operator: "eq".to_string(),
+                            value: FilterValue::Single("200".to_string()),
+                        }),
+                    ],
+                }),
+            ],
+        };
+        let query = filter_group_to_query(&group, Query::new());
+        let qs = query.to_query_string();
+        // Top-level op
+        assert!(qs.contains("filter[$op]=or"), "missing top-level $op: {}", qs);
+        // First condition at index 0
+        assert!(qs.contains("filter[0][status][eq][]=active"), "missing status condition: {}", qs);
+        // Nested group at index 1
+        assert!(qs.contains("filter[1][$op]=and"), "missing nested $op: {}", qs);
+        // Nested conditions at [1][0] and [1][1]
+        assert!(qs.contains("filter[1][0][department_id][eq][]=100"), "missing nested cond 0: {}", qs);
+        assert!(qs.contains("filter[1][1][department_id][eq][]=200"), "missing nested cond 1: {}", qs);
+    }
+
+    #[test]
+    fn filter_array_value_serialization() {
+        let group = FilterGroup {
+            op: "and".to_string(),
+            conditions: vec![FilterEntry::Condition(FilterCondition {
+                field: "person_id".to_string(),
+                operator: "eq".to_string(),
+                value: FilterValue::Array(vec!["1".to_string(), "2".to_string(), "3".to_string()]),
+            })],
+        };
+        let query = filter_group_to_query(&group, Query::new());
+        let qs = query.to_query_string();
+        assert!(qs.contains("1%2C2%2C3") || qs.contains("1,2,3"), "array values should be comma-joined: {}", qs);
+    }
+
+    #[test]
+    fn filter_bracket_field_path() {
+        let group = FilterGroup {
+            op: "and".to_string(),
+            conditions: vec![FilterEntry::Condition(FilterCondition {
+                field: "custom_fields[1234]".to_string(),
+                operator: "eq".to_string(),
+                value: FilterValue::Single("Smith".to_string()),
+            })],
+        };
+        let query = filter_group_to_query(&group, Query::new());
+        let qs = query.to_query_string();
+        assert!(qs.contains("custom_fields"), "missing custom_fields: {}", qs);
+        assert!(qs.contains("1234"), "missing custom field id: {}", qs);
     }
 
     #[test]

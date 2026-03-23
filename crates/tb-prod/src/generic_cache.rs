@@ -36,6 +36,12 @@ impl GenericCache {
         Ok(Self { org_dir })
     }
 
+    /// Create a cache rooted at an arbitrary directory.
+    pub fn with_dir(dir: PathBuf) -> Result<Self> {
+        std::fs::create_dir_all(&dir)?;
+        Ok(Self { org_dir: dir })
+    }
+
     /// Sync all org-wide cacheable types.
     pub async fn sync_org(&self, client: &ProductiveClient) -> Result<()> {
         let schema = schema::schema();
@@ -145,8 +151,6 @@ impl GenericCache {
         Ok(())
     }
 
-    /// Resolve a name to an ID using the cache.
-    /// Returns Ok(id) on unique match, Err on 0 or 2+ matches.
     /// Resolve a name to an ID using the cache.
     /// Returns Ok(id) on unique match, Err on 0 or 2+ matches.
     /// Note: all-digit strings are always treated as IDs (passed through unchanged).
@@ -433,8 +437,8 @@ fn display_name(record: &CachedRecord, display_field: &str, resource_type: &str)
 }
 
 /// Two-pass name resolution for filter values.
-/// Pass 1: resolve org-wide types.
-/// Pass 2: resolve project-scoped types using context from pass 1.
+/// Pass 1: resolve org-wide types, collect project IDs for scoping.
+/// Pass 2: resolve project-scoped types using all collected project IDs.
 /// Recurses into nested FilterGroup entries.
 pub fn resolve_filter_names(
     cache: &GenericCache,
@@ -442,13 +446,13 @@ pub fn resolve_filter_names(
     resource: &ResourceDef,
     schema: &Schema,
 ) -> std::result::Result<(), String> {
-    let mut resolved_project_id: Option<String> = None;
+    let mut resolved_project_ids: Vec<String> = Vec::new();
 
-    // Pass 1: resolve org-wide names, collect project_id for scoping
-    resolve_pass(cache, conditions, resource, schema, CacheScope::Org, &mut resolved_project_id)?;
+    // Pass 1: resolve org-wide names, collect project IDs for scoping
+    resolve_pass(cache, conditions, resource, schema, CacheScope::Org, &mut resolved_project_ids)?;
 
-    // Pass 2: resolve project-scoped names using context from pass 1
-    resolve_pass(cache, conditions, resource, schema, CacheScope::Project, &mut resolved_project_id)?;
+    // Pass 2: resolve project-scoped names using project context from pass 1
+    resolve_pass(cache, conditions, resource, schema, CacheScope::Project, &mut resolved_project_ids)?;
 
     Ok(())
 }
@@ -459,7 +463,7 @@ fn resolve_pass(
     resource: &ResourceDef,
     schema: &Schema,
     target_scope: CacheScope,
-    resolved_project_id: &mut Option<String>,
+    resolved_project_ids: &mut Vec<String>,
 ) -> std::result::Result<(), String> {
     for entry in conditions.iter_mut() {
         match entry {
@@ -470,15 +474,29 @@ fn resolve_pass(
                             if let Some(cache_config) = &target_resource.cache {
                                 if cache_config.enabled && cache_config.scope == target_scope {
                                     let project_ctx = if target_scope == CacheScope::Project {
-                                        resolved_project_id.as_deref()
+                                        if resolved_project_ids.is_empty() {
+                                            None
+                                        } else {
+                                            // Resolve against all collected projects
+                                            resolve_condition_values_multi_project(
+                                                cache, cond, &field.field_type, resolved_project_ids,
+                                            )?;
+                                            continue;
+                                        }
                                     } else {
                                         None
                                     };
                                     resolve_condition_values(cache, cond, &field.field_type, project_ctx)?;
 
+                                    // Collect resolved project IDs for pass 2
                                     if target_scope == CacheScope::Org && field.field_type == "projects" {
-                                        if let crate::filter::FilterValue::Single(ref v) = cond.value {
-                                            *resolved_project_id = Some(v.clone());
+                                        match &cond.value {
+                                            crate::filter::FilterValue::Single(v) => {
+                                                resolved_project_ids.push(v.clone());
+                                            }
+                                            crate::filter::FilterValue::Array(values) => {
+                                                resolved_project_ids.extend(values.iter().cloned());
+                                            }
                                         }
                                     }
                                 }
@@ -488,11 +506,72 @@ fn resolve_pass(
                 }
             }
             crate::filter::FilterEntry::Group(group) => {
-                resolve_pass(cache, &mut group.conditions, resource, schema, target_scope, resolved_project_id)?;
+                resolve_pass(cache, &mut group.conditions, resource, schema, target_scope, resolved_project_ids)?;
             }
         }
     }
     Ok(())
+}
+
+/// Resolve a condition's values against multiple project caches.
+/// A name must resolve uniquely across all projects — ambiguous matches are an error.
+fn resolve_condition_values_multi_project(
+    cache: &GenericCache,
+    cond: &mut crate::filter::FilterCondition,
+    resource_type: &str,
+    project_ids: &[String],
+) -> std::result::Result<(), String> {
+    match &mut cond.value {
+        crate::filter::FilterValue::Single(v) => {
+            if !v.chars().all(|c| c.is_ascii_digit()) {
+                *v = resolve_across_projects(cache, resource_type, v, project_ids)?;
+            }
+        }
+        crate::filter::FilterValue::Array(values) => {
+            for v in values.iter_mut() {
+                if !v.chars().all(|c| c.is_ascii_digit()) {
+                    *v = resolve_across_projects(cache, resource_type, v, project_ids)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Try resolving a name against each project's cache.
+/// Returns the ID if exactly one project resolves it; errors on 0 or 2+ matches.
+fn resolve_across_projects(
+    cache: &GenericCache,
+    resource_type: &str,
+    name: &str,
+    project_ids: &[String],
+) -> std::result::Result<String, String> {
+    let mut found: Vec<(String, String)> = Vec::new(); // (project_id, resolved_id)
+
+    for pid in project_ids {
+        match cache.resolve_name(resource_type, name, Some(pid)) {
+            Ok(id) => found.push((pid.clone(), id)),
+            Err(_) => {} // no match in this project — try next
+        }
+    }
+
+    match found.len() {
+        0 => Err(format!(
+            "No {} matching '{}' in any of the filtered projects ({}).",
+            resource_type, name, project_ids.join(", ")
+        )),
+        1 => Ok(found[0].1.clone()),
+        _ => {
+            let details: Vec<String> = found
+                .iter()
+                .map(|(pid, id)| format!("  project {} → {} ({})", pid, name, id))
+                .collect();
+            Err(format!(
+                "Ambiguous {} '{}' — found in multiple projects:\n{}\nUse the numeric ID instead.",
+                resource_type, name, details.join("\n")
+            ))
+        }
+    }
 }
 
 fn resolve_condition_values(
@@ -520,4 +599,237 @@ fn resolve_condition_values(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_record(id: &str, fields: &[(&str, &str)]) -> CachedRecord {
+        CachedRecord {
+            id: id.to_string(),
+            fields: fields.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+        }
+    }
+
+    fn setup_cache_with_org_records(records: &[CachedRecord], resource_type: &str) -> (tempfile::TempDir, GenericCache) {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = GenericCache::with_dir(tmp.path().to_path_buf()).unwrap();
+        cache.write_org_cache(&format!("{}.json", resource_type), records).unwrap();
+        (tmp, cache)
+    }
+
+    // --- org cache read/write ---
+
+    #[test]
+    fn write_and_read_org_cache() {
+        let records = vec![
+            make_record("1", &[("name", "Alpha")]),
+            make_record("2", &[("name", "Beta")]),
+        ];
+        let (_tmp, cache) = setup_cache_with_org_records(&records, "projects");
+
+        let read = cache.read_org_cache("projects").unwrap();
+        assert_eq!(read.len(), 2);
+        assert_eq!(read[0].id, "1");
+        assert_eq!(read[0].fields["name"], "Alpha");
+        assert_eq!(read[1].id, "2");
+    }
+
+    #[test]
+    fn read_org_cache_missing_returns_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = GenericCache::with_dir(tmp.path().to_path_buf()).unwrap();
+        let read = cache.read_org_cache("nonexistent").unwrap();
+        assert!(read.is_empty());
+    }
+
+    // --- project cache read/write ---
+
+    #[test]
+    fn write_and_read_project_cache() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = GenericCache::with_dir(tmp.path().to_path_buf()).unwrap();
+
+        let records = vec![make_record("10", &[("name", "Sprint 1")])];
+        cache.write_project_cache("99", "task_lists", &records).unwrap();
+
+        let read = cache.read_project_cache("99", "task_lists").unwrap();
+        assert_eq!(read.len(), 1);
+        assert_eq!(read[0].fields["name"], "Sprint 1");
+    }
+
+    #[test]
+    fn read_project_cache_missing_returns_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = GenericCache::with_dir(tmp.path().to_path_buf()).unwrap();
+        let read = cache.read_project_cache("999", "task_lists").unwrap();
+        assert!(read.is_empty());
+    }
+
+    // --- fuzzy_resolve ---
+
+    #[test]
+    fn fuzzy_resolve_unique_match() {
+        let records = vec![
+            make_record("1", &[("name", "Alpha Project")]),
+            make_record("2", &[("name", "Beta Project")]),
+        ];
+        let id = fuzzy_resolve(&records, "alpha", "name", "projects").unwrap();
+        assert_eq!(id, "1");
+    }
+
+    #[test]
+    fn fuzzy_resolve_case_insensitive() {
+        let records = vec![make_record("1", &[("name", "My Project")])];
+        let id = fuzzy_resolve(&records, "MY PROJECT", "name", "projects").unwrap();
+        assert_eq!(id, "1");
+    }
+
+    #[test]
+    fn fuzzy_resolve_no_match() {
+        let records = vec![make_record("1", &[("name", "Alpha")])];
+        let err = fuzzy_resolve(&records, "gamma", "name", "projects").unwrap_err();
+        assert!(err.to_string().contains("No projects matching 'gamma'"));
+    }
+
+    #[test]
+    fn fuzzy_resolve_ambiguous() {
+        let records = vec![
+            make_record("1", &[("name", "Project Alpha")]),
+            make_record("2", &[("name", "Project Alpha v2")]),
+        ];
+        let err = fuzzy_resolve(&records, "project alpha", "name", "projects").unwrap_err();
+        assert!(err.to_string().contains("Ambiguous"));
+    }
+
+    #[test]
+    fn fuzzy_resolve_people_full_name() {
+        let records = vec![
+            make_record("1", &[("first_name", "John"), ("last_name", "Doe"), ("email", "john@example.com")]),
+            make_record("2", &[("first_name", "Jane"), ("last_name", "Smith"), ("email", "jane@example.com")]),
+        ];
+        let id = fuzzy_resolve(&records, "john doe", "name", "people").unwrap();
+        assert_eq!(id, "1");
+    }
+
+    #[test]
+    fn fuzzy_resolve_people_by_email() {
+        let records = vec![
+            make_record("1", &[("first_name", "John"), ("last_name", "Doe"), ("email", "john@example.com")]),
+        ];
+        let id = fuzzy_resolve(&records, "john@example", "name", "people").unwrap();
+        assert_eq!(id, "1");
+    }
+
+    // --- resolve_name ---
+
+    #[test]
+    fn resolve_name_all_digit_passthrough() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = GenericCache::with_dir(tmp.path().to_path_buf()).unwrap();
+        // No cache data needed — all-digit strings bypass resolution
+        let id = cache.resolve_name("projects", "12345", None).unwrap();
+        assert_eq!(id, "12345");
+    }
+
+    #[test]
+    fn resolve_name_from_org_cache() {
+        let records = vec![
+            make_record("42", &[("name", "Acme Corp")]),
+        ];
+        let (_tmp, cache) = setup_cache_with_org_records(&records, "companies");
+        let id = cache.resolve_name("companies", "acme", None).unwrap();
+        assert_eq!(id, "42");
+    }
+
+    #[test]
+    fn resolve_name_project_scoped_needs_project_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = GenericCache::with_dir(tmp.path().to_path_buf()).unwrap();
+        let err = cache.resolve_name("task_lists", "sprint", None).unwrap_err();
+        assert!(err.to_string().contains("without project context"));
+    }
+
+    #[test]
+    fn resolve_name_project_scoped_with_project_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = GenericCache::with_dir(tmp.path().to_path_buf()).unwrap();
+
+        let records = vec![make_record("55", &[("name", "Sprint 3")])];
+        cache.write_project_cache("99", "task_lists", &records).unwrap();
+
+        let id = cache.resolve_name("task_lists", "sprint 3", Some("99")).unwrap();
+        assert_eq!(id, "55");
+    }
+
+    // --- resolve_across_projects ---
+
+    #[test]
+    fn resolve_across_projects_unique() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = GenericCache::with_dir(tmp.path().to_path_buf()).unwrap();
+
+        cache.write_project_cache("10", "task_lists", &[make_record("100", &[("name", "Backlog")])]).unwrap();
+        cache.write_project_cache("20", "task_lists", &[make_record("200", &[("name", "Sprint")])]).unwrap();
+
+        let id = resolve_across_projects(&cache, "task_lists", "backlog", &["10".into(), "20".into()]).unwrap();
+        assert_eq!(id, "100");
+    }
+
+    #[test]
+    fn resolve_across_projects_ambiguous() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = GenericCache::with_dir(tmp.path().to_path_buf()).unwrap();
+
+        // Same name in two projects
+        cache.write_project_cache("10", "task_lists", &[make_record("100", &[("name", "Backlog")])]).unwrap();
+        cache.write_project_cache("20", "task_lists", &[make_record("200", &[("name", "Backlog")])]).unwrap();
+
+        let err = resolve_across_projects(&cache, "task_lists", "backlog", &["10".into(), "20".into()]).unwrap_err();
+        assert!(err.contains("Ambiguous"));
+        assert!(err.contains("multiple projects"));
+    }
+
+    #[test]
+    fn resolve_across_projects_no_match() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = GenericCache::with_dir(tmp.path().to_path_buf()).unwrap();
+
+        cache.write_project_cache("10", "task_lists", &[make_record("100", &[("name", "Sprint")])]).unwrap();
+
+        let err = resolve_across_projects(&cache, "task_lists", "nonexistent", &["10".into()]).unwrap_err();
+        assert!(err.contains("No task_lists matching"));
+    }
+
+    // --- is_stale ---
+
+    #[test]
+    fn is_stale_missing_file() {
+        assert!(is_stale(std::path::Path::new("/nonexistent/path.json")));
+    }
+
+    #[test]
+    fn is_stale_fresh_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("fresh.json");
+        std::fs::write(&path, "{}").unwrap();
+        assert!(!is_stale(&path));
+    }
+
+    // --- clear_all ---
+
+    #[test]
+    fn clear_all_removes_caches() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = GenericCache::with_dir(tmp.path().to_path_buf()).unwrap();
+
+        cache.write_org_cache("projects.json", &[make_record("1", &[("name", "P")])]).unwrap();
+        cache.write_project_cache("10", "task_lists", &[make_record("2", &[("name", "T")])]).unwrap();
+
+        cache.clear_all().unwrap();
+
+        assert!(cache.read_org_cache("projects").unwrap().is_empty());
+        assert!(cache.read_project_cache("10", "task_lists").unwrap().is_empty());
+    }
 }

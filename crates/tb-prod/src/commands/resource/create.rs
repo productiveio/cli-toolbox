@@ -65,6 +65,19 @@ async fn run_bulk(client: &ProductiveClient, resource: &ResourceDef, items: &[Va
         );
     }
 
+    // Validate each item
+    let schema = crate::schema::schema();
+    for (i, item) in items.iter().enumerate() {
+        let errors = validate::validate_create(resource, item, schema);
+        if !errors.is_empty() {
+            json_error::exit_with_error_details(
+                "validation_error",
+                &format!("Item {}: {}", i, &errors[0]),
+                Some(serde_json::json!({"item_index": i, "errors": errors})),
+            );
+        }
+    }
+
     // Build bulk JSONAPI body
     let payload = match body::build_jsonapi_bulk_body(resource, items) {
         Ok(p) => p,

@@ -1,8 +1,15 @@
-use reqwest::Client;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 use crate::error::{Result, TbProdError};
+
+fn map_middleware_err(e: reqwest_middleware::Error) -> TbProdError {
+    match e {
+        reqwest_middleware::Error::Reqwest(re) => TbProdError::Http(re),
+        reqwest_middleware::Error::Middleware(ae) => TbProdError::Other(ae.to_string()),
+    }
+}
 
 // --- JSONAPI response types ---
 
@@ -123,6 +130,12 @@ impl Query {
         self
     }
 
+    /// Add a raw filter key-value pair (for nested group serialization).
+    pub fn filter_raw(mut self, key: String, value: String) -> Self {
+        self.filters.push((key, value));
+        self
+    }
+
     pub fn include(mut self, includes: &str) -> Self {
         self.params
             .push(("include".to_string(), includes.to_string()));
@@ -160,7 +173,7 @@ impl Query {
 // --- Client ---
 
 pub struct ProductiveClient {
-    client: Client,
+    client: ClientWithMiddleware,
     token: String,
     org_id: String,
     base_url: String,
@@ -169,10 +182,25 @@ pub struct ProductiveClient {
 impl ProductiveClient {
     pub fn new(config: &Config) -> Self {
         Self {
-            client: Client::new(),
+            client: ClientBuilder::new(reqwest::Client::new()).build(),
             token: config.token.clone(),
             org_id: config.org_id.clone(),
             base_url: config.base_url().to_string(),
+        }
+    }
+
+    /// Create a client with an injected middleware client (for testing with VCR).
+    pub fn with_client(
+        client: ClientWithMiddleware,
+        token: &str,
+        org_id: &str,
+        base_url: &str,
+    ) -> Self {
+        Self {
+            client,
+            token: token.to_string(),
+            org_id: org_id.to_string(),
+            base_url: base_url.to_string(),
         }
     }
 
@@ -180,9 +208,9 @@ impl ProductiveClient {
         &self.org_id
     }
 
-    fn request(&self, method: reqwest::Method, url: &str) -> reqwest::RequestBuilder {
+    fn request(&self, method: reqwest::Method, url: &str) -> reqwest_middleware::RequestBuilder {
         self.client
-            .request(method, url)
+            .request(method, url.parse::<reqwest::Url>().expect("valid URL"))
             .header("Content-Type", "application/vnd.api+json")
             .header("X-Auth-Token", &self.token)
             .header("X-Organization-Id", &self.org_id)
@@ -191,7 +219,7 @@ impl ProductiveClient {
     /// GET a single JSONAPI resource.
     pub async fn get_one(&self, path: &str) -> Result<JsonApiSingleResponse> {
         let url = format!("{}{}", self.base_url, path);
-        let resp = self.request(reqwest::Method::GET, &url).send().await?;
+        let resp = self.request(reqwest::Method::GET, &url).send().await.map_err(map_middleware_err)?;
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -220,7 +248,7 @@ impl ProductiveClient {
             format!("{}&{}", qs, &page_qs[1..])
         };
         let url = format!("{}{}{}", self.base_url, path, full_qs);
-        let resp = self.request(reqwest::Method::GET, &url).send().await?;
+        let resp = self.request(reqwest::Method::GET, &url).send().await.map_err(map_middleware_err)?;
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -256,7 +284,7 @@ impl ProductiveClient {
             let url = format!("{}{}{}", self.base_url, path, full_qs);
 
             eprintln!("Fetching page {}...", page_num);
-            let resp = self.request(reqwest::Method::GET, &url).send().await?;
+            let resp = self.request(reqwest::Method::GET, &url).send().await.map_err(map_middleware_err)?;
             let status = resp.status().as_u16();
             if !resp.status().is_success() {
                 let body = resp.text().await.unwrap_or_default();
@@ -300,7 +328,8 @@ impl ProductiveClient {
             .request(reqwest::Method::POST, &url)
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(map_middleware_err)?;
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -323,7 +352,8 @@ impl ProductiveClient {
             .request(reqwest::Method::PATCH, &url)
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(map_middleware_err)?;
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -343,7 +373,8 @@ impl ProductiveClient {
         let resp = self
             .request(reqwest::Method::DELETE, &url)
             .send()
-            .await?;
+            .await
+            .map_err(map_middleware_err)?;
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -374,7 +405,7 @@ impl ProductiveClient {
         if let Some(b) = body {
             req = req.json(b);
         }
-        let resp = req.send().await?;
+        let resp = req.send().await.map_err(map_middleware_err)?;
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -410,7 +441,8 @@ impl ProductiveClient {
             .header("X-Organization-Id", &self.org_id)
             .json(payload)
             .send()
-            .await?;
+            .await
+            .map_err(map_middleware_err)?;
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
