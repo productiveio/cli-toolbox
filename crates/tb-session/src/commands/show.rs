@@ -60,7 +60,7 @@ pub fn run(conn: &Connection, session_id: &str, json: bool) -> Result<()> {
 }
 
 fn output_json(row: &RawSession, messages: Option<&[parser::ParsedMessage]>) {
-    let total_messages = messages.as_ref().map(|m| m.len());
+    let total_messages = messages.map(|m| m.len());
 
     let previews = messages.map(|msgs| {
         msgs.iter()

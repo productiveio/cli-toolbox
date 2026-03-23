@@ -10,8 +10,8 @@ pub fn run(
     from: Option<&str>,
     to: Option<&str>,
     all_projects: bool,
-    limit: u32,
-    page: u32,
+    limit: usize,
+    page: usize,
     json: bool,
 ) -> Result<()> {
     let mut sql = String::from(
@@ -60,11 +60,13 @@ pub fn run(
     let param_refs: Vec<&dyn rusqlite::types::ToSql> =
         params.iter().map(|p| p.as_ref()).collect();
 
-    let total: u32 = conn.query_row(
-        &count_sql,
-        rusqlite::params_from_iter(param_refs.iter().copied()),
-        |row| row.get(0),
-    )?;
+    let total: usize = conn
+        .query_row(
+            &count_sql,
+            rusqlite::params_from_iter(param_refs.iter().copied()),
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|n| n as usize)?;
 
     // Paginated data query
     let offset = (page.saturating_sub(1)) * limit;
@@ -93,7 +95,7 @@ pub fn run(
 
     let list = SessionList {
         total_results: total,
-        page,
+        page: Some(page),
         results,
     };
 
@@ -137,13 +139,13 @@ pub fn run(
             toolbox_core::output::truncate(&s.session_id, 36),
             toolbox_core::output::truncate(summary, 38),
             toolbox_core::output::truncate(branch, 18),
-            s.message_count.unwrap_or(0),
+            s.message_count,
             modified,
         );
     }
 
     if let Some(hint) =
-        toolbox_core::output::pagination_hint(list.page, limit, list.total_results)
+        toolbox_core::output::pagination_hint(page as u32, limit as u32, total as u32)
     {
         eprintln!("{}", hint);
     }

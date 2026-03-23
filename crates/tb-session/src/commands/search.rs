@@ -121,7 +121,7 @@ pub fn run(
     let results: Vec<SessionMatch> = if raw_rows.is_empty() {
         Vec::new()
     } else if raw_rows.len() == 1 {
-        vec![raw_rows[0].into_match(1.0)]
+        vec![raw_rows[0].to_match(1.0)]
     } else {
         // rank is negative in FTS5 (more negative = better match)
         // worst = least negative (highest value), best = most negative (lowest value)
@@ -143,7 +143,7 @@ pub fn run(
                 } else {
                     ((worst - r.rank) / range).clamp(0.0, 1.0)
                 };
-                r.into_match(score)
+                r.to_match(score)
             })
             .collect()
     };
@@ -264,8 +264,8 @@ struct RawRow {
 }
 
 impl RawRow {
-    /// Convert into a `SessionMatch` with a pre-computed relevance score.
-    fn into_match(&self, score: f64) -> SessionMatch {
+    /// Convert to a `SessionMatch` with a pre-computed relevance score.
+    fn to_match(&self, score: f64) -> SessionMatch {
         SessionMatch {
             session_id: self.session_id.clone(),
             summary: self.summary.clone(),

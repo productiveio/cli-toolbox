@@ -57,6 +57,67 @@ enum Commands {
         before: Option<String>,
     },
 
+    /// List sessions by metadata (no full-text search)
+    List {
+        /// Filter by git branch name
+        #[arg(long)]
+        branch: Option<String>,
+
+        /// List sessions across all projects
+        #[arg(long)]
+        all_projects: bool,
+
+        /// Maximum number of results per page
+        #[arg(long)]
+        limit: Option<usize>,
+
+        /// Page number (starts at 1)
+        #[arg(long, default_value = "1")]
+        page: usize,
+
+        /// Only sessions modified on or after this date
+        #[arg(long)]
+        after: Option<String>,
+
+        /// Only sessions modified on or before this date
+        #[arg(long)]
+        before: Option<String>,
+    },
+
+    /// Show session detail and conversation preview
+    Show {
+        /// Session ID (full or prefix)
+        session_id: String,
+    },
+
+    /// Resume a session (execs into claude --resume)
+    Resume {
+        /// Session ID
+        session_id: String,
+    },
+
+    /// Rebuild the search index
+    Index {
+        /// Index all projects (default: current dir only)
+        #[arg(long)]
+        all_projects: bool,
+    },
+
+    /// Verify setup and diagnose issues
+    Doctor,
+
+    /// Delete the index database for a clean rebuild
+    CacheClear,
+
+    /// AI-optimized context dump
+    Prime,
+
+    /// Manage Claude Code skill file
+    Skill {
+        #[command(subcommand)]
+        action: toolbox_core::skill::SkillAction,
+    },
+
     /// Manage configuration
     Config {
         #[command(subcommand)]
@@ -129,6 +190,67 @@ fn run() -> tb_session::error::Result<()> {
                 effective_limit,
                 cli.json,
             )?;
+        }
+        Commands::List {
+            branch,
+            all_projects,
+            limit,
+            page,
+            after,
+            before,
+        } => {
+            let config = Config::load()?;
+            let conn = tb_session::index::open_db(cli.no_cache)?;
+
+            let projects_dir = config.projects_dir();
+            let cwd = std::env::current_dir().ok();
+            let scope = if all_projects { None } else { cwd.as_deref() };
+            tb_session::index::ensure_fresh(&conn, &projects_dir, scope)?;
+
+            let effective_limit = limit.unwrap_or(config.default_limit);
+
+            tb_session::commands::list::run(
+                &conn,
+                branch.as_deref(),
+                after.as_deref(),
+                before.as_deref(),
+                all_projects,
+                effective_limit,
+                page,
+                cli.json,
+            )?;
+        }
+        Commands::Show { session_id } => {
+            let config = Config::load()?;
+            let conn = tb_session::index::open_db(cli.no_cache)?;
+            let projects_dir = config.projects_dir();
+            tb_session::index::ensure_fresh(&conn, &projects_dir, None)?;
+            tb_session::commands::show::run(&conn, &session_id, cli.json)?;
+        }
+        Commands::Resume { session_id } => {
+            tb_session::commands::resume::run(&session_id)?;
+        }
+        Commands::Index { all_projects } => {
+            tb_session::commands::index_cmd::run(all_projects)?;
+        }
+        Commands::Doctor => {
+            tb_session::commands::doctor::run()?;
+            toolbox_core::version_check::print_update_hint("tb-session", env!("CARGO_PKG_VERSION"));
+        }
+        Commands::CacheClear => {
+            tb_session::commands::cache_clear::run()?;
+        }
+        Commands::Prime => {
+            tb_session::commands::prime::run()?;
+            toolbox_core::version_check::print_update_hint("tb-session", env!("CARGO_PKG_VERSION"));
+        }
+        Commands::Skill { action } => {
+            let skill = toolbox_core::skill::SkillConfig {
+                tool_name: "tb-session",
+                content: include_str!("../SKILL.md"),
+            };
+            toolbox_core::skill::run(&skill, &action)
+                .map_err(tb_session::error::Error::Other)?;
         }
         Commands::Config { action } => match action {
             ConfigAction::Init => tb_session::commands::config_cmd::init()?,
