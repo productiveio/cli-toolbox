@@ -9,53 +9,47 @@ pub fn run(
     branch: Option<&str>,
     from: Option<&str>,
     to: Option<&str>,
-    all_projects: bool,
+    repo_paths: &[String],
     limit: usize,
     page: usize,
     json: bool,
 ) -> Result<()> {
-    let mut sql = String::from(
-        "SELECT session_id, summary, git_branch, project_path, message_count, \
-         created_at, modified_at FROM sessions WHERE is_sidechain = 0",
-    );
+    // Build WHERE clause
+    let mut where_parts = vec!["is_sidechain = 0".to_string()];
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-    // Current-project filter (default)
-    let cwd = if !all_projects {
-        let dir = std::env::current_dir()?;
-        Some(dir.to_string_lossy().into_owned())
-    } else {
-        None
-    };
-    if let Some(ref path) = cwd {
-        sql.push_str(" AND project_path = ?");
-        params.push(Box::new(path.clone()));
+    if !repo_paths.is_empty() {
+        let placeholders: Vec<String> = (0..repo_paths.len())
+            .map(|i| format!("?{}", i + 1))
+            .collect();
+        where_parts.push(format!("project_path IN ({})", placeholders.join(", ")));
+        for path in repo_paths {
+            params.push(Box::new(path.clone()));
+        }
     }
 
     if let Some(b) = branch {
-        sql.push_str(" AND git_branch = ?");
+        let idx = params.len() + 1;
+        where_parts.push(format!("git_branch = ?{idx}"));
         params.push(Box::new(b.to_string()));
     }
 
     if let Some(f) = from {
-        sql.push_str(" AND modified_at >= ?");
+        let idx = params.len() + 1;
+        where_parts.push(format!("modified_at >= ?{idx}"));
         params.push(Box::new(f.to_string()));
     }
 
     if let Some(t) = to {
-        sql.push_str(" AND modified_at <= ?");
+        let idx = params.len() + 1;
+        where_parts.push(format!("modified_at <= ?{idx}"));
         params.push(Box::new(t.to_string()));
     }
 
+    let where_clause = where_parts.join(" AND ");
+
     // COUNT query for pagination
-    let count_sql = format!(
-        "SELECT COUNT(*) FROM ({}) AS t",
-        sql.replace(
-            "SELECT session_id, summary, git_branch, project_path, message_count, \
-             created_at, modified_at FROM sessions",
-            "SELECT 1 FROM sessions",
-        )
-    );
+    let count_sql = format!("SELECT COUNT(*) FROM sessions WHERE {where_clause}");
 
     let param_refs: Vec<&dyn rusqlite::types::ToSql> =
         params.iter().map(|p| p.as_ref()).collect();
@@ -70,12 +64,14 @@ pub fn run(
 
     // Paginated data query
     let offset = (page.saturating_sub(1)) * limit;
-    sql.push_str(&format!(
-        " ORDER BY modified_at DESC LIMIT {} OFFSET {}",
+    let data_sql = format!(
+        "SELECT session_id, summary, git_branch, project_path, message_count, \
+         created_at, modified_at FROM sessions WHERE {where_clause} \
+         ORDER BY modified_at DESC LIMIT {} OFFSET {}",
         limit, offset
-    ));
+    );
 
-    let mut stmt = conn.prepare(&sql)?;
+    let mut stmt = conn.prepare(&data_sql)?;
     let results: Vec<SessionSummary> = stmt
         .query_map(
             rusqlite::params_from_iter(param_refs.iter().copied()),

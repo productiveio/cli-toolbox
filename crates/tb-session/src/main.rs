@@ -141,6 +141,26 @@ fn main() {
     }
 }
 
+fn resolve_and_freshen(
+    conn: &rusqlite::Connection,
+    projects_dir: &std::path::Path,
+    all_projects: bool,
+) -> tb_session::error::Result<Vec<String>> {
+    if all_projects {
+        tb_session::index::ensure_fresh(conn, projects_dir, None)?;
+        return Ok(vec![]);
+    }
+    let cwd = std::env::current_dir()?;
+    let repo_paths: Vec<String> = tb_session::git::repo_paths(&cwd)
+        .into_iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    for path in &repo_paths {
+        tb_session::index::ensure_fresh(conn, projects_dir, Some(std::path::Path::new(path)))?;
+    }
+    Ok(repo_paths)
+}
+
 fn run() -> tb_session::error::Result<()> {
     let cli = Cli::parse();
 
@@ -166,17 +186,8 @@ fn run() -> tb_session::error::Result<()> {
         } => {
             let config = Config::load()?;
             let conn = tb_session::index::open_db(cli.no_cache)?;
-
-            // Ensure index is fresh (scoped to cwd unless --all-projects)
             let projects_dir = config.projects_dir();
-            let cwd = std::env::current_dir().ok();
-            let scope = if all_projects {
-                None
-            } else {
-                cwd.as_deref()
-            };
-            tb_session::index::ensure_fresh(&conn, &projects_dir, scope)?;
-
+            let repo_paths = resolve_and_freshen(&conn, &projects_dir, all_projects)?;
             let effective_limit = limit.unwrap_or(config.default_limit);
 
             tb_session::commands::search::run(
@@ -186,7 +197,7 @@ fn run() -> tb_session::error::Result<()> {
                 after.as_deref(),
                 before.as_deref(),
                 project.as_deref(),
-                all_projects,
+                &repo_paths,
                 effective_limit,
                 cli.json,
             )?;
@@ -201,12 +212,8 @@ fn run() -> tb_session::error::Result<()> {
         } => {
             let config = Config::load()?;
             let conn = tb_session::index::open_db(cli.no_cache)?;
-
             let projects_dir = config.projects_dir();
-            let cwd = std::env::current_dir().ok();
-            let scope = if all_projects { None } else { cwd.as_deref() };
-            tb_session::index::ensure_fresh(&conn, &projects_dir, scope)?;
-
+            let repo_paths = resolve_and_freshen(&conn, &projects_dir, all_projects)?;
             let effective_limit = limit.unwrap_or(config.default_limit);
 
             tb_session::commands::list::run(
@@ -214,7 +221,7 @@ fn run() -> tb_session::error::Result<()> {
                 branch.as_deref(),
                 after.as_deref(),
                 before.as_deref(),
-                all_projects,
+                &repo_paths,
                 effective_limit,
                 page,
                 cli.json,
@@ -228,7 +235,11 @@ fn run() -> tb_session::error::Result<()> {
             tb_session::commands::show::run(&conn, &session_id, cli.json)?;
         }
         Commands::Resume { session_id } => {
-            tb_session::commands::resume::run(&session_id)?;
+            let config = Config::load()?;
+            let conn = tb_session::index::open_db(cli.no_cache)?;
+            let projects_dir = config.projects_dir();
+            tb_session::index::ensure_fresh(&conn, &projects_dir, None)?;
+            tb_session::commands::resume::run(&conn, &session_id)?;
         }
         Commands::Index { all_projects } => {
             tb_session::commands::index_cmd::run(all_projects)?;

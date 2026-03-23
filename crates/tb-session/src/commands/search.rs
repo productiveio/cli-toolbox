@@ -12,7 +12,7 @@ pub fn run(
     from: Option<&str>,
     to: Option<&str>,
     project: Option<&str>,
-    all_projects: bool,
+    repo_paths: &[String],
     limit: usize,
     json: bool,
 ) -> Result<()> {
@@ -25,29 +25,24 @@ pub fn run(
     let mut param_idx: usize = 2;
 
     // Project scope
-    if !all_projects && project.is_none() {
-        // Default: scope to current working directory
-        let cwd = std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
-        if !cwd.is_empty() {
-            where_clauses.push(format!("s.project_path = ?{param_idx}"));
-            params.push(Box::new(cwd));
-            param_idx += 1;
-        }
-    } else if all_projects && project.is_some() {
-        // --all-projects + --project: LIKE filter across all projects
-        let pattern = format!("%{}%", project.unwrap());
-        where_clauses.push(format!("s.project_path LIKE ?{param_idx}"));
-        params.push(Box::new(pattern));
-        param_idx += 1;
-    } else if let Some(proj) = project {
-        // --project without --all-projects: LIKE filter
+    if let Some(proj) = project {
+        // --project flag: LIKE filter (works with or without --all-projects)
         let pattern = format!("%{proj}%");
         where_clauses.push(format!("s.project_path LIKE ?{param_idx}"));
         params.push(Box::new(pattern));
         param_idx += 1;
+    } else if !repo_paths.is_empty() {
+        // Default: scope to current repo worktrees
+        let placeholders: Vec<String> = (0..repo_paths.len())
+            .map(|i| format!("?{}", param_idx + i))
+            .collect();
+        where_clauses.push(format!("s.project_path IN ({})", placeholders.join(", ")));
+        for path in repo_paths {
+            params.push(Box::new(path.clone()));
+            param_idx += 1;
+        }
     }
+    // else: no project filter (all projects)
 
     // Branch filter
     if let Some(br) = branch {
@@ -164,6 +159,7 @@ pub fn run(
     let total_results = results.len();
 
     // -- Build active filters for output ----------------------------------
+    let all_projects = repo_paths.is_empty() && project.is_none();
     let has_filters = branch.is_some()
         || from.is_some()
         || to.is_some()
