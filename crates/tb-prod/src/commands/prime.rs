@@ -79,8 +79,35 @@ pub async fn run_project(client: &ProductiveClient, project_name_or_id: &str) ->
         cache.sync_org(client).await?;
     }
 
-    // Resolve project
-    let project_id = cache.resolve_name("projects", project_name_or_id, None)?;
+    // Resolve project — try cache first, fall back to API for non-active projects
+    let project_id = match cache.resolve_name("projects", project_name_or_id, None) {
+        Ok(id) => id,
+        Err(_) if !project_name_or_id.chars().all(|c| c.is_ascii_digit()) => {
+            // Cache miss — project may be archived/non-active (cache only has active).
+            // Query ALL projects from API and search by name.
+            eprintln!("Not found in cache (active projects only), searching all projects...");
+            let resp = client.get_all("/projects", &Query::new(), 10).await?;
+            let needle = project_name_or_id.to_lowercase();
+            let matches: Vec<_> = resp.data.iter()
+                .filter(|r| r.attr_str("name").to_lowercase().contains(&needle))
+                .collect();
+            match matches.len() {
+                0 => return Err(crate::error::TbProdError::Other(
+                    format!("No project matching '{}'.", project_name_or_id)
+                )),
+                1 => matches[0].id.clone(),
+                _ => {
+                    let list: Vec<String> = matches.iter()
+                        .map(|r| format!("  {} ({})", r.attr_str("name"), r.id))
+                        .collect();
+                    return Err(crate::error::TbProdError::Other(
+                        format!("Ambiguous project '{}'. Matches:\n{}", project_name_or_id, list.join("\n"))
+                    ));
+                }
+            }
+        }
+        Err(e) => return Err(e),
+    };
 
     // Fetch project with workflow
     let path = format!("/projects/{}?include=workflow", project_id);
