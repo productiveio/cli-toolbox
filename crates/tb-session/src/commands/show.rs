@@ -131,8 +131,8 @@ fn output_human(row: &RawSession, messages: Option<&[parser::ParsedMessage]>) {
     }
 
     // Conversation preview
-    if let Some(msgs) = messages {
-        if !msgs.is_empty() {
+    if let Some(msgs) = messages
+        && !msgs.is_empty() {
             println!("\n{}", "--- Conversation Preview ---".dimmed());
 
             let total = msgs.len();
@@ -155,7 +155,6 @@ fn output_human(row: &RawSession, messages: Option<&[parser::ParsedMessage]>) {
                 }
             }
         }
-    }
 
     println!(
         "\n{} tb-session resume {}",

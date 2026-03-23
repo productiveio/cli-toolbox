@@ -11,10 +11,10 @@ pub fn run(session_id: &str) -> Result<()> {
             .arg(session_id)
             .exec();
         // exec() only returns on error
-        return Err(Error::Other(format!(
+        Err(Error::Other(format!(
             "Failed to exec claude: {}",
             err
-        )));
+        )))
     }
 
     #[cfg(not(unix))]

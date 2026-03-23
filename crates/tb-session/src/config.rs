@@ -61,8 +61,8 @@ impl Config {
 
     /// Resolves `~` in `claude_home` to an absolute PathBuf.
     pub fn claude_home_path(&self) -> PathBuf {
-        if self.claude_home.starts_with('~') {
-            if let Some(home) = dirs::home_dir() {
+        if self.claude_home.starts_with('~')
+            && let Some(home) = dirs::home_dir() {
                 let stripped = self.claude_home.trim_start_matches('~');
                 let stripped = stripped.trim_start_matches('/');
                 if stripped.is_empty() {
@@ -70,7 +70,6 @@ impl Config {
                 }
                 return home.join(stripped);
             }
-        }
         PathBuf::from(&self.claude_home)
     }
 

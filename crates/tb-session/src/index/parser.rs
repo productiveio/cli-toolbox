@@ -70,18 +70,16 @@ pub fn parse_session(file_path: &Path) -> Result<ParsedSession> {
         }
 
         // Extract gitBranch from first entry that has it
-        if git_branch.is_none() {
-            if let Some(branch) = entry.get("gitBranch").and_then(|b| b.as_str()) {
+        if git_branch.is_none()
+            && let Some(branch) = entry.get("gitBranch").and_then(|b| b.as_str()) {
                 git_branch = Some(branch.to_string());
             }
-        }
 
         // Check isSidechain
-        if let Some(sc) = entry.get("isSidechain").and_then(|v| v.as_bool()) {
-            if sc {
+        if let Some(sc) = entry.get("isSidechain").and_then(|v| v.as_bool())
+            && sc {
                 is_sidechain = true;
             }
-        }
 
         // Extract user/assistant messages
         if let Some(message) = entry.get("message") {

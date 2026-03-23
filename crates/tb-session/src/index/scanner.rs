@@ -73,11 +73,10 @@ pub fn scan_projects(
         };
 
         // When scoping, skip directories that don't match the encoded cwd.
-        if let Some(ref encoded) = encoded_cwd {
-            if dir_name != *encoded {
+        if let Some(ref encoded) = encoded_cwd
+            && dir_name != *encoded {
                 continue;
             }
-        }
 
         // Load sessions-index.json for this project directory.
         let index = load_sessions_index(&dir_path);
@@ -173,11 +172,10 @@ pub fn extract_cwd_from_jsonl(path: &Path) -> Option<String> {
 
     for line in reader.lines().take(5) {
         let line = line.ok()?;
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
-            if let Some(cwd) = value.get("cwd").and_then(|v| v.as_str()) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line)
+            && let Some(cwd) = value.get("cwd").and_then(|v| v.as_str()) {
                 return Some(cwd.to_string());
             }
-        }
     }
 
     None
