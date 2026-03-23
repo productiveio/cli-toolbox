@@ -145,7 +145,10 @@ enum Commands {
     },
 
     /// AI context dump — quick command reference
-    Prime,
+    Prime {
+        #[command(subcommand)]
+        target: Option<PrimeTarget>,
+    },
     /// Manage cache
     Cache {
         #[command(subcommand)]
@@ -332,6 +335,15 @@ enum ProjectAction {
     /// Show project context — statuses, task lists
     Show {
         /// Project ID or name
+        project: String,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum PrimeTarget {
+    /// Deep project context — statuses, task lists, services
+    Project {
+        /// Project name or ID
         project: String,
     },
 }
@@ -809,8 +821,15 @@ async fn run() -> tb_prod::error::Result<()> {
                 .await;
         }
 
-        Commands::Prime => {
-            commands::prime::run(&client, &config).await?;
+        Commands::Prime { target } => {
+            match target {
+                None => {
+                    commands::prime::run(&client, &config).await?;
+                }
+                Some(PrimeTarget::Project { project }) => {
+                    commands::prime::run_project(&client, &project).await?;
+                }
+            }
             toolbox_core::version_check::print_update_hint("tb-prod", env!("CARGO_PKG_VERSION"));
         }
         Commands::Cache { action } => match action {
