@@ -147,6 +147,10 @@ impl GenericCache {
 
     /// Resolve a name to an ID using the cache.
     /// Returns Ok(id) on unique match, Err on 0 or 2+ matches.
+    /// Resolve a name to an ID using the cache.
+    /// Returns Ok(id) on unique match, Err on 0 or 2+ matches.
+    /// Note: all-digit strings are always treated as IDs (passed through unchanged).
+    /// This means names like "2025" or "404" would not be resolved by fuzzy match.
     pub fn resolve_name(
         &self,
         resource_type: &str,

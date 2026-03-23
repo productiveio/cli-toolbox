@@ -204,6 +204,9 @@ fn validate_condition(
 
 /// Convert a validated FilterGroup into Query builder calls.
 pub fn filter_group_to_query(group: &FilterGroup, query: Query) -> Query {
+    if group.conditions.is_empty() {
+        return query;
+    }
     let mut q = query.filter_op(&group.op);
     let mut index = 0;
     q = serialize_entries(&group.conditions, q, &mut index);
@@ -232,12 +235,13 @@ fn serialize_entries(
                 *index += 1;
             }
             FilterEntry::Group(sub) => {
-                // Nested groups use indexed sub-filters
-                // For now, flatten nested groups into the same index space
-                // with their own $op at a sub-level
-                // This is a simplification — full nested support would need
-                // bracket nesting like filter[0][$op]=or&filter[0][0][field][op]=val
-                // For now we serialize flat (covers most real-world cases)
+                // Nested groups are flattened — the inner group's $op is lost.
+                // This means nested AND/OR semantics are NOT preserved.
+                // Log a warning to stderr so the caller knows.
+                eprintln!(
+                    "Warning: nested filter group (op: {}) flattened into parent — inner operator ignored. Use flat conditions for correct semantics.",
+                    sub.op
+                );
                 query = serialize_entries(&sub.conditions, query, index);
             }
         }

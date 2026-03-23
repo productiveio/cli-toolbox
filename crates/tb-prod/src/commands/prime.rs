@@ -13,13 +13,21 @@ pub async fn run(client: &ProductiveClient, config: &Config) -> Result<()> {
         cache.sync_org(client).await?;
     }
 
-    // Resolve user name
+    // Look up user name from cache by ID
+    let person_id = config.person_id.as_deref().unwrap_or("?");
     let user_name = config
         .person_id
         .as_deref()
-        .and_then(|pid| cache.resolve_name("people", pid, None).ok())
+        .and_then(|pid| {
+            let people = cache.read_org_cache("people").ok()?;
+            people.into_iter().find(|r| r.id == pid).map(|r| {
+                let first = r.fields.get("first_name").map(|s| s.as_str()).unwrap_or("");
+                let last = r.fields.get("last_name").map(|s| s.as_str()).unwrap_or("");
+                format!("{} {}", first, last).trim().to_string()
+            })
+        })
+        .filter(|n| !n.is_empty())
         .unwrap_or_else(|| "Unknown".to_string());
-    let person_id = config.person_id.as_deref().unwrap_or("?");
 
     // --- Header ---
     println!("# Productive.io Context (org: {})\n", client.org_id());

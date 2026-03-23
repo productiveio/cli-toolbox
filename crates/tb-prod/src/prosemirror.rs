@@ -122,38 +122,12 @@ fn convert_node<'a>(node: &'a Node<'a, std::cell::RefCell<Ast>>) -> Option<Value
             }
         }
 
-        NodeValue::TableRow(is_header) => {
-            let cell_type = if *is_header { "table_header" } else { "table_cell" };
-            let cells: Vec<Value> = node
-                .children()
-                .map(|cell| {
-                    let content = convert_inline_children(cell);
-                    let para = if content.is_empty() {
-                        json!({"type": "paragraph"})
-                    } else {
-                        json!({"type": "paragraph", "content": content})
-                    };
-                    json!({"type": cell_type, "content": [para]})
-                })
-                .collect();
-            Some(json!({"type": "table_row", "content": cells}))
-        }
-
-        NodeValue::TableCell => None, // Handled inline by TableRow
-
-        // Block-level text (tight list items) — wrap in paragraph
-        NodeValue::Text(text) => {
-            let t = text.clone();
-            if t.is_empty() {
-                None
-            } else {
-                Some(json!({"type": "paragraph", "content": [{"type": "text", "text": t}]}))
-            }
-        }
+        // TableRow and TableCell are handled by convert_table_row called from Table
+        NodeValue::TableRow(_) | NodeValue::TableCell => None,
 
         NodeValue::SoftBreak | NodeValue::LineBreak => None,
 
-        // Inline nodes shouldn't appear at block level, but handle gracefully
+        // Text at block level, inline nodes — not produced by comrak at document level
         _ => None,
     }
 }

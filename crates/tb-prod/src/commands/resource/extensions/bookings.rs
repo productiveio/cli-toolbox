@@ -509,7 +509,11 @@ fn generate_date_range(start: &str, end: &str) -> Vec<String> {
     let mut current = start.to_string();
     while current.as_str() <= end {
         dates.push(current.clone());
-        current = next_date(&current);
+        let next = next_date(&current);
+        if next == current {
+            break; // malformed date — prevent infinite loop
+        }
+        current = next;
     }
     dates
 }
