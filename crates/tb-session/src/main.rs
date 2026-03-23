@@ -1,5 +1,7 @@
 use clap::Parser;
 
+use tb_session::config::Config;
+
 #[derive(Parser)]
 #[command(
     name = "tb-session",
@@ -30,6 +32,20 @@ enum Commands {
         /// Search query
         query: String,
     },
+
+    /// Manage configuration
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum ConfigAction {
+    /// Write default config to disk
+    Init,
+    /// Show current config and resolved paths
+    Show,
 }
 
 fn main() {
@@ -57,6 +73,10 @@ fn run() -> tb_session::error::Result<()> {
         Commands::Search { query } => {
             println!("TODO: search for '{}'", query);
         }
+        Commands::Config { action } => match action {
+            ConfigAction::Init => tb_session::commands::config_cmd::init()?,
+            ConfigAction::Show => tb_session::commands::config_cmd::show()?,
+        },
     }
 
     Ok(())
