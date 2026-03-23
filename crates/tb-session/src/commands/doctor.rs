@@ -97,9 +97,9 @@ pub fn run() -> Result<()> {
     // 5. claude binary in PATH
     let claude_found = which_claude();
     let label = if let Some(ref path) = claude_found {
-        format!("claude binary found ({})", path)
+        format!("claude binary in PATH ({})", path)
     } else {
-        "claude binary found in PATH".to_string()
+        "claude binary in PATH".to_string()
     };
     if !check(claude_found.is_some(), &label) {
         all_ok = false;
