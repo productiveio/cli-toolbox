@@ -4,6 +4,8 @@ use crate::api::ProductiveClient;
 use crate::json_error;
 use crate::schema::ResourceDef;
 
+use super::extensions;
+
 pub async fn run(
     client: &ProductiveClient,
     resource: &ResourceDef,
@@ -11,15 +13,35 @@ pub async fn run(
     action_name: &str,
     data: Option<&Value>,
 ) {
-    // Look up the action in schema-level custom actions
+    // Try extension actions first
+    if let Some(result) = extensions::dispatch(client, &resource.type_name, id, action_name, data).await {
+        match result {
+            Ok(extensions::ExtensionResult::Json(v)) => {
+                println!("{}", serde_json::to_string_pretty(&v).unwrap());
+            }
+            Ok(extensions::ExtensionResult::Text(t)) => {
+                println!("{}", t);
+            }
+            Err(e) => {
+                json_error::exit_with_error("extension_action_error", &e);
+            }
+        }
+        return;
+    }
+
+    // Fall back to schema-level custom actions
     let action = match resource.custom_actions.get(action_name) {
         Some(a) => a,
         None => {
-            let available: Vec<&str> = resource
+            let mut available: Vec<&str> = resource
                 .custom_actions
                 .keys()
                 .map(|k| k.as_str())
                 .collect();
+            // Include extension action names in the hint
+            let ext_names = extension_action_names(&resource.type_name);
+            available.extend(ext_names.iter().map(|s| s.as_str()));
+
             let msg = if available.is_empty() {
                 format!(
                     "Unknown action '{}' on {}. This resource has no custom actions.",
@@ -69,5 +91,21 @@ pub async fn run(
             }
         }
         Err(e) => json_error::exit_with_tb_error(&e),
+    }
+}
+
+/// Return known extension action names for a resource type (for error hints).
+fn extension_action_names(resource_type: &str) -> Vec<String> {
+    match resource_type {
+        "tasks" => vec!["load_activity".into(), "resolve_subscriber_ids".into()],
+        "deals" => vec!["load_activity".into()],
+        "notifications" => vec!["load_details".into()],
+        "bookings" => vec!["find_conflicts".into(), "capacity_availability".into()],
+        "services" => vec!["move".into()],
+        "service_types" => vec!["merge".into()],
+        "people" => vec!["invite".into()],
+        "slack_messages" => vec!["send".into()],
+        "scenarios" => vec!["copy".into()],
+        _ => vec![],
     }
 }
