@@ -17,7 +17,12 @@ pub async fn run(client: &ProductiveClient, resource: &ResourceDef, data: &Value
     }
 }
 
-async fn run_single(client: &ProductiveClient, resource: &ResourceDef, data: &Value, schema: &crate::schema::Schema) {
+async fn run_single(
+    client: &ProductiveClient,
+    resource: &ResourceDef,
+    data: &Value,
+    schema: &crate::schema::Schema,
+) {
     if !resource.supports_action("create") {
         json_error::exit_with_error(
             "operation_not_supported",

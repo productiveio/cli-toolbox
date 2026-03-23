@@ -38,7 +38,9 @@ pub async fn run(client: &ProductiveClient, config: &Config) -> Result<()> {
     println!("## Commands\n");
     println!("```");
     println!("tb-prod describe <type> [--include schema,actions,related]");
-    println!("tb-prod query <type> [--filter <json>] [--sort <field>] [--page <n>] [--include <rels>]");
+    println!(
+        "tb-prod query <type> [--filter <json>] [--sort <field>] [--page <n>] [--include <rels>]"
+    );
     println!("tb-prod get <type> <id> [--include <rels>]");
     println!("tb-prod create <type> --data <json>");
     println!("tb-prod update <type> <id> --data <json>");
@@ -63,7 +65,9 @@ pub async fn run(client: &ProductiveClient, config: &Config) -> Result<()> {
     println!("## Notes\n");
     println!("- Output is JSON for all resource commands (except `describe` and `prime`)");
     println!("- `--filter` and `--data` accept JSON via flag or piped stdin");
-    println!("- Filter values for cacheable types (projects, people, etc.) auto-resolve names to IDs");
+    println!(
+        "- Filter values for cacheable types (projects, people, etc.) auto-resolve names to IDs"
+    );
     println!("- `tb-prod describe <type>` for full field/filter/action details");
     println!("- `tb-prod prime project <name>` for deep project context");
     println!("- `tb-prod cache sync` to refresh cached data");
@@ -88,21 +92,29 @@ pub async fn run_project(client: &ProductiveClient, project_name_or_id: &str) ->
             eprintln!("Not found in cache (active projects only), searching all projects...");
             let resp = client.get_all("/projects", &Query::new(), 10).await?;
             let needle = project_name_or_id.to_lowercase();
-            let matches: Vec<_> = resp.data.iter()
+            let matches: Vec<_> = resp
+                .data
+                .iter()
                 .filter(|r| r.attr_str("name").to_lowercase().contains(&needle))
                 .collect();
             match matches.len() {
-                0 => return Err(crate::error::TbProdError::Other(
-                    format!("No project matching '{}'.", project_name_or_id)
-                )),
+                0 => {
+                    return Err(crate::error::TbProdError::Other(format!(
+                        "No project matching '{}'.",
+                        project_name_or_id
+                    )));
+                }
                 1 => matches[0].id.clone(),
                 _ => {
-                    let list: Vec<String> = matches.iter()
+                    let list: Vec<String> = matches
+                        .iter()
                         .map(|r| format!("  {} ({})", r.attr_str("name"), r.id))
                         .collect();
-                    return Err(crate::error::TbProdError::Other(
-                        format!("Ambiguous project '{}'. Matches:\n{}", project_name_or_id, list.join("\n"))
-                    ));
+                    return Err(crate::error::TbProdError::Other(format!(
+                        "Ambiguous project '{}'. Matches:\n{}",
+                        project_name_or_id,
+                        list.join("\n")
+                    )));
                 }
             }
         }
@@ -118,19 +130,31 @@ pub async fn run_project(client: &ProductiveClient, project_name_or_id: &str) ->
     let workflow_id = project.relationship_id("workflow").map(|s| s.to_string());
 
     println!("# Project: {} (ID: {})\n", project_name, project_id);
-    println!("Status: {}", if project.attr_str("status") == "1" { "Active" } else { "Archived" });
+    println!(
+        "Status: {}",
+        if project.attr_str("status") == "1" {
+            "Active"
+        } else {
+            "Archived"
+        }
+    );
 
     // Workflow statuses
     if let Some(wf_id) = &workflow_id {
         let status_query = Query::new().filter_array("workflow_id", wf_id);
-        let statuses_resp = client.get_all("/workflow_statuses", &status_query, 5).await?;
+        let statuses_resp = client
+            .get_all("/workflow_statuses", &status_query, 5)
+            .await?;
 
         println!("\n## Workflow Statuses\n");
         for status in &statuses_resp.data {
             let category = match status
                 .attributes
                 .get("category_id")
-                .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+                .and_then(|v| {
+                    v.as_i64()
+                        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                })
                 .unwrap_or(0)
             {
                 1 => "not started",
@@ -138,7 +162,12 @@ pub async fn run_project(client: &ProductiveClient, project_name_or_id: &str) ->
                 3 => "closed",
                 _ => "unknown",
             };
-            println!("- {} (ID: {}, {})", status.attr_str("name"), status.id, category);
+            println!(
+                "- {} (ID: {}, {})",
+                status.attr_str("name"),
+                status.id,
+                category
+            );
         }
     }
 
@@ -161,16 +190,16 @@ pub async fn run_project(client: &ProductiveClient, project_name_or_id: &str) ->
             })
             .map(|f| f.attr_str("name").to_string());
 
-        let prefix = folder_name
-            .map(|f| format!("[{}] ", f))
-            .unwrap_or_default();
+        let prefix = folder_name.map(|f| format!("[{}] ", f)).unwrap_or_default();
 
         println!("- {}{} (ID: {})", prefix, tl.attr_str("name"), tl.id);
     }
 
     // Warm project-scoped cache
     eprintln!("\nWarming project cache...");
-    cache.sync_project(client, &project_id, workflow_id.as_deref()).await?;
+    cache
+        .sync_project(client, &project_id, workflow_id.as_deref())
+        .await?;
     eprintln!("Project cache warmed.");
 
     Ok(())

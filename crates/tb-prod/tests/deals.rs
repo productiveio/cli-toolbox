@@ -5,7 +5,10 @@ use tb_prod::api::Query;
 #[tokio::test]
 async fn get_page() {
     let client = harness::test_client("deals_get_page");
-    let resp = client.get_page("/deals", &Query::new(), 1, 5).await.unwrap();
+    let resp = client
+        .get_page("/deals", &Query::new(), 1, 5)
+        .await
+        .unwrap();
 
     assert!(!resp.data.is_empty());
     assert_eq!(resp.data[0].resource_type, "deals");
@@ -14,7 +17,10 @@ async fn get_page() {
 #[tokio::test]
 async fn get_one() {
     let client = harness::test_client("deals_get_one");
-    let list = client.get_page("/deals", &Query::new(), 1, 1).await.unwrap();
+    let list = client
+        .get_page("/deals", &Query::new(), 1, 1)
+        .await
+        .unwrap();
     if list.data.is_empty() {
         return;
     }
@@ -37,7 +43,10 @@ async fn filter_by_status() {
 #[tokio::test]
 async fn query_services_for_deal() {
     let client = harness::test_client("deals_query_services");
-    let deals = client.get_page("/deals", &Query::new(), 1, 1).await.unwrap();
+    let deals = client
+        .get_page("/deals", &Query::new(), 1, 1)
+        .await
+        .unwrap();
     if deals.data.is_empty() {
         return;
     }

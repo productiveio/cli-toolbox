@@ -9,7 +9,11 @@ async fn get_nonexistent_resource_returns_404() {
 
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert!(err.to_string().contains("404"), "expected 404, got: {}", err);
+    assert!(
+        err.to_string().contains("404"),
+        "expected 404, got: {}",
+        err
+    );
 }
 
 #[tokio::test]
@@ -26,7 +30,11 @@ async fn create_with_invalid_data_returns_422() {
 
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert!(err.to_string().contains("422"), "expected 422, got: {}", err);
+    assert!(
+        err.to_string().contains("422"),
+        "expected 422, got: {}",
+        err
+    );
 }
 
 #[tokio::test]

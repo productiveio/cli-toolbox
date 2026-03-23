@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::api::{ProductiveClient, Query};
 
@@ -16,7 +16,10 @@ pub async fn dispatch(
     }
 }
 
-async fn load_details(client: &ProductiveClient, notification_id: &str) -> Result<ExtensionResult, String> {
+async fn load_details(
+    client: &ProductiveClient,
+    notification_id: &str,
+) -> Result<ExtensionResult, String> {
     let path = format!("/notifications/{}", notification_id);
     let resp = client.get_one(&path).await.map_err(|e| e.to_string())?;
 
@@ -49,7 +52,10 @@ async fn load_details(client: &ProductiveClient, notification_id: &str) -> Resul
     };
 
     // Fetch new activities if available
-    let new_count = resp.data.attributes.get("new_activities_count")
+    let new_count = resp
+        .data
+        .attributes
+        .get("new_activities_count")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
     let first_unread = resp.data.attr_str("first_unread_activity_id").to_string();

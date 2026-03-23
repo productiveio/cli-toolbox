@@ -20,7 +20,10 @@ pub fn read_json_input(flag_value: Option<&str>) -> Option<serde_json::Value> {
 
     let mut buf = String::new();
     stdin.lock().read_to_string(&mut buf).unwrap_or_else(|e| {
-        crate::json_error::exit_with_error("stdin_read_error", &format!("Failed to read stdin: {e}"));
+        crate::json_error::exit_with_error(
+            "stdin_read_error",
+            &format!("Failed to read stdin: {e}"),
+        );
     });
 
     if buf.trim().is_empty() {
@@ -28,7 +31,10 @@ pub fn read_json_input(flag_value: Option<&str>) -> Option<serde_json::Value> {
     }
 
     let parsed = serde_json::from_str(&buf).unwrap_or_else(|e| {
-        crate::json_error::exit_with_error("invalid_json", &format!("Invalid JSON from stdin: {e}"));
+        crate::json_error::exit_with_error(
+            "invalid_json",
+            &format!("Invalid JSON from stdin: {e}"),
+        );
     });
     Some(parsed)
 }
@@ -38,7 +44,9 @@ pub fn require_json_input(flag_value: Option<&str>, context: &str) -> serde_json
     read_json_input(flag_value).unwrap_or_else(|| {
         crate::json_error::exit_with_error(
             "missing_input",
-            &format!("No JSON input provided for {context}. Use --data '<json>' or pipe via stdin."),
+            &format!(
+                "No JSON input provided for {context}. Use --data '<json>' or pipe via stdin."
+            ),
         );
     })
 }

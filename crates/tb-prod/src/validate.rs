@@ -4,11 +4,7 @@ use std::collections::HashMap;
 use crate::schema::{ResourceDef, Schema, TypeCategory};
 
 /// Validate fields for a create operation.
-pub fn validate_create(
-    resource: &ResourceDef,
-    input: &Value,
-    schema: &Schema,
-) -> Vec<String> {
+pub fn validate_create(resource: &ResourceDef, input: &Value, schema: &Schema) -> Vec<String> {
     let map = match input.as_object() {
         Some(m) => m,
         None => return vec!["Input must be a JSON object.".to_string()],
@@ -20,14 +16,14 @@ pub fn validate_create(
     for key in map.keys() {
         match resource.field_by_param(key) {
             None => {
-                errors.push(format!("Unknown field '{}' on {}.", key, resource.type_name));
+                errors.push(format!(
+                    "Unknown field '{}' on {}.",
+                    key, resource.type_name
+                ));
             }
             Some(f) => {
                 if f.readonly {
-                    errors.push(format!(
-                        "Field '{}' is readonly and cannot be set.",
-                        key
-                    ));
+                    errors.push(format!("Field '{}' is readonly and cannot be set.", key));
                 }
             }
         }
@@ -35,16 +31,11 @@ pub fn validate_create(
 
     // Check required fields
     for field in resource.fields.values() {
-        if field.required && !field.id && !field.readonly {
-            if let Some(param) = &field.param {
-                if !map.contains_key(param.as_str()) {
-                    errors.push(format!(
-                        "Required field '{}' is missing.",
-                        param
-                    ));
+        if field.required && !field.id && !field.readonly
+            && let Some(param) = &field.param
+                && !map.contains_key(param.as_str()) {
+                    errors.push(format!("Required field '{}' is missing.", param));
                 }
-            }
-        }
     }
 
     // Validate exclusive groups
@@ -57,11 +48,7 @@ pub fn validate_create(
 }
 
 /// Validate fields for an update operation.
-pub fn validate_update(
-    resource: &ResourceDef,
-    input: &Value,
-    schema: &Schema,
-) -> Vec<String> {
+pub fn validate_update(resource: &ResourceDef, input: &Value, schema: &Schema) -> Vec<String> {
     let map = match input.as_object() {
         Some(m) => m,
         None => return vec!["Input must be a JSON object.".to_string()],
@@ -72,14 +59,14 @@ pub fn validate_update(
     for key in map.keys() {
         match resource.field_by_param(key) {
             None => {
-                errors.push(format!("Unknown field '{}' on {}.", key, resource.type_name));
+                errors.push(format!(
+                    "Unknown field '{}' on {}.",
+                    key, resource.type_name
+                ));
             }
             Some(f) => {
                 if f.readonly {
-                    errors.push(format!(
-                        "Field '{}' is readonly and cannot be set.",
-                        key
-                    ));
+                    errors.push(format!("Field '{}' is readonly and cannot be set.", key));
                 }
                 if f.create_only {
                     errors.push(format!(
@@ -108,7 +95,10 @@ fn validate_exclusive_groups(
     let mut groups: HashMap<&str, Vec<&str>> = HashMap::new();
     for field in resource.fields.values() {
         if let (Some(exclusive), Some(param)) = (&field.exclusive, &field.param) {
-            groups.entry(exclusive.as_str()).or_default().push(param.as_str());
+            groups
+                .entry(exclusive.as_str())
+                .or_default()
+                .push(param.as_str());
         }
     }
 
@@ -139,9 +129,9 @@ fn validate_enum_values(
     let mut errors = Vec::new();
 
     for (key, value) in input {
-        if let Some(field) = resource.field_by_param(key) {
-            if field.type_category == TypeCategory::Enum {
-                if let Some(enum_def) = schema.enums.get(&field.field_type) {
+        if let Some(field) = resource.field_by_param(key)
+            && field.type_category == TypeCategory::Enum
+                && let Some(enum_def) = schema.enums.get(&field.field_type) {
                     let val_str = value
                         .as_str()
                         .map(|s| s.to_string())
@@ -162,8 +152,6 @@ fn validate_enum_values(
                         ));
                     }
                 }
-            }
-        }
     }
 
     errors
@@ -199,7 +187,11 @@ mod tests {
             "id": "123"
         });
         let errors = validate_create(tasks, &input, s);
-        assert!(errors.iter().any(|e| e.contains("readonly")), "errors: {:?}", errors);
+        assert!(
+            errors.iter().any(|e| e.contains("readonly")),
+            "errors: {:?}",
+            errors
+        );
     }
 
     #[test]
@@ -209,7 +201,11 @@ mod tests {
         let pages = s.resolve_resource("pages").expect("pages should exist");
         let input = json!({"body": "x"});
         let errors = validate_update(pages, &input, s);
-        assert!(errors.iter().any(|e| e.contains("create")), "errors: {:?}", errors);
+        assert!(
+            errors.iter().any(|e| e.contains("create")),
+            "errors: {:?}",
+            errors
+        );
     }
 
     #[test]
@@ -232,9 +228,20 @@ mod tests {
         });
         let errors = validate_create(tasks, &input, s);
         // May still have errors for other required fields, but not for the ones we provided
-        let field_errors: Vec<&String> = errors.iter().filter(|e| {
-            e.contains("Unknown") || e.contains("readonly") || e.contains("title") || e.contains("project_id") || e.contains("task_list_id")
-        }).collect();
-        assert!(field_errors.is_empty(), "unexpected errors: {:?}", field_errors);
+        let field_errors: Vec<&String> = errors
+            .iter()
+            .filter(|e| {
+                e.contains("Unknown")
+                    || e.contains("readonly")
+                    || e.contains("title")
+                    || e.contains("project_id")
+                    || e.contains("task_list_id")
+            })
+            .collect();
+        assert!(
+            field_errors.is_empty(),
+            "unexpected errors: {:?}",
+            field_errors
+        );
     }
 }

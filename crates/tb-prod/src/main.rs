@@ -304,8 +304,14 @@ async fn run() -> tb_prod::error::Result<()> {
         } => {
             let resource = resolve_resource_or_exit(&resource_type);
             let json_data = input::read_json_input(data.as_deref());
-            commands::resource::action::run(&client, resource, &id, &action_name, json_data.as_ref())
-                .await;
+            commands::resource::action::run(
+                &client,
+                resource,
+                &id,
+                &action_name,
+                json_data.as_ref(),
+            )
+            .await;
         }
         Commands::Prime { target } => {
             match target {

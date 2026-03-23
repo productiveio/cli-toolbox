@@ -5,9 +5,8 @@ use serde::Deserialize;
 
 static SCHEMA_JSON: &str = include_str!("../schema.json");
 
-static SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
-    serde_json::from_str(SCHEMA_JSON).expect("embedded schema.json is invalid")
-});
+static SCHEMA: LazyLock<Schema> =
+    LazyLock::new(|| serde_json::from_str(SCHEMA_JSON).expect("embedded schema.json is invalid"));
 
 pub fn schema() -> &'static Schema {
     &SCHEMA
@@ -106,20 +105,21 @@ pub struct ResourceDef {
 impl ResourceDef {
     /// The API endpoint path for this resource (e.g. "/tasks").
     pub fn api_path(&self) -> String {
-        format!(
-            "/{}",
-            self.endpoint.as_deref().unwrap_or(&self.type_name)
-        )
+        format!("/{}", self.endpoint.as_deref().unwrap_or(&self.type_name))
     }
 
     /// Look up a field by its `param` key (used for create/update input).
     pub fn field_by_param(&self, param: &str) -> Option<&FieldDef> {
-        self.fields.values().find(|f| f.param.as_deref() == Some(param))
+        self.fields
+            .values()
+            .find(|f| f.param.as_deref() == Some(param))
     }
 
     /// Look up a field by its `filter` key (used for filter input).
     pub fn field_by_filter(&self, filter_key: &str) -> Option<&FieldDef> {
-        self.fields.values().find(|f| f.filter.as_deref() == Some(filter_key))
+        self.fields
+            .values()
+            .find(|f| f.filter.as_deref() == Some(filter_key))
     }
 
     /// Check if a REST operation is available.
@@ -304,8 +304,16 @@ mod tests {
     #[test]
     fn schema_loads_and_has_resources() {
         let s = schema();
-        assert!(s.resources.len() > 80, "expected 80+ resources, got {}", s.resources.len());
-        assert!(s.enums.len() > 60, "expected 60+ enums, got {}", s.enums.len());
+        assert!(
+            s.resources.len() > 80,
+            "expected 80+ resources, got {}",
+            s.resources.len()
+        );
+        assert!(
+            s.enums.len() > 60,
+            "expected 60+ enums, got {}",
+            s.enums.len()
+        );
     }
 
     #[test]
@@ -320,7 +328,9 @@ mod tests {
     fn resolve_resource_by_alias() {
         let s = schema();
         // "event" is a known alias for "events" (absence categories)
-        let resolved = s.resolve_resource("event").expect("alias 'event' should resolve");
+        let resolved = s
+            .resolve_resource("event")
+            .expect("alias 'event' should resolve");
         assert_eq!(resolved.type_name, "events");
     }
 
@@ -331,7 +341,9 @@ mod tests {
         assert_eq!(tasks.api_path(), "/tasks");
 
         // search-quick-results has an endpoint override
-        let sqr = s.resolve_resource("search-quick-results").expect("search-quick-results should exist");
+        let sqr = s
+            .resolve_resource("search-quick-results")
+            .expect("search-quick-results should exist");
         assert_eq!(sqr.api_path(), "/search/quick");
     }
 
@@ -339,7 +351,9 @@ mod tests {
     fn field_by_param_lookup() {
         let s = schema();
         let tasks = s.resolve_resource("tasks").unwrap();
-        let field = tasks.field_by_param("assignee_id").expect("assignee_id param should exist");
+        let field = tasks
+            .field_by_param("assignee_id")
+            .expect("assignee_id param should exist");
         assert_eq!(field.type_category, TypeCategory::Resource);
         assert_eq!(field.field_type, "people");
     }
@@ -369,12 +383,18 @@ mod tests {
     fn cache_config_scopes() {
         let s = schema();
         let projects = s.resolve_resource("projects").unwrap();
-        let cache = projects.cache.as_ref().expect("projects should be cacheable");
+        let cache = projects
+            .cache
+            .as_ref()
+            .expect("projects should be cacheable");
         assert_eq!(cache.scope, CacheScope::Org);
         assert!(cache.sync_filter.is_some());
 
         let wf_statuses = s.resolve_resource("workflow_statuses").unwrap();
-        let cache = wf_statuses.cache.as_ref().expect("workflow_statuses should be cacheable");
+        let cache = wf_statuses
+            .cache
+            .as_ref()
+            .expect("workflow_statuses should be cacheable");
         assert_eq!(cache.scope, CacheScope::Project);
     }
 

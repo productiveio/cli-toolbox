@@ -14,7 +14,9 @@ pub async fn run(
     data: Option<&Value>,
 ) {
     // Try extension actions first
-    if let Some(result) = extensions::dispatch(client, &resource.type_name, id, action_name, data).await {
+    if let Some(result) =
+        extensions::dispatch(client, &resource.type_name, id, action_name, data).await
+    {
         match result {
             Ok(extensions::ExtensionResult::Json(v)) => {
                 println!("{}", serde_json::to_string_pretty(&v).unwrap());
@@ -30,11 +32,8 @@ pub async fn run(
     let action = match resource.custom_actions.get(action_name) {
         Some(a) => a,
         None => {
-            let mut available: Vec<&str> = resource
-                .custom_actions
-                .keys()
-                .map(|k| k.as_str())
-                .collect();
+            let mut available: Vec<&str> =
+                resource.custom_actions.keys().map(|k| k.as_str()).collect();
             available.extend(extensions::action_names(&resource.type_name));
 
             let msg = if available.is_empty() {

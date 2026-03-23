@@ -1,4 +1,4 @@
-use crate::schema::{self, operators_for_field, ResourceDef, TypeCategory};
+use crate::schema::{self, ResourceDef, TypeCategory, operators_for_field};
 
 use super::extensions;
 
@@ -9,15 +9,11 @@ pub fn run(resource: &ResourceDef, include: Option<&str>) {
         .unwrap_or_default();
 
     // Header
-    println!(
-        "{} — {}",
-        resource.type_name, resource.description_short
-    );
-    if let Some(aliases) = &resource.aliases {
-        if !aliases.is_empty() {
+    println!("{} — {}", resource.type_name, resource.description_short);
+    if let Some(aliases) = &resource.aliases
+        && !aliases.is_empty() {
             println!("Aliases: {}", aliases.join(", "));
         }
-    }
     println!();
 
     // Operations
@@ -77,7 +73,12 @@ pub fn run(resource: &ResourceDef, include: Option<&str>) {
         .values()
         .filter(|f| f.type_category == TypeCategory::Resource)
         .map(|f| f.field_type.as_str())
-        .chain(resource.collections.values().map(|c| c.collection_type.as_str()))
+        .chain(
+            resource
+                .collections
+                .values()
+                .map(|c| c.collection_type.as_str()),
+        )
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
@@ -178,11 +179,7 @@ pub fn run(resource: &ResourceDef, include: Option<&str>) {
                         .take(5)
                         .collect();
                     if !sub_filters.is_empty() {
-                        println!(
-                            "  {}.{{{}...}}",
-                            rel_name,
-                            sub_filters.join(", ")
-                        );
+                        println!("  {}.{{{}...}}", rel_name, sub_filters.join(", "));
                     }
                 }
             }
@@ -219,7 +216,11 @@ pub fn run(resource: &ResourceDef, include: Option<&str>) {
             for action in resource.custom_actions.values() {
                 println!(
                     "  {} — {} {} /{}/<id>/{}",
-                    action.name, action.method, action.description, resource.type_name, action.endpoint
+                    action.name,
+                    action.method,
+                    action.description,
+                    resource.type_name,
+                    action.endpoint
                 );
             }
         }

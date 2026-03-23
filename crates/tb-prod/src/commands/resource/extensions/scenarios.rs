@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::api::ProductiveClient;
 
@@ -16,7 +16,11 @@ pub async fn dispatch(
     }
 }
 
-async fn copy(client: &ProductiveClient, template_id: &str, data: Option<&Value>) -> Result<ExtensionResult, String> {
+async fn copy(
+    client: &ProductiveClient,
+    template_id: &str,
+    data: Option<&Value>,
+) -> Result<ExtensionResult, String> {
     let name = data.and_then(|d| d.get("name")).and_then(|v| v.as_str());
 
     let mut attributes = json!({ "template_id": template_id });
@@ -32,7 +36,10 @@ async fn copy(client: &ProductiveClient, template_id: &str, data: Option<&Value>
     });
 
     // Collection-level POST (no record ID in path)
-    client.custom_action("/scenarios/copy", "POST", Some(&body)).await.map_err(|e| e.to_string())?;
+    client
+        .custom_action("/scenarios/copy", "POST", Some(&body))
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(ExtensionResult::Json(json!({
         "success": true,

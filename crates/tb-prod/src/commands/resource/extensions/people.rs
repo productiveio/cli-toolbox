@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::api::ProductiveClient;
 
@@ -16,7 +16,11 @@ pub async fn dispatch(
     }
 }
 
-async fn invite(client: &ProductiveClient, person_id: &str, data: Option<&Value>) -> Result<ExtensionResult, String> {
+async fn invite(
+    client: &ProductiveClient,
+    person_id: &str,
+    data: Option<&Value>,
+) -> Result<ExtensionResult, String> {
     let company_id = data
         .and_then(|d| d.get("company_id"))
         .and_then(|v| v.as_str())
@@ -26,10 +30,16 @@ async fn invite(client: &ProductiveClient, person_id: &str, data: Option<&Value>
         "company": { "data": { "type": "companies", "id": company_id } }
     });
 
-    if let Some(role_id) = data.and_then(|d| d.get("custom_role_id")).and_then(|v| v.as_str()) {
+    if let Some(role_id) = data
+        .and_then(|d| d.get("custom_role_id"))
+        .and_then(|v| v.as_str())
+    {
         relationships["custom_role"] = json!({ "data": { "type": "roles", "id": role_id } });
     }
-    if let Some(sub_id) = data.and_then(|d| d.get("subsidiary_id")).and_then(|v| v.as_str()) {
+    if let Some(sub_id) = data
+        .and_then(|d| d.get("subsidiary_id"))
+        .and_then(|v| v.as_str())
+    {
         relationships["subsidiary"] = json!({ "data": { "type": "subsidiaries", "id": sub_id } });
     }
 
@@ -41,7 +51,10 @@ async fn invite(client: &ProductiveClient, person_id: &str, data: Option<&Value>
     });
 
     let path = format!("/people/{}/invite", person_id);
-    client.custom_action(&path, "PATCH", Some(&body)).await.map_err(|e| e.to_string())?;
+    client
+        .custom_action(&path, "PATCH", Some(&body))
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(ExtensionResult::Json(json!({
         "success": true,

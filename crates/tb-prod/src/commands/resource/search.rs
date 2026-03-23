@@ -19,7 +19,11 @@ pub async fn run(client: &ProductiveClient, resource: &ResourceDef, query_text: 
 
     match client.get_page(&path, &query, 1, page_size).await {
         Ok(resp) => {
-            let total_count = resp.meta.get("total_count").and_then(|v| v.as_u64()).unwrap_or(0);
+            let total_count = resp
+                .meta
+                .get("total_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
 
             let output = serde_json::json!({
                 "data": resp.data,

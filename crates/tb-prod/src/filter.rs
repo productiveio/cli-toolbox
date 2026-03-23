@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::api::Query;
-use crate::schema::{operators_for_field, FieldDef, ResourceDef, Schema, TypeCategory};
+use crate::schema::{FieldDef, ResourceDef, Schema, TypeCategory, operators_for_field};
 
 // --- FilterGroup types ---
 
@@ -72,7 +72,9 @@ pub fn normalize_filter(input: FilterInput) -> FilterGroup {
                                 })
                                 .collect(),
                         ),
-                        other => FilterValue::Single(other.to_string().trim_matches('"').to_string()),
+                        other => {
+                            FilterValue::Single(other.to_string().trim_matches('"').to_string())
+                        }
                     };
                     FilterEntry::Condition(FilterCondition {
                         field,
@@ -101,7 +103,10 @@ pub fn validate_filter_group(
     let mut errors = Vec::new();
 
     if group.op != "and" && group.op != "or" {
-        errors.push(format!("Invalid filter operator '{}'. Must be 'and' or 'or'.", group.op));
+        errors.push(format!(
+            "Invalid filter operator '{}'. Must be 'and' or 'or'.",
+            group.op
+        ));
     }
 
     for entry in &group.conditions {
@@ -272,23 +277,24 @@ fn build_field_path(field: &str) -> String {
 }
 
 /// Get the FieldDef for a filter condition's field, checking multiple resolution paths.
-pub fn resolve_filter_field<'a>(field_name: &str, resource: &'a ResourceDef) -> Option<&'a FieldDef> {
+pub fn resolve_filter_field<'a>(
+    field_name: &str,
+    resource: &'a ResourceDef,
+) -> Option<&'a FieldDef> {
     // Direct filter key match
     if let Some(f) = resource.field_by_filter(field_name) {
         return Some(f);
     }
     // Try by param
-    if let Some(f) = resource.field_by_param(field_name) {
-        if f.filter.is_some() {
+    if let Some(f) = resource.field_by_param(field_name)
+        && f.filter.is_some() {
             return Some(f);
         }
-    }
     // Try by key
-    if let Some(f) = resource.fields.get(field_name) {
-        if f.filter.is_some() {
+    if let Some(f) = resource.fields.get(field_name)
+        && f.filter.is_some() {
             return Some(f);
         }
-    }
     None
 }
 
@@ -299,7 +305,8 @@ mod tests {
 
     #[test]
     fn normalize_flat_filter() {
-        let input: FilterInput = serde_json::from_str(r#"{"project_id": "123", "status": "1"}"#).unwrap();
+        let input: FilterInput =
+            serde_json::from_str(r#"{"project_id": "123", "status": "1"}"#).unwrap();
         let group = normalize_filter(input);
         assert_eq!(group.op, "and");
         assert_eq!(group.conditions.len(), 2);
@@ -309,7 +316,8 @@ mod tests {
     fn normalize_group_filter() {
         let input: FilterInput = serde_json::from_str(
             r#"{"op": "and", "conditions": [{"field": "project_id", "op": "eq", "value": "123"}]}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let group = normalize_filter(input);
         assert_eq!(group.op, "and");
         assert_eq!(group.conditions.len(), 1);
@@ -424,14 +432,34 @@ mod tests {
         let query = filter_group_to_query(&group, Query::new());
         let qs = query.to_query_string();
         // Top-level op
-        assert!(qs.contains("filter[$op]=or"), "missing top-level $op: {}", qs);
+        assert!(
+            qs.contains("filter[$op]=or"),
+            "missing top-level $op: {}",
+            qs
+        );
         // First condition at index 0
-        assert!(qs.contains("filter[0][status][eq][]=active"), "missing status condition: {}", qs);
+        assert!(
+            qs.contains("filter[0][status][eq][]=active"),
+            "missing status condition: {}",
+            qs
+        );
         // Nested group at index 1
-        assert!(qs.contains("filter[1][$op]=and"), "missing nested $op: {}", qs);
+        assert!(
+            qs.contains("filter[1][$op]=and"),
+            "missing nested $op: {}",
+            qs
+        );
         // Nested conditions at [1][0] and [1][1]
-        assert!(qs.contains("filter[1][0][department_id][eq][]=100"), "missing nested cond 0: {}", qs);
-        assert!(qs.contains("filter[1][1][department_id][eq][]=200"), "missing nested cond 1: {}", qs);
+        assert!(
+            qs.contains("filter[1][0][department_id][eq][]=100"),
+            "missing nested cond 0: {}",
+            qs
+        );
+        assert!(
+            qs.contains("filter[1][1][department_id][eq][]=200"),
+            "missing nested cond 1: {}",
+            qs
+        );
     }
 
     #[test]
@@ -446,7 +474,11 @@ mod tests {
         };
         let query = filter_group_to_query(&group, Query::new());
         let qs = query.to_query_string();
-        assert!(qs.contains("1%2C2%2C3") || qs.contains("1,2,3"), "array values should be comma-joined: {}", qs);
+        assert!(
+            qs.contains("1%2C2%2C3") || qs.contains("1,2,3"),
+            "array values should be comma-joined: {}",
+            qs
+        );
     }
 
     #[test]
@@ -461,7 +493,11 @@ mod tests {
         };
         let query = filter_group_to_query(&group, Query::new());
         let qs = query.to_query_string();
-        assert!(qs.contains("custom_fields"), "missing custom_fields: {}", qs);
+        assert!(
+            qs.contains("custom_fields"),
+            "missing custom_fields: {}",
+            qs
+        );
         assert!(qs.contains("1234"), "missing custom field id: {}", qs);
     }
 

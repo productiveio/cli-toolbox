@@ -1,4 +1,4 @@
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::schema::{ResourceDef, TypeCategory};
 
@@ -35,7 +35,7 @@ pub fn build_jsonapi_body(
                     Some(arr) => arr
                         .iter()
                         .map(|v| {
-                            json!({"type": f.field_type, "id": v.as_str().unwrap_or(&v.to_string().trim_matches('"').to_string())})
+                            json!({"type": f.field_type, "id": v.as_str().unwrap_or(v.to_string().trim_matches('"'))})
                         })
                         .collect::<Vec<_>>(),
                     None => {

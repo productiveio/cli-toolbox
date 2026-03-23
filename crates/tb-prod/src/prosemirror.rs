@@ -7,8 +7,8 @@
 /// - `ul`/`ol`/`li` (not `bullet_list`/`ordered_list`/`list_item`)
 use comrak::arena_tree::Node;
 use comrak::nodes::{Ast, ListType, NodeValue};
-use comrak::{parse_document, Arena, Options};
-use serde_json::{json, Value};
+use comrak::{Arena, Options, parse_document};
+use serde_json::{Value, json};
 
 /// Convert markdown to a ProseMirror JSON string.
 pub fn markdown_to_prosemirror_json(markdown: &str) -> String {
@@ -114,7 +114,10 @@ fn convert_node<'a>(node: &'a Node<'a, std::cell::RefCell<Ast>>) -> Option<Value
         NodeValue::ThematicBreak => Some(json!({"type": "divider"})),
 
         NodeValue::Table(_) => {
-            let rows: Vec<Value> = node.children().filter_map(|row| convert_table_row(row)).collect();
+            let rows: Vec<Value> = node
+                .children()
+                .filter_map(|row| convert_table_row(row))
+                .collect();
             if rows.is_empty() {
                 None
             } else {
@@ -135,7 +138,11 @@ fn convert_node<'a>(node: &'a Node<'a, std::cell::RefCell<Ast>>) -> Option<Value
 fn convert_table_row<'a>(node: &'a Node<'a, std::cell::RefCell<Ast>>) -> Option<Value> {
     let ast = node.data.borrow();
     if let NodeValue::TableRow(is_header) = &ast.value {
-        let cell_type = if *is_header { "table_header" } else { "table_cell" };
+        let cell_type = if *is_header {
+            "table_header"
+        } else {
+            "table_cell"
+        };
         let cells: Vec<Value> = node
             .children()
             .map(|cell| {
@@ -320,7 +327,10 @@ mod tests {
     #[test]
     fn bold_mark() {
         let doc = parse("**bold**");
-        assert_eq!(doc["content"][0]["content"][0]["marks"][0]["type"], "strong");
+        assert_eq!(
+            doc["content"][0]["content"][0]["marks"][0]["type"],
+            "strong"
+        );
     }
 
     #[test]
@@ -338,7 +348,10 @@ mod tests {
     #[test]
     fn strikethrough_mark() {
         let doc = parse("~~deleted~~");
-        assert_eq!(doc["content"][0]["content"][0]["marks"][0]["type"], "strike");
+        assert_eq!(
+            doc["content"][0]["content"][0]["marks"][0]["type"],
+            "strike"
+        );
     }
 
     #[test]

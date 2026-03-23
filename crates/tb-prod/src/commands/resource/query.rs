@@ -46,8 +46,8 @@ pub async fn run(
         }
 
         // Name resolution: resolve names to IDs via cache
-        if let Ok(cache) = GenericCache::new(client.org_id()) {
-            if let Err(e) = crate::generic_cache::resolve_filter_names(
+        if let Ok(cache) = GenericCache::new(client.org_id())
+            && let Err(e) = crate::generic_cache::resolve_filter_names(
                 &cache,
                 &mut group.conditions,
                 resource,
@@ -55,7 +55,6 @@ pub async fn run(
             ) {
                 json_error::exit_with_error("name_resolution_error", &e);
             }
-        }
 
         // Serialize to query params
         query = filter::filter_group_to_query(&group, query);
@@ -80,8 +79,16 @@ pub async fn run(
     let path = resource.api_path();
     match client.get_page(&path, &query, page_num, page_size).await {
         Ok(resp) => {
-            let total_count = resp.meta.get("total_count").and_then(|v| v.as_u64()).unwrap_or(0);
-            let total_pages = resp.meta.get("total_pages").and_then(|v| v.as_u64()).unwrap_or(1);
+            let total_count = resp
+                .meta
+                .get("total_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let total_pages = resp
+                .meta
+                .get("total_pages")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(1);
 
             let output = serde_json::json!({
                 "data": resp.data,

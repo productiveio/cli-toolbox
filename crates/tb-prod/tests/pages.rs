@@ -61,8 +61,14 @@ async fn create_child_page() {
     assert_eq!(child.data.attr_str("title"), "Child Page");
 
     // Clean up (child first, then parent)
-    client.delete(&format!("/pages/{}", child_id)).await.unwrap();
-    client.delete(&format!("/pages/{}", parent_id)).await.unwrap();
+    client
+        .delete(&format!("/pages/{}", child_id))
+        .await
+        .unwrap();
+    client
+        .delete(&format!("/pages/{}", parent_id))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -87,7 +93,10 @@ async fn update_title() {
             "attributes": { "title": "Updated Title" }
         }
     });
-    let updated = client.update(&format!("/pages/{}", page_id), &update).await.unwrap();
+    let updated = client
+        .update(&format!("/pages/{}", page_id), &update)
+        .await
+        .unwrap();
     assert_eq!(updated.data.attr_str("title"), "Updated Title");
 
     // Clean up
@@ -122,7 +131,10 @@ async fn update_body_via_extension() {
             }
         }
     });
-    let updated = client.update(&format!("/pages/{}", page_id), &update).await.unwrap();
+    let updated = client
+        .update(&format!("/pages/{}", page_id), &update)
+        .await
+        .unwrap();
     assert_eq!(updated.data.id, page_id);
 
     // Clean up
@@ -168,7 +180,10 @@ async fn get_one_with_details() {
     let page_id = created.data.id.clone();
 
     // Fetch with details
-    let single = client.get_one(&format!("/pages/{}", page_id)).await.unwrap();
+    let single = client
+        .get_one(&format!("/pages/{}", page_id))
+        .await
+        .unwrap();
     assert_eq!(single.data.id, page_id);
     assert_eq!(single.data.attr_str("title"), "Detail Fetch Test");
 
