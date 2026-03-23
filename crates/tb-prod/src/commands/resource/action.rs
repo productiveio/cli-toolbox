@@ -19,9 +19,6 @@ pub async fn run(
             Ok(extensions::ExtensionResult::Json(v)) => {
                 println!("{}", serde_json::to_string_pretty(&v).unwrap());
             }
-            Ok(extensions::ExtensionResult::Text(t)) => {
-                println!("{}", t);
-            }
             Err(e) => {
                 json_error::exit_with_error("extension_action_error", &e);
             }
@@ -38,9 +35,7 @@ pub async fn run(
                 .keys()
                 .map(|k| k.as_str())
                 .collect();
-            // Include extension action names in the hint
-            let ext_names = extension_action_names(&resource.type_name);
-            available.extend(ext_names.iter().map(|s| s.as_str()));
+            available.extend(extensions::action_names(&resource.type_name));
 
             let msg = if available.is_empty() {
                 format!(
@@ -59,10 +54,8 @@ pub async fn run(
         }
     };
 
-    // Build the API path
     let path = format!("{}/{}/{}", resource.api_path(), id, action.endpoint);
 
-    // Build request body if params provided
     let body = data.map(|d| {
         serde_json::json!({
             "data": {
@@ -91,22 +84,5 @@ pub async fn run(
             }
         }
         Err(e) => json_error::exit_with_tb_error(&e),
-    }
-}
-
-/// Return known extension action names for a resource type (for error hints).
-fn extension_action_names(resource_type: &str) -> Vec<String> {
-    match resource_type {
-        "tasks" => vec!["load_activity".into(), "resolve_subscriber_ids".into()],
-        "deals" => vec!["load_activity".into()],
-        "notifications" => vec!["load_details".into()],
-        "bookings" => vec!["find_conflicts".into(), "capacity_availability".into()],
-        "pages" => vec!["update_body".into()],
-        "services" => vec!["move".into()],
-        "service_types" => vec!["merge".into()],
-        "people" => vec!["invite".into()],
-        "slack_messages" => vec!["send".into()],
-        "scenarios" => vec!["copy".into()],
-        _ => vec![],
     }
 }

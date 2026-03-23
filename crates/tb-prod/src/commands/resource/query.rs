@@ -1,5 +1,6 @@
 use crate::api::{ProductiveClient, Query};
 use crate::filter::{self, FilterInput};
+use crate::generic_cache::GenericCache;
 use crate::json_error;
 use crate::schema::ResourceDef;
 
@@ -32,7 +33,7 @@ pub async fn run(
             }
         };
 
-        let group = filter::normalize_filter(input);
+        let mut group = filter::normalize_filter(input);
 
         // Validate
         let errors = filter::validate_filter_group(&group, resource, schema);
@@ -44,8 +45,17 @@ pub async fn run(
             );
         }
 
-        // TODO: name resolution via cache (Phase D integration)
-        // For now, filter values must be IDs
+        // Name resolution: resolve names to IDs via cache
+        if let Ok(cache) = GenericCache::new(client.org_id()) {
+            if let Err(e) = crate::generic_cache::resolve_filter_names(
+                &cache,
+                &mut group.conditions,
+                resource,
+                schema,
+            ) {
+                json_error::exit_with_error("name_resolution_error", &e);
+            }
+        }
 
         // Serialize to query params
         query = filter::filter_group_to_query(&group, query);

@@ -26,13 +26,11 @@ serde_json.workspace = true
 toml.workspace = true
 chrono.workspace = true
 colored.workspace = true
-indicatif.workspace = true
 thiserror.workspace = true
 
 # tb-prod-specific deps
 comrak = { version = "0.36", default-features = false, features = ["shortcodes"] }
 dirs = "6"
-html2text = "0.14"
 urlencoding = "2"
 
 [dev-dependencies]

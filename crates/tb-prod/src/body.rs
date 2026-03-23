@@ -23,53 +23,45 @@ pub fn build_jsonapi_body(
     let mut errors = Vec::new();
 
     for (key, value) in map {
-        let field = resource.field_by_param(key);
-        match field {
-            None => {
-                errors.push(format!("Unknown field '{}' on {}.", key, resource.type_name));
-            }
-            Some(f) => {
-                if f.type_category == TypeCategory::Resource {
-                    // Relationship field
-                    let rel_key = f.relationship.as_deref().unwrap_or(key);
-                    if f.array {
-                        // Array relationship: value should be array of IDs
-                        let ids = match value.as_array() {
-                            Some(arr) => arr
-                                .iter()
-                                .map(|v| {
-                                    json!({"type": f.field_type, "id": v.as_str().unwrap_or(&v.to_string().trim_matches('"').to_string())})
-                                })
-                                .collect::<Vec<_>>(),
-                            None => {
-                                errors.push(format!(
-                                    "Field '{}' is an array relationship — value must be a JSON array of IDs.",
-                                    key
-                                ));
-                                continue;
-                            }
-                        };
-                        relationships.insert(rel_key.to_string(), json!({"data": ids}));
-                    } else if value.is_null() {
-                        // Null relationship
-                        relationships.insert(rel_key.to_string(), json!({"data": null}));
-                    } else {
-                        // Single relationship
-                        let id_val = value
-                            .as_str()
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| value.to_string().trim_matches('"').to_string());
-                        relationships.insert(
-                            rel_key.to_string(),
-                            json!({"data": {"type": f.field_type, "id": id_val}}),
-                        );
+        // Unknown fields are already rejected by validate.rs — skip gracefully
+        let Some(f) = resource.field_by_param(key) else {
+            continue;
+        };
+
+        if f.type_category == TypeCategory::Resource {
+            let rel_key = f.relationship.as_deref().unwrap_or(key);
+            if f.array {
+                let ids = match value.as_array() {
+                    Some(arr) => arr
+                        .iter()
+                        .map(|v| {
+                            json!({"type": f.field_type, "id": v.as_str().unwrap_or(&v.to_string().trim_matches('"').to_string())})
+                        })
+                        .collect::<Vec<_>>(),
+                    None => {
+                        errors.push(format!(
+                            "Field '{}' is an array relationship — value must be a JSON array of IDs.",
+                            key
+                        ));
+                        continue;
                     }
-                } else {
-                    // Attribute field
-                    let attr_key = f.attribute.as_deref().unwrap_or(key);
-                    attributes.insert(attr_key.to_string(), value.clone());
-                }
+                };
+                relationships.insert(rel_key.to_string(), json!({"data": ids}));
+            } else if value.is_null() {
+                relationships.insert(rel_key.to_string(), json!({"data": null}));
+            } else {
+                let id_val = value
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| value.to_string().trim_matches('"').to_string());
+                relationships.insert(
+                    rel_key.to_string(),
+                    json!({"data": {"type": f.field_type, "id": id_val}}),
+                );
             }
+        } else {
+            let attr_key = f.attribute.as_deref().unwrap_or(key);
+            attributes.insert(attr_key.to_string(), value.clone());
         }
     }
 
@@ -162,14 +154,13 @@ mod tests {
     }
 
     #[test]
-    fn build_body_unknown_field_error() {
+    fn build_body_skips_unknown_fields() {
         let s = schema();
         let tasks = s.resolve_resource("tasks").unwrap();
+        // Unknown fields are skipped (validation is done by validate.rs)
         let input = json!({"nonexistent_field": "x"});
         let result = build_jsonapi_body(tasks, &input, None);
-        assert!(result.is_err());
-        let errors = result.unwrap_err();
-        assert!(errors[0].contains("Unknown field"));
+        assert!(result.is_ok());
     }
 
     #[test]

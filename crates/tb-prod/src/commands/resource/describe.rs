@@ -1,5 +1,7 @@
 use crate::schema::{self, operators_for_field, ResourceDef, TypeCategory};
 
+use super::extensions;
+
 pub fn run(resource: &ResourceDef, include: Option<&str>) {
     let schema = schema::schema();
     let includes: Vec<&str> = include
@@ -39,16 +41,24 @@ pub fn run(resource: &ResourceDef, include: Option<&str>) {
         .collect();
     println!("Operations: {}", ops_str.join(" | "));
 
-    // Custom actions
-    let action_names: Vec<&str> = resource
+    // Custom actions (schema-level + extensions)
+    let schema_actions: Vec<&str> = resource
         .custom_actions
         .values()
         .map(|a| a.name.as_str())
         .collect();
-    if action_names.is_empty() {
+    let ext_actions = extensions::action_names(&resource.type_name);
+    if schema_actions.is_empty() && ext_actions.is_empty() {
         println!("Actions: (none)");
     } else {
-        println!("Actions: {}", action_names.join(", "));
+        let mut parts = Vec::new();
+        if !schema_actions.is_empty() {
+            parts.push(format!("{} (schema)", schema_actions.join(", ")));
+        }
+        if !ext_actions.is_empty() {
+            parts.push(format!("{} (extension)", ext_actions.join(", ")));
+        }
+        println!("Actions: {}", parts.join(" | "));
     }
     println!();
 

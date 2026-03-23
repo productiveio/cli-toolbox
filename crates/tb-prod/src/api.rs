@@ -335,68 +335,6 @@ impl ProductiveClient {
         Ok(resp.json().await?)
     }
 
-    // --- Legacy convenience methods (to be removed when old commands are replaced) ---
-
-    pub async fn list_tasks(&self, query: &Query) -> Result<JsonApiResponse> {
-        self.get_all("/tasks", query, 10).await
-    }
-
-    pub async fn get_task(&self, id: &str) -> Result<JsonApiSingleResponse> {
-        let path = format!(
-            "/tasks/{}?include=project,assignee,workflow_status,task_list,parent_task,creator,subscribers",
-            id
-        );
-        self.get_one(&path).await
-    }
-
-    pub async fn create_task(&self, payload: &serde_json::Value) -> Result<JsonApiSingleResponse> {
-        self.create("/tasks", payload).await
-    }
-
-    pub async fn bulk_create_tasks(&self, payload: &serde_json::Value) -> Result<JsonApiResponse> {
-        self.bulk_create("/tasks", payload).await
-    }
-
-    pub async fn update_task(
-        &self,
-        id: &str,
-        payload: &serde_json::Value,
-    ) -> Result<JsonApiSingleResponse> {
-        self.update(&format!("/tasks/{}", id), payload).await
-    }
-
-    pub async fn create_comment(
-        &self,
-        payload: &serde_json::Value,
-    ) -> Result<JsonApiSingleResponse> {
-        self.create("/comments", payload).await
-    }
-
-    pub async fn list_task_lists(&self, query: &Query) -> Result<JsonApiResponse> {
-        self.get_all("/task_lists", query, 5).await
-    }
-
-    pub async fn list_workflow_statuses(&self, query: &Query) -> Result<JsonApiResponse> {
-        self.get_all("/workflow_statuses", query, 5).await
-    }
-
-    pub async fn list_comments(&self, task_id: &str) -> Result<JsonApiResponse> {
-        let query = Query::new().filter_array("task_id", task_id);
-        self.get_all("/comments", &query, 5).await
-    }
-
-    pub async fn get_subtasks(&self, parent_id: &str) -> Result<JsonApiResponse> {
-        let query = Query::new()
-            .filter_array("parent_task_id", parent_id)
-            .include("workflow_status,assignee");
-        self.get_all("/tasks", &query, 5).await
-    }
-
-    pub async fn get_todos(&self, task_id: &str) -> Result<JsonApiResponse> {
-        let query = Query::new().filter_array("task_id", task_id);
-        self.get_all("/todos", &query, 5).await
-    }
-
     // --- Generic resource operations ---
 
     /// DELETE a JSONAPI resource.

@@ -206,7 +206,7 @@ fn validate_condition(
 pub fn filter_group_to_query(group: &FilterGroup, query: Query) -> Query {
     let mut q = query.filter_op(&group.op);
     let mut index = 0;
-    q = serialize_entries(&group.conditions, q, &mut index, "");
+    q = serialize_entries(&group.conditions, q, &mut index);
     q
 }
 
@@ -214,7 +214,6 @@ fn serialize_entries(
     entries: &[FilterEntry],
     mut query: Query,
     index: &mut usize,
-    _prefix: &str,
 ) -> Query {
     for entry in entries {
         match entry {
@@ -239,34 +238,11 @@ fn serialize_entries(
                 // This is a simplification — full nested support would need
                 // bracket nesting like filter[0][$op]=or&filter[0][0][field][op]=val
                 // For now we serialize flat (covers most real-world cases)
-                query = serialize_entries(&sub.conditions, query, index, "");
+                query = serialize_entries(&sub.conditions, query, index);
             }
         }
     }
     query
-}
-
-/// Resolve a field's filter key from the schema.
-/// Given a user-provided field name (could be param name, filter key, or field key),
-/// returns the actual filter param key to use in the API query.
-pub fn resolve_filter_key(field_name: &str, resource: &ResourceDef) -> Option<String> {
-    // Direct filter key match
-    if resource.field_by_filter(field_name).is_some() {
-        return Some(field_name.to_string());
-    }
-    // Try matching by param name
-    if let Some(f) = resource.field_by_param(field_name) {
-        if let Some(filter) = &f.filter {
-            return Some(filter.clone());
-        }
-    }
-    // Try matching by field key
-    if let Some(f) = resource.fields.get(field_name) {
-        if let Some(filter) = &f.filter {
-            return Some(filter.clone());
-        }
-    }
-    None
 }
 
 /// Get the FieldDef for a filter condition's field, checking multiple resolution paths.
