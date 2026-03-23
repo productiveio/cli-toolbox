@@ -181,10 +181,21 @@ pub fn extract_cwd_from_jsonl(path: &Path) -> Option<String> {
     None
 }
 
+/// Versioned wrapper format used by Claude: `{"version": N, "entries": [...]}`.
+#[derive(serde::Deserialize)]
+struct VersionedIndex {
+    #[allow(dead_code)]
+    version: u32,
+    entries: Vec<IndexEntry>,
+}
+
 /// Load and parse `sessions-index.json` from a project directory.
 ///
 /// Returns a map from `session_id` to `IndexEntry`.  Returns an empty map
 /// if the file doesn't exist or can't be parsed.
+///
+/// Supports both the versioned format `{"version": N, "entries": [...]}` and
+/// the legacy flat-array format `[...]`.
 pub fn load_sessions_index(project_dir: &Path) -> HashMap<String, IndexEntry> {
     let index_path = project_dir.join("sessions-index.json");
 
@@ -193,6 +204,16 @@ pub fn load_sessions_index(project_dir: &Path) -> HashMap<String, IndexEntry> {
         Err(_) => return HashMap::new(),
     };
 
+    // Try versioned format first: {"version": N, "entries": [...]}
+    if let Ok(versioned) = serde_json::from_str::<VersionedIndex>(&content) {
+        return versioned
+            .entries
+            .into_iter()
+            .map(|e| (e.session_id.clone(), e))
+            .collect();
+    }
+
+    // Fallback: flat array format [...]
     let entries: Vec<IndexEntry> = match serde_json::from_str(&content) {
         Ok(e) => e,
         Err(_) => return HashMap::new(),
@@ -446,5 +467,28 @@ mod tests {
 
         let results = scan_projects(&nonexistent, None).unwrap();
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_load_sessions_index_versioned_format() {
+        let tmp = tempfile::tempdir().unwrap();
+        let content = serde_json::json!({
+            "version": 1,
+            "entries": [
+                {
+                    "sessionId": "abc-123",
+                    "summary": "Refactored auth",
+                    "messageCount": 42,
+                    "gitBranch": "feature/auth",
+                    "projectPath": "/Users/test/myapp"
+                }
+            ],
+            "originalPath": "/Users/test/myapp"
+        });
+        fs::write(tmp.path().join("sessions-index.json"), content.to_string()).unwrap();
+
+        let index = load_sessions_index(tmp.path());
+        assert_eq!(index.len(), 1);
+        assert_eq!(index.get("abc-123").unwrap().summary.as_deref(), Some("Refactored auth"));
     }
 }
