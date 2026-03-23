@@ -1,2 +1,9 @@
+pub mod cache_clear;
 pub mod config_cmd;
+pub mod doctor;
+pub mod index_cmd;
+pub mod list;
+pub mod prime;
+pub mod resume;
 pub mod search;
+pub mod show;
