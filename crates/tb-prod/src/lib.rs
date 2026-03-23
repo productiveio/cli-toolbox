@@ -9,6 +9,7 @@ pub mod generic_cache;
 pub mod input;
 pub mod json_error;
 pub mod output;
+pub mod prosemirror;
 pub mod schema;
 pub mod validate;
 

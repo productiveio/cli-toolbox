@@ -30,6 +30,7 @@ indicatif.workspace = true
 thiserror.workspace = true
 
 # tb-prod-specific deps
+comrak = { version = "0.36", default-features = false, features = ["shortcodes"] }
 dirs = "6"
 html2text = "0.14"
 urlencoding = "2"

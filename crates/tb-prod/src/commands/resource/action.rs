@@ -101,6 +101,7 @@ fn extension_action_names(resource_type: &str) -> Vec<String> {
         "deals" => vec!["load_activity".into()],
         "notifications" => vec!["load_details".into()],
         "bookings" => vec!["find_conflicts".into(), "capacity_availability".into()],
+        "pages" => vec!["update_body".into()],
         "services" => vec!["move".into()],
         "service_types" => vec!["merge".into()],
         "people" => vec!["invite".into()],

@@ -1,6 +1,7 @@
 pub mod bookings;
 pub mod deals;
 pub mod notifications;
+pub mod pages;
 pub mod people;
 pub mod scenarios;
 pub mod services;
@@ -32,6 +33,7 @@ pub async fn dispatch(
         "tasks" => tasks::dispatch(client, id, action_name, data).await,
         "deals" => deals::dispatch(client, id, action_name, data).await,
         "notifications" => notifications::dispatch(client, id, action_name, data).await,
+        "pages" => pages::dispatch(client, id, action_name, data).await,
         "bookings" => bookings::dispatch(client, id, action_name, data).await,
         "services" => services::dispatch(client, id, action_name, data).await,
         "service_types" => service_types::dispatch(client, id, action_name, data).await,
