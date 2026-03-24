@@ -21,7 +21,7 @@ pub fn run(
         "messages_fts MATCH ?1".to_string(),
         "s.is_sidechain = 0".to_string(),
     ];
-    let mut params: Vec<Box<dyn ToSql>> = vec![Box::new(query.to_string())];
+    let mut params: Vec<Box<dyn ToSql>> = vec![Box::new(sanitize_fts5_query(query))];
     let mut param_idx: usize = 2;
 
     // Project scope
@@ -288,5 +288,37 @@ impl RawRow {
             matched_snippet: self.snippet.clone(),
             matched_role: self.matched_role.clone(),
         }
+    }
+}
+
+/// Sanitize user input for FTS5 MATCH by quoting each whitespace-separated term.
+///
+/// FTS5 has its own query language where `:`, `*`, `(`, `)`, `AND`, `OR`, `NOT`, etc.
+/// are operators. Wrapping terms in double quotes forces literal matching.
+/// Any embedded double quotes in the input are removed.
+fn sanitize_fts5_query(query: &str) -> String {
+    query
+        .split_whitespace()
+        .map(|term| format!("\"{}\"", term.replace('"', "")))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_fts5_query() {
+        assert_eq!(
+            sanitize_fts5_query("https://github.com/org/repo/pull/1"),
+            "\"https://github.com/org/repo/pull/1\""
+        );
+        assert_eq!(sanitize_fts5_query("fix bug"), "\"fix\" \"bug\"");
+        assert_eq!(sanitize_fts5_query("hello"), "\"hello\"");
+        assert_eq!(
+            sanitize_fts5_query("column:value OR other"),
+            "\"column:value\" \"OR\" \"other\""
+        );
     }
 }
