@@ -114,7 +114,19 @@ pub fn run(conn: &Connection, session_id: &str) -> Result<()> {
 
 /// Open a new terminal tab and run `claude --resume` there.
 fn open_in_terminal(claude_path: &str, session_id: &str, resume_dir: Option<&str>) -> Result<()> {
-    let resume_cmd = format!("{} --resume {}", shell_escape(claude_path), session_id);
+    if !cfg!(target_os = "macos") {
+        return Err(Error::Other(
+            "resume in new terminal tab is only supported on macOS. \
+             Run manually: claude --resume <session-id>"
+                .into(),
+        ));
+    }
+
+    let resume_cmd = format!(
+        "{} --resume {}",
+        shell_escape(claude_path),
+        shell_escape(session_id)
+    );
     let full_cmd = match resume_dir {
         Some(dir) => format!("cd {} && {}", shell_escape(dir), resume_cmd),
         None => resume_cmd,

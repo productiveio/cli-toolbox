@@ -43,7 +43,6 @@ pub fn parse_session(file_path: &Path) -> Result<ParsedSession> {
     let mut last_timestamp: Option<String> = None;
     let mut git_branch: Option<String> = None;
     let mut is_sidechain = false;
-    let mut line_count = 0usize;
     let mut messages: Vec<ParsedMessage> = Vec::new();
     let mut first_prompt: Option<String> = None;
     let mut summary: Option<String> = None;
@@ -58,8 +57,6 @@ pub fn parse_session(file_path: &Path) -> Result<ParsedSession> {
             Ok(v) => v,
             Err(_) => continue,
         };
-
-        line_count += 1;
 
         // Track timestamps
         if let Some(ts) = entry.get("timestamp").and_then(|t| t.as_str()) {
@@ -120,7 +117,7 @@ pub fn parse_session(file_path: &Path) -> Result<ParsedSession> {
         summary,
         first_prompt,
         git_branch,
-        message_count: line_count,
+        message_count: messages.len(),
         created_at: first_timestamp,
         modified_at: last_timestamp,
         is_sidechain,
@@ -197,8 +194,8 @@ mod tests {
 
         assert_eq!(parsed.messages.len(), 1);
         assert_eq!(parsed.messages[0].content, "Real message");
-        // All 3 lines count as valid JSON lines
-        assert_eq!(parsed.message_count, 3);
+        // message_count reflects actual user/assistant messages, not all JSON lines
+        assert_eq!(parsed.message_count, 1);
     }
 
     #[test]

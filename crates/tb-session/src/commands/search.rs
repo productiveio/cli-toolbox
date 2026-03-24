@@ -21,7 +21,13 @@ pub fn run(
         "messages_fts MATCH ?1".to_string(),
         "s.is_sidechain = 0".to_string(),
     ];
-    let mut params: Vec<Box<dyn ToSql>> = vec![Box::new(sanitize_fts5_query(query))];
+    let sanitized = sanitize_fts5_query(query);
+    if sanitized.is_empty() {
+        return Err(crate::error::Error::Other(
+            "search query cannot be empty".into(),
+        ));
+    }
+    let mut params: Vec<Box<dyn ToSql>> = vec![Box::new(sanitized)];
     let mut param_idx: usize = 2;
 
     // Project scope
