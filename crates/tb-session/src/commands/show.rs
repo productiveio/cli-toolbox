@@ -132,29 +132,27 @@ fn output_human(row: &RawSession, messages: Option<&[parser::ParsedMessage]>) {
 
     // Conversation preview
     if let Some(msgs) = messages
-        && !msgs.is_empty() {
-            println!("\n{}", "--- Conversation Preview ---".dimmed());
+        && !msgs.is_empty()
+    {
+        println!("\n{}", "--- Conversation Preview ---".dimmed());
 
-            let total = msgs.len();
-            if total <= 10 {
-                for m in msgs {
-                    print_message(m);
-                }
-            } else {
-                // First 5
-                for m in &msgs[..5] {
-                    print_message(m);
-                }
-                println!(
-                    "  {}",
-                    format!("... ({} omitted) ...", total - 10).dimmed()
-                );
-                // Last 5
-                for m in &msgs[total - 5..] {
-                    print_message(m);
-                }
+        let total = msgs.len();
+        if total <= 10 {
+            for m in msgs {
+                print_message(m);
+            }
+        } else {
+            // First 5
+            for m in &msgs[..5] {
+                print_message(m);
+            }
+            println!("  {}", format!("... ({} omitted) ...", total - 10).dimmed());
+            // Last 5
+            for m in &msgs[total - 5..] {
+                print_message(m);
             }
         }
+    }
 
     println!(
         "\n{} tb-session resume {}",

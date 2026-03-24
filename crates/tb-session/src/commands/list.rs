@@ -51,8 +51,7 @@ pub fn run(
     // COUNT query for pagination
     let count_sql = format!("SELECT COUNT(*) FROM sessions WHERE {where_clause}");
 
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params.iter().map(|p| p.as_ref()).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
     let total: usize = conn
         .query_row(
@@ -103,10 +102,7 @@ pub fn run(
     if list.results.is_empty() {
         println!(
             "{}",
-            toolbox_core::output::empty_hint(
-                "sessions",
-                "Try --all-projects or wider date range."
-            )
+            toolbox_core::output::empty_hint("sessions", "Try --all-projects or wider date range.")
         );
         return Ok(());
     }
@@ -117,14 +113,8 @@ pub fn run(
         "SESSION ID", "SUMMARY", "BRANCH", "MSGS", "MODIFIED"
     );
     for s in &list.results {
-        let summary = s
-            .summary
-            .as_deref()
-            .unwrap_or("(no summary)");
-        let branch = s
-            .git_branch
-            .as_deref()
-            .unwrap_or("-");
+        let summary = s.summary.as_deref().unwrap_or("(no summary)");
+        let branch = s.git_branch.as_deref().unwrap_or("-");
         let modified = s
             .modified_at
             .as_deref()

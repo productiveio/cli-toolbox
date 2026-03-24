@@ -55,10 +55,13 @@ mod tests {
     fn test_parse_worktree_output_multiple() {
         let output = "worktree /Users/test/repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /Users/test/worktrees/feature\nHEAD def456\nbranch refs/heads/feature\n\n";
         let paths = parse_worktree_output(output);
-        assert_eq!(paths, vec![
-            PathBuf::from("/Users/test/repo"),
-            PathBuf::from("/Users/test/worktrees/feature"),
-        ]);
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/Users/test/repo"),
+                PathBuf::from("/Users/test/worktrees/feature"),
+            ]
+        );
     }
 
     #[test]

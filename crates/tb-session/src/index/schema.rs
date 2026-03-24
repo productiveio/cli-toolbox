@@ -1,5 +1,5 @@
-use rusqlite::Connection;
 use crate::error::Result;
+use rusqlite::Connection;
 
 /// Create all tables and FTS5 virtual table if they don't exist.
 pub fn create_tables(conn: &Connection) -> Result<()> {

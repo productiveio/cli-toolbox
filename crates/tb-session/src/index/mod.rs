@@ -3,10 +3,10 @@ pub mod parser;
 pub mod scanner;
 pub mod schema;
 
-use std::path::{Path, PathBuf};
-use rusqlite::Connection;
 use crate::error::{Error, Result};
+use rusqlite::Connection;
 use scanner::FileInfo;
+use std::path::{Path, PathBuf};
 
 /// Statistics about the current index.
 #[derive(Debug)]
@@ -118,7 +118,9 @@ pub fn cleanup_deleted(conn: &Connection) -> Result<()> {
 /// Return aggregate statistics about the index.
 pub fn get_stats(conn: &Connection) -> Result<IndexStats> {
     let session_count: u64 = conn
-        .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get::<_, i64>(0))
+        .query_row("SELECT COUNT(*) FROM sessions", [], |row| {
+            row.get::<_, i64>(0)
+        })
         .map(|n| n as u64)?;
 
     let project_count: u64 = conn

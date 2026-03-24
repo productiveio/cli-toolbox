@@ -45,10 +45,7 @@ pub fn encode_path(path: &Path) -> String {
 /// When `scope_to_cwd` is `Some`, only the project directory whose encoded
 /// name matches the encoded `cwd` is scanned.  Otherwise every project
 /// directory is visited.
-pub fn scan_projects(
-    projects_dir: &Path,
-    scope_to_cwd: Option<&Path>,
-) -> Result<Vec<FileInfo>> {
+pub fn scan_projects(projects_dir: &Path, scope_to_cwd: Option<&Path>) -> Result<Vec<FileInfo>> {
     let mut results = Vec::new();
 
     let entries = match fs::read_dir(projects_dir) {
@@ -74,9 +71,10 @@ pub fn scan_projects(
 
         // When scoping, skip directories that don't match the encoded cwd.
         if let Some(ref encoded) = encoded_cwd
-            && dir_name != *encoded {
-                continue;
-            }
+            && dir_name != *encoded
+        {
+            continue;
+        }
 
         // Load sessions-index.json for this project directory.
         let index = load_sessions_index(&dir_path);
@@ -173,9 +171,10 @@ pub fn extract_cwd_from_jsonl(path: &Path) -> Option<String> {
     for line in reader.lines().take(5) {
         let line = line.ok()?;
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line)
-            && let Some(cwd) = value.get("cwd").and_then(|v| v.as_str()) {
-                return Some(cwd.to_string());
-            }
+            && let Some(cwd) = value.get("cwd").and_then(|v| v.as_str())
+        {
+            return Some(cwd.to_string());
+        }
     }
 
     None
@@ -257,11 +256,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let projects_dir = create_test_projects_dir(tmp.path());
 
-        create_project_with_sessions(
-            &projects_dir,
-            "-Users-test-myapp",
-            &["abc-123", "def-456"],
-        );
+        create_project_with_sessions(&projects_dir, "-Users-test-myapp", &["abc-123", "def-456"]);
 
         let results = scan_projects(&projects_dir, None).unwrap();
         assert_eq!(results.len(), 2);
@@ -295,11 +290,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let projects_dir = create_test_projects_dir(tmp.path());
 
-        let project_dir = create_project_with_sessions(
-            &projects_dir,
-            "-Users-test-myapp",
-            &["session-1"],
-        );
+        let project_dir =
+            create_project_with_sessions(&projects_dir, "-Users-test-myapp", &["session-1"]);
 
         // Write sessions-index.json with a projectPath.
         let index_content = serde_json::json!([
@@ -331,20 +323,11 @@ mod tests {
 
         // Two project directories — one for /Users/test/myapp, one for
         // /Users/test/e2e-tests (note the hyphen in the real path).
-        create_project_with_sessions(
-            &projects_dir,
-            "-Users-test-myapp",
-            &["session-a"],
-        );
-        create_project_with_sessions(
-            &projects_dir,
-            "-Users-test-e2e-tests",
-            &["session-b"],
-        );
+        create_project_with_sessions(&projects_dir, "-Users-test-myapp", &["session-a"]);
+        create_project_with_sessions(&projects_dir, "-Users-test-e2e-tests", &["session-b"]);
 
         // Scope to /Users/test/myapp — should only find session-a.
-        let scoped =
-            scan_projects(&projects_dir, Some(Path::new("/Users/test/myapp"))).unwrap();
+        let scoped = scan_projects(&projects_dir, Some(Path::new("/Users/test/myapp"))).unwrap();
         assert_eq!(scoped.len(), 1);
         assert_eq!(scoped[0].session_id, "session-a");
 
@@ -445,11 +428,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let projects_dir = create_test_projects_dir(tmp.path());
 
-        let project_dir = create_project_with_sessions(
-            &projects_dir,
-            "-Users-test-myapp",
-            &[],
-        );
+        let project_dir = create_project_with_sessions(&projects_dir, "-Users-test-myapp", &[]);
 
         // Write a JSONL file with a cwd field (no sessions-index.json).
         let file_path = project_dir.join("session-1.jsonl");
@@ -489,6 +468,9 @@ mod tests {
 
         let index = load_sessions_index(tmp.path());
         assert_eq!(index.len(), 1);
-        assert_eq!(index.get("abc-123").unwrap().summary.as_deref(), Some("Refactored auth"));
+        assert_eq!(
+            index.get("abc-123").unwrap().summary.as_deref(),
+            Some("Refactored auth")
+        );
     }
 }

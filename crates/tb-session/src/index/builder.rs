@@ -1,9 +1,13 @@
-use rusqlite::{params, Connection};
-use crate::error::Result;
-use super::scanner::FileInfo;
 use super::parser::ParsedSession;
+use super::scanner::FileInfo;
+use crate::error::Result;
+use rusqlite::{Connection, params};
 
-pub fn index_session(conn: &Connection, file_info: &FileInfo, parsed: &ParsedSession) -> Result<()> {
+pub fn index_session(
+    conn: &Connection,
+    file_info: &FileInfo,
+    parsed: &ParsedSession,
+) -> Result<()> {
     // Determine metadata: prefer index_metadata fields over parsed fields.
     let meta = file_info.index_metadata.as_ref();
 
@@ -69,12 +73,7 @@ pub fn index_session(conn: &Connection, file_info: &FileInfo, parsed: &ParsedSes
         conn.execute(
             "INSERT INTO messages_fts (session_id, role, content, timestamp)
              VALUES (?1, ?2, ?3, ?4)",
-            params![
-                file_info.session_id,
-                msg.role,
-                msg.content,
-                msg.timestamp,
-            ],
+            params![file_info.session_id, msg.role, msg.content, msg.timestamp,],
         )?;
     }
 
@@ -83,12 +82,12 @@ pub fn index_session(conn: &Connection, file_info: &FileInfo, parsed: &ParsedSes
 
 #[cfg(test)]
 mod tests {
+    use super::super::parser::ParsedMessage;
+    use super::super::scanner::IndexEntry;
     use super::*;
+    use crate::index::schema;
     use rusqlite::Connection;
     use std::path::PathBuf;
-    use crate::index::schema;
-    use super::super::scanner::IndexEntry;
-    use super::super::parser::ParsedMessage;
 
     fn in_memory() -> Connection {
         let conn = Connection::open_in_memory().expect("in-memory DB");
@@ -222,7 +221,10 @@ mod tests {
             Some("summary"),
             vec![
                 msg("user", "implement the authentication middleware"),
-                msg("assistant", "Sure, I will implement the authentication middleware"),
+                msg(
+                    "assistant",
+                    "Sure, I will implement the authentication middleware",
+                ),
             ],
         );
 

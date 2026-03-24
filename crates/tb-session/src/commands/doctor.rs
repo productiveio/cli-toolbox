@@ -46,7 +46,12 @@ pub fn run() -> Result<()> {
     let projects_dir = config.projects_dir();
     let subdir_count = if projects_dir.exists() {
         std::fs::read_dir(&projects_dir)
-            .map(|entries| entries.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()).count())
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.path().is_dir())
+                    .count()
+            })
             .unwrap_or(0)
     } else {
         0
@@ -135,11 +140,7 @@ fn which_claude() -> Option<String> {
         .ok()?;
     if output.status.success() {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() {
-            None
-        } else {
-            Some(path)
-        }
+        if path.is_empty() { None } else { Some(path) }
     } else {
         None
     }

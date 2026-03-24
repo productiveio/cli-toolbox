@@ -1,7 +1,7 @@
+use crate::error::Result;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use crate::error::Result;
 
 #[derive(Debug)]
 pub struct ParsedSession {
@@ -68,15 +68,17 @@ pub fn parse_session(file_path: &Path) -> Result<ParsedSession> {
 
         // Extract gitBranch from first entry that has it
         if git_branch.is_none()
-            && let Some(branch) = entry.get("gitBranch").and_then(|b| b.as_str()) {
-                git_branch = Some(branch.to_string());
-            }
+            && let Some(branch) = entry.get("gitBranch").and_then(|b| b.as_str())
+        {
+            git_branch = Some(branch.to_string());
+        }
 
         // Check isSidechain
         if let Some(sc) = entry.get("isSidechain").and_then(|v| v.as_bool())
-            && sc {
-                is_sidechain = true;
-            }
+            && sc
+        {
+            is_sidechain = true;
+        }
 
         // Extract user/assistant messages
         if let Some(message) = entry.get("message") {
@@ -300,7 +302,11 @@ mod tests {
 
         assert!(parsed.summary.is_some());
         let summary = parsed.summary.unwrap();
-        assert!(summary.len() <= 200, "summary length {} > 200", summary.len());
+        assert!(
+            summary.len() <= 200,
+            "summary length {} > 200",
+            summary.len()
+        );
         assert!(summary.ends_with("..."));
     }
 }

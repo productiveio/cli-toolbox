@@ -17,11 +17,7 @@ pub fn run(all_projects: bool) -> Result<()> {
 
     let projects_dir = config.projects_dir();
     let cwd = std::env::current_dir().ok();
-    let scope: Option<&std::path::Path> = if all_projects {
-        None
-    } else {
-        cwd.as_deref()
-    };
+    let scope: Option<&std::path::Path> = if all_projects { None } else { cwd.as_deref() };
 
     println!("Indexing sessions...");
     crate::index::ensure_fresh(&conn, &projects_dir, scope)?;

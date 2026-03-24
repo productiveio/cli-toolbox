@@ -1,5 +1,5 @@
-use rusqlite::types::ToSql;
 use rusqlite::Connection;
+use rusqlite::types::ToSql;
 
 use crate::error::Result;
 use crate::models::{SearchFilters, SearchResult, SessionMatch};
@@ -166,11 +166,8 @@ pub fn run(
 
     // -- Build active filters for output ----------------------------------
     let all_projects = repo_paths.is_empty() && project.is_none();
-    let has_filters = branch.is_some()
-        || from.is_some()
-        || to.is_some()
-        || project.is_some()
-        || all_projects;
+    let has_filters =
+        branch.is_some() || from.is_some() || to.is_some() || project.is_some() || all_projects;
 
     let filters = if has_filters {
         Some(SearchFilters {
@@ -200,10 +197,7 @@ pub fn run(
     if results.is_empty() {
         println!(
             "{}",
-            toolbox_core::output::empty_hint(
-                "sessions",
-                "Try broader terms or --all-projects."
-            )
+            toolbox_core::output::empty_hint("sessions", "Try broader terms or --all-projects.")
         );
         return Ok(());
     }
@@ -337,7 +331,10 @@ mod tests {
         assert_eq!(sanitize_fts5_query("   "), "");
 
         // Embedded double quotes are stripped
-        assert_eq!(sanitize_fts5_query("say \"hi\" world"), "\"say\" \"hi\" \"world\"");
+        assert_eq!(
+            sanitize_fts5_query("say \"hi\" world"),
+            "\"say\" \"hi\" \"world\""
+        );
 
         // FTS5 operators get quoted as literal terms
         assert_eq!(sanitize_fts5_query("AND OR NOT"), "\"AND\" \"OR\" \"NOT\"");

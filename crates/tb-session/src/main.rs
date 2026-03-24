@@ -291,8 +291,7 @@ fn run() -> tb_session::error::Result<()> {
                 tool_name: "tb-session",
                 content: include_str!("../SKILL.md"),
             };
-            toolbox_core::skill::run(&skill, &action)
-                .map_err(tb_session::error::Error::Other)?;
+            toolbox_core::skill::run(&skill, &action).map_err(tb_session::error::Error::Other)?;
         }
         Commands::Config { action } => match action {
             ConfigAction::Init => tb_session::commands::config_cmd::init()?,

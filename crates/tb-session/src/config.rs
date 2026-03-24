@@ -41,8 +41,7 @@ impl Default for Config {
 
 impl Config {
     pub fn config_path() -> Result<PathBuf> {
-        toolbox_core::config::config_path("tb-session")
-            .map_err(|e| Error::Config(e.to_string()))
+        toolbox_core::config::config_path("tb-session").map_err(|e| Error::Config(e.to_string()))
     }
 
     pub fn load() -> Result<Self> {
@@ -55,21 +54,21 @@ impl Config {
 
     pub fn save(&self) -> Result<()> {
         let path = Self::config_path()?;
-        toolbox_core::config::save_config(&path, self)
-            .map_err(|e| Error::Config(e.to_string()))
+        toolbox_core::config::save_config(&path, self).map_err(|e| Error::Config(e.to_string()))
     }
 
     /// Resolves `~` in `claude_home` to an absolute PathBuf.
     pub fn claude_home_path(&self) -> PathBuf {
         if self.claude_home.starts_with('~')
-            && let Some(home) = dirs::home_dir() {
-                let stripped = self.claude_home.trim_start_matches('~');
-                let stripped = stripped.trim_start_matches('/');
-                if stripped.is_empty() {
-                    return home;
-                }
-                return home.join(stripped);
+            && let Some(home) = dirs::home_dir()
+        {
+            let stripped = self.claude_home.trim_start_matches('~');
+            let stripped = stripped.trim_start_matches('/');
+            if stripped.is_empty() {
+                return home;
             }
+            return home.join(stripped);
+        }
         PathBuf::from(&self.claude_home)
     }
 
@@ -80,9 +79,8 @@ impl Config {
 
     /// Returns `~/.cache/tb-session/index.db`, creating the parent dir.
     pub fn db_path(&self) -> Result<PathBuf> {
-        let cache_dir = dirs::cache_dir().ok_or_else(|| {
-            Error::Config("cannot determine cache directory".to_string())
-        })?;
+        let cache_dir = dirs::cache_dir()
+            .ok_or_else(|| Error::Config("cannot determine cache directory".to_string()))?;
         let db_dir = cache_dir.join("tb-session");
         std::fs::create_dir_all(&db_dir).map_err(|e| Error::Config(e.to_string()))?;
         Ok(db_dir.join("index.db"))

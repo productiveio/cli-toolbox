@@ -41,7 +41,10 @@ pub fn run() -> Result<()> {
     match index::open_db(false) {
         Ok(conn) => match index::get_stats(&conn) {
             Ok(stats) => {
-                println!("- {} sessions | {} projects", stats.session_count, stats.project_count);
+                println!(
+                    "- {} sessions | {} projects",
+                    stats.session_count, stats.project_count
+                );
 
                 // Last updated: check mtime of the DB file
                 let last_updated = config
@@ -51,9 +54,7 @@ pub fn run() -> Result<()> {
                     .and_then(|m| m.modified().ok())
                     .map(|t| {
                         // Convert SystemTime to ISO 8601 string for relative_time
-                        let duration = t
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default();
+                        let duration = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
                         let secs = duration.as_secs() as i64;
                         // Build an ISO 8601 timestamp
                         chrono::Utc

@@ -27,10 +27,7 @@ pub fn show() -> Result<()> {
         Err(e) => println!("db_path:        (error: {})", e),
     }
     println!("ttl_minutes:    {}", config.ttl_minutes);
-    println!(
-        "ttl:            {}s",
-        config.ttl().as_secs()
-    );
+    println!("ttl:            {}s", config.ttl().as_secs());
     println!("default_limit:  {}", config.default_limit);
 
     Ok(())
