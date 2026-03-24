@@ -28,20 +28,17 @@ fn resolve_by_name(conn: &Connection, query: &str) -> Option<(String, Option<Str
 pub fn run(conn: &Connection, session_id: &str) -> Result<()> {
     let claude_path = which_claude()?;
 
-    // Resolve full session ID and project_path from the index
-    let resolved: Option<(String, Option<String>)> = if looks_like_uuid(session_id) {
-        // UUID prefix match (existing behavior)
-        let prefix_pattern = format!("{}%", session_id);
-        conn.query_row(
+    // Resolve full session ID and project_path from the index.
+    // Try UUID prefix match first, then fall back to name/summary search.
+    let prefix_pattern = format!("{}%", session_id);
+    let resolved: Option<(String, Option<String>)> = conn
+        .query_row(
             "SELECT session_id, project_path FROM sessions WHERE session_id = ?1 OR session_id LIKE ?2 ORDER BY modified_at DESC LIMIT 1",
             rusqlite::params![session_id, prefix_pattern],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .ok()
-    } else {
-        // Name/search term match
-        resolve_by_name(conn, session_id)
-    };
+        .or_else(|| resolve_by_name(conn, session_id));
 
     if resolved.is_none() && !looks_like_uuid(session_id) {
         return Err(Error::Other(format!(
