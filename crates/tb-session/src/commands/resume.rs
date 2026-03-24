@@ -52,14 +52,10 @@ pub fn run(conn: &Connection, session_id: &str) -> Result<()> {
         .map(|(id, _)| id.as_str())
         .unwrap_or(session_id);
 
-    // Resolve the directory to resume in
-    let resume_dir = resolved.as_ref().and_then(|(_, path)| {
+    // Resolve the project directory from the session metadata.
+    let project_dir = resolved.as_ref().and_then(|(_, path)| {
         let path = path.as_deref()?;
         let target = std::path::Path::new(path);
-        let cwd = std::env::current_dir().ok()?;
-        if cwd == target {
-            return None;
-        }
         if target.is_dir() {
             Some(path)
         } else {
@@ -73,15 +69,20 @@ pub fn run(conn: &Connection, session_id: &str) -> Result<()> {
 
     // If stdin is not a TTY, we're likely running inside Claude Code or a script.
     // Spawn a new terminal window instead of exec'ing (which would kill the parent).
+    // Always pass project_dir — the new tab doesn't inherit our cwd.
     if !std::io::stdin().is_terminal() {
-        return open_in_terminal(&claude_path, full_session_id, resume_dir);
+        return open_in_terminal(&claude_path, full_session_id, project_dir);
     }
 
     // Interactive: cd into the original project and exec claude directly
-    if let Some(path) = resume_dir {
-        eprintln!("Resuming in {}", path);
-        std::env::set_current_dir(path)
-            .map_err(|e| Error::Other(format!("Failed to cd into {}: {}", path, e)))?;
+    // Only cd if we're not already there.
+    if let Some(path) = project_dir {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        if cwd != std::path::Path::new(path) {
+            eprintln!("Resuming in {}", path);
+            std::env::set_current_dir(path)
+                .map_err(|e| Error::Other(format!("Failed to cd into {}: {}", path, e)))?;
+        }
     }
 
     #[cfg(unix)]
