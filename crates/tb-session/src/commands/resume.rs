@@ -132,12 +132,16 @@ fn open_in_terminal(claude_path: &str, session_id: &str, resume_dir: Option<&str
         None => resume_cmd,
     };
 
+    // Pass command via TB_SESSION_CMD env var to avoid AppleScript injection.
+    // The osascript reads it with `do shell script "echo $TB_SESSION_CMD"` or
+    // writes it directly via `write text` using `(system attribute "TB_SESSION_CMD")`.
     let terminal = std::env::var("TERM_PROGRAM").unwrap_or_default();
-    let script = build_osascript(&terminal, &full_cmd);
+    let script = build_osascript(&terminal);
 
     let output = std::process::Command::new("osascript")
         .arg("-e")
         .arg(&script)
+        .env("TB_SESSION_CMD", &full_cmd)
         .output()
         .map_err(|e| Error::Other(format!("Failed to run osascript: {}", e)))?;
 
@@ -157,27 +161,24 @@ fn open_in_terminal(claude_path: &str, session_id: &str, resume_dir: Option<&str
     Ok(())
 }
 
-fn build_osascript(terminal: &str, cmd: &str) -> String {
+fn build_osascript(terminal: &str) -> String {
+    // Command is passed via TB_SESSION_CMD env var to avoid AppleScript string injection.
     match terminal {
-        "iTerm.app" => format!(
-            r#"tell application "iTerm2"
+        "iTerm.app" => r#"tell application "iTerm2"
     tell current window
         create tab with default profile
         tell current session
-            write text "{}"
+            write text (system attribute "TB_SESSION_CMD")
         end tell
     end tell
-end tell"#,
-            cmd.replace('\\', "\\\\").replace('"', "\\\"")
-        ),
+end tell"#
+            .to_string(),
         // Terminal.app and anything else
-        _ => format!(
-            r#"tell application "Terminal"
+        _ => r#"tell application "Terminal"
     activate
-    do script "{}"
-end tell"#,
-            cmd.replace('\\', "\\\\").replace('"', "\\\"")
-        ),
+    do script (system attribute "TB_SESSION_CMD")
+end tell"#
+            .to_string(),
     }
 }
 

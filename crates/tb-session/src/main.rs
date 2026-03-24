@@ -201,7 +201,12 @@ fn run() -> tb_session::error::Result<()> {
             pr,
         } => {
             let effective_query = match (&query, &pr) {
-                (Some(q), _) => q.clone(),
+                (Some(_), Some(_)) => {
+                    return Err(tb_session::error::Error::Other(
+                        "cannot use --pr with a positional query — use one or the other".into(),
+                    ));
+                }
+                (Some(q), None) => q.clone(),
                 (None, Some(pr_ref)) => build_pr_query(pr_ref),
                 (None, None) => {
                     return Err(tb_session::error::Error::Other(
@@ -257,14 +262,14 @@ fn run() -> tb_session::error::Result<()> {
             let config = Config::load()?;
             let conn = tb_session::index::open_db(cli.no_cache)?;
             let projects_dir = config.projects_dir();
-            tb_session::index::ensure_fresh(&conn, &projects_dir, None)?;
+            resolve_and_freshen(&conn, &projects_dir, false)?;
             tb_session::commands::show::run(&conn, &session_id, cli.json)?;
         }
         Commands::Resume { session_id } => {
             let config = Config::load()?;
             let conn = tb_session::index::open_db(cli.no_cache)?;
             let projects_dir = config.projects_dir();
-            tb_session::index::ensure_fresh(&conn, &projects_dir, None)?;
+            resolve_and_freshen(&conn, &projects_dir, false)?;
             tb_session::commands::resume::run(&conn, &session_id)?;
         }
         Commands::Index { all_projects } => {
