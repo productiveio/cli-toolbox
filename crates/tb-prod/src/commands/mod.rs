@@ -1,14 +1,5 @@
 pub mod cache_cmd;
 pub mod config_cmd;
 pub mod doctor;
-pub mod people;
 pub mod prime;
-pub mod project;
-pub mod task;
-pub mod task_batch;
-pub mod task_comment;
-pub mod task_create;
-pub mod task_subscribe;
-pub mod task_update;
-pub mod tasks;
-pub mod todos;
+pub mod resource;

@@ -15,7 +15,7 @@ clap_complete = "4.5"
 # Async + HTTP
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 reqwest = { version = "0.13", features = ["json"] }
-reqwest-middleware = "0.5"
+reqwest-middleware = { version = "0.5", features = ["json"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

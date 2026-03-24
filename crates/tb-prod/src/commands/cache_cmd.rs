@@ -1,13 +1,13 @@
 use crate::api::ProductiveClient;
-use crate::cache::Cache;
 use crate::error::Result;
+use crate::generic_cache::GenericCache;
 
 pub async fn sync(client: &ProductiveClient) -> Result<()> {
-    let cache = Cache::new(client.org_id())?;
-    cache.sync(client).await
+    let cache = GenericCache::new(client.org_id())?;
+    cache.sync_org(client).await
 }
 
 pub async fn clear(org_id: &str) -> Result<()> {
-    let cache = Cache::new(org_id)?;
-    cache.clear()
+    let cache = GenericCache::new(org_id)?;
+    cache.clear_all()
 }

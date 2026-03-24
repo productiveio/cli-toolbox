@@ -1,25 +1,20 @@
-use std::io::Read as _;
-
 use clap::Parser;
 
 use tb_prod::api::ProductiveClient;
-use tb_prod::cache::{self, Cache};
 use tb_prod::commands;
 use tb_prod::config::Config;
+use tb_prod::input;
+use tb_prod::schema;
 
 #[derive(Parser)]
 #[command(
     name = "tb-prod",
     disable_version_flag = true,
-    about = "Productive.io CLI — compact, AI-optimized"
+    about = "Productive.io CLI — generic resource operations for all ~84 resource types"
 )]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-
-    /// JSON output for all commands
-    #[arg(long, global = true)]
-    json: bool,
 
     /// Print version info
     #[arg(short = 'V', long = "version")]
@@ -28,34 +23,95 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Commands {
-    /// Manage tasks
-    #[command(alias = "tasks")]
-    Task {
-        #[command(subcommand)]
-        action: TaskAction,
+    /// Describe a resource type — schema, fields, filters, actions
+    Describe {
+        /// Resource type (e.g. tasks, projects, people)
+        resource_type: String,
+        /// Include additional sections: schema, actions, related (comma-separated)
+        #[arg(long)]
+        include: Option<String>,
     },
-    /// Manage todos
-    Todo {
-        #[command(subcommand)]
-        action: TodoAction,
+    /// Query resources with filtering, sorting, and pagination
+    #[command(alias = "list")]
+    Query {
+        /// Resource type
+        resource_type: String,
+        /// JSON filter (FilterGroup or flat object)
+        #[arg(long)]
+        filter: Option<String>,
+        /// Sort field (prefix with - for descending)
+        #[arg(long)]
+        sort: Option<String>,
+        /// Page number (default: 1)
+        #[arg(long, default_value = "1")]
+        page: usize,
+        /// Include relationships (comma-separated)
+        #[arg(long)]
+        include: Option<String>,
     },
-    /// Manage comments
-    Comment {
-        #[command(subcommand)]
-        action: CommentAction,
+    /// Get a single resource by ID
+    Get {
+        /// Resource type
+        resource_type: String,
+        /// Resource ID
+        id: String,
+        /// Include relationships (comma-separated)
+        #[arg(long)]
+        include: Option<String>,
     },
-    /// Project information
-    Project {
-        #[command(subcommand)]
-        action: ProjectAction,
+    /// Create a resource from JSON data
+    Create {
+        /// Resource type
+        resource_type: String,
+        /// JSON data (object for single, array for bulk)
+        #[arg(long)]
+        data: Option<String>,
     },
-    /// Search people by name or email
-    People {
-        /// Name or email to search for
-        query: Option<String>,
+    /// Update a resource by ID
+    Update {
+        /// Resource type
+        resource_type: String,
+        /// Resource ID
+        id: String,
+        /// JSON data (partial fields to update)
+        #[arg(long)]
+        data: Option<String>,
+    },
+    /// Delete a resource by ID
+    Delete {
+        /// Resource type
+        resource_type: String,
+        /// Resource ID
+        id: String,
+        /// Actually delete (default: dry run)
+        #[arg(long)]
+        confirm: bool,
+    },
+    /// Search resources by keyword
+    Search {
+        /// Resource type
+        resource_type: String,
+        /// Search query text
+        #[arg(long)]
+        query: String,
+    },
+    /// Execute a custom action on a resource
+    Action {
+        /// Resource type
+        resource_type: String,
+        /// Resource ID
+        id: String,
+        /// Action name (e.g. archive, restore, move)
+        action_name: String,
+        /// Optional JSON parameters for the action
+        #[arg(long)]
+        data: Option<String>,
     },
     /// AI context dump — quick command reference
-    Prime,
+    Prime {
+        #[command(subcommand)]
+        target: Option<PrimeTarget>,
+    },
     /// Manage cache
     Cache {
         #[command(subcommand)]
@@ -76,172 +132,10 @@ enum Commands {
 }
 
 #[derive(clap::Subcommand)]
-enum TaskAction {
-    /// List tasks with filters
-    List {
-        /// Filter by task list (ID or name)
-        #[arg(long, alias = "task-list-id")]
-        task_list: Option<String>,
-        /// Filter by project (ID or name)
-        #[arg(long, alias = "project-id")]
-        project: Option<String>,
-        /// Filter by assignee (ID or name)
-        #[arg(long)]
-        assignee: Option<String>,
-        /// Status category: open (default), all, closed, started, not-started
-        #[arg(long = "status-category", alias = "category")]
-        category: Option<String>,
-        /// Text search in task titles
-        #[arg(long)]
-        search: Option<String>,
-    },
-    /// Show single task detail
-    Show {
-        /// Task ID
-        id: String,
-    },
-    /// Create a new task
-    Create {
-        /// Task title
-        #[arg(long, required_unless_present = "batch")]
-        title: Option<String>,
-        /// Project (ID or name)
-        #[arg(long, required_unless_present = "batch", alias = "project-id")]
-        project: Option<String>,
-        /// Task list (ID or name)
-        #[arg(long, required_unless_present = "batch", alias = "task-list-id")]
-        task_list: Option<String>,
-        /// Workflow status (ID or name)
-        #[arg(long, alias = "workflow-status-id")]
-        status: Option<String>,
-        /// Assignee (ID or name)
-        #[arg(long)]
-        assignee: Option<String>,
-        /// Description (HTML)
-        #[arg(long)]
-        description: Option<String>,
-        /// Read description from file
-        #[arg(long)]
-        description_file: Option<String>,
-        /// Read description from stdin
-        #[arg(long)]
-        description_stdin: bool,
-        /// Due date (YYYY-MM-DD)
-        #[arg(long)]
-        due_date: Option<String>,
-        /// Mark task as private
-        #[arg(long)]
-        private: bool,
-        /// Batch create from JSON file (array of task objects)
-        #[arg(long, conflicts_with_all = ["title", "project", "task_list", "status", "assignee", "description", "description_file", "description_stdin", "due_date", "private"])]
-        batch: Option<String>,
-        /// Validate and show resolved payload without creating
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Add subscribers to a task
-    Subscribe {
-        /// Task ID
-        id: String,
-        /// People to subscribe (name, email, or ID)
-        #[arg(required = true)]
-        people: Vec<String>,
-    },
-    /// Remove subscribers from a task
-    Unsubscribe {
-        /// Task ID
-        id: String,
-        /// People to unsubscribe (name, email, or ID)
-        #[arg(required = true)]
-        people: Vec<String>,
-    },
-    /// Update a task
-    Update {
-        /// Task ID
-        id: String,
-        /// New workflow status (ID or name)
-        #[arg(long, alias = "workflow-status-id")]
-        status: Option<String>,
-        /// New title
-        #[arg(long)]
-        title: Option<String>,
-        /// New assignee (ID or name)
-        #[arg(long)]
-        assignee: Option<String>,
-        /// Description (HTML)
-        #[arg(long)]
-        description: Option<String>,
-        /// Read description from file
-        #[arg(long, conflicts_with = "description")]
-        description_file: Option<String>,
-        /// Read description from stdin
-        #[arg(long, conflicts_with_all = ["description", "description_file"])]
-        description_stdin: bool,
-        /// Due date (YYYY-MM-DD)
-        #[arg(long)]
-        due_date: Option<String>,
-        /// Start date (YYYY-MM-DD)
-        #[arg(long)]
-        starts_on: Option<String>,
-        /// Move to task list (ID or name)
-        #[arg(long, alias = "task-list-id")]
-        task_list: Option<String>,
-    },
-}
-
-#[derive(clap::Subcommand)]
-enum TodoAction {
-    /// List todos for a task
-    List {
-        /// Task ID
-        task_id: String,
-    },
-    /// Create a todo on a task
-    Create {
-        /// Task ID
-        task_id: String,
-        /// Todo title/description
-        #[arg(long)]
-        title: String,
-        /// Assignee (ID or name)
-        #[arg(long)]
-        assignee: Option<String>,
-    },
-    /// Update a todo
-    Update {
-        /// Todo ID
-        todo_id: String,
-        /// Mark done (true) or undone (false)
-        #[arg(long)]
-        done: Option<bool>,
-        /// New title
-        #[arg(long)]
-        title: Option<String>,
-    },
-}
-
-#[derive(clap::Subcommand)]
-enum CommentAction {
-    /// Add a comment
-    Add {
-        /// Entity ID (e.g. task ID)
-        id: String,
-        /// Comment body (HTML or plain text)
-        body: Option<String>,
-        /// Read body from file
-        #[arg(long)]
-        body_file: Option<String>,
-        /// Read body from stdin
-        #[arg(long)]
-        body_stdin: bool,
-    },
-}
-
-#[derive(clap::Subcommand)]
-enum ProjectAction {
-    /// Show project context — statuses, task lists
-    Show {
-        /// Project ID or name
+enum PrimeTarget {
+    /// Deep project context — statuses, task lists, services
+    Project {
+        /// Project name or ID
         project: String,
     },
 }
@@ -276,20 +170,17 @@ enum ConfigAction {
     },
 }
 
-fn read_text_input(
-    inline: Option<&str>,
-    file: Option<&str>,
-    from_stdin: bool,
-) -> std::io::Result<Option<String>> {
-    match (inline, file, from_stdin) {
-        (Some(d), _, _) => Ok(Some(d.to_string())),
-        (_, Some(path), _) => Ok(Some(std::fs::read_to_string(path)?)),
-        (_, _, true) => {
-            let mut buf = String::new();
-            std::io::stdin().read_to_string(&mut buf)?;
-            Ok(Some(buf))
+fn resolve_resource_or_exit(resource_type: &str) -> &'static schema::ResourceDef {
+    let s = schema::schema();
+    match s.resolve_resource(resource_type) {
+        Some(r) => r,
+        None => {
+            commands::resource::describe::print_all_types();
+            tb_prod::json_error::exit_with_error(
+                "unknown_resource_type",
+                &format!("Unknown resource type: '{}'", resource_type),
+            );
         }
-        _ => Ok(None),
     }
 }
 
@@ -329,285 +220,108 @@ async fn run() -> tb_prod::error::Result<()> {
     let client = ProductiveClient::new(&config);
 
     match command {
-        Commands::Task { action } => match action {
-            TaskAction::List {
-                task_list,
-                project,
-                assignee,
-                category,
-                search,
-            } => {
-                let cache = Cache::new(client.org_id())?;
-                cache.ensure_fresh(&client).await?;
-
-                let project_id = project
-                    .as_deref()
-                    .map(|p| cache.resolve_project(p))
-                    .transpose()?;
-                let task_list_id = match task_list.as_deref() {
-                    Some(tl) => {
-                        Some(cache::resolve_task_list(&client, tl, project_id.as_deref()).await?)
-                    }
-                    None => None,
-                };
-                let assignee_id = assignee
-                    .as_deref()
-                    .map(|a| cache.resolve_person(a))
-                    .transpose()?;
-
-                commands::tasks::run(
-                    &client,
-                    &config,
-                    task_list_id.as_deref(),
-                    project_id.as_deref(),
-                    assignee_id.as_deref(),
-                    category.as_deref(),
-                    search.as_deref(),
-                    cli.json,
-                )
-                .await?;
-            }
-            TaskAction::Show { id } => {
-                commands::task::run(&client, &id, cli.json).await?;
-            }
-            TaskAction::Subscribe { id, people } => {
-                let cache = Cache::new(client.org_id())?;
-                cache.ensure_fresh(&client).await?;
-                commands::task_subscribe::subscribe(&client, &cache, &id, &people, cli.json)
-                    .await?;
-            }
-            TaskAction::Unsubscribe { id, people } => {
-                let cache = Cache::new(client.org_id())?;
-                cache.ensure_fresh(&client).await?;
-                commands::task_subscribe::unsubscribe(&client, &cache, &id, &people, cli.json)
-                    .await?;
-            }
-            TaskAction::Create {
-                title,
-                project,
-                task_list,
-                status,
-                assignee,
-                description,
-                description_file,
-                description_stdin,
-                due_date,
-                private,
-                batch,
-                dry_run,
-            } => {
-                let cache = Cache::new(client.org_id())?;
-                cache.ensure_fresh(&client).await?;
-
-                if let Some(batch_file) = batch {
-                    let content = std::fs::read_to_string(&batch_file).map_err(|e| {
-                        tb_prod::error::TbProdError::Other(format!(
-                            "Cannot read batch file '{}': {}",
-                            batch_file, e
-                        ))
-                    })?;
-                    commands::task_batch::run(&client, &cache, &content, dry_run, cli.json).await?;
-                } else {
-                    let title = title.as_ref().unwrap();
-                    let project = project.as_ref().unwrap();
-                    let task_list = task_list.as_ref().unwrap();
-
-                    let project_id = cache.resolve_project(project)?;
-                    let workflow_id = cache.workflow_id_for_project(&project_id)?;
-                    let task_list_id =
-                        cache::resolve_task_list(&client, task_list, Some(&project_id)).await?;
-                    let status_id = status
-                        .as_deref()
-                        .map(|s| cache.resolve_workflow_status(s, workflow_id.as_deref()))
-                        .transpose()?;
-                    let assignee_id = assignee
-                        .as_deref()
-                        .map(|a| cache.resolve_person(a))
-                        .transpose()?;
-
-                    let desc = read_text_input(
-                        description.as_deref(),
-                        description_file.as_deref(),
-                        description_stdin,
-                    )?;
-
-                    if dry_run {
-                        let resolved = serde_json::json!({
-                            "title": title,
-                            "project_id": project_id,
-                            "task_list_id": task_list_id,
-                            "workflow_status_id": status_id,
-                            "assignee_id": assignee_id,
-                            "description": desc.as_deref().map(|d| if d.len() > 100 { format!("{}...", &d[..100]) } else { d.to_string() }),
-                            "due_date": due_date,
-                            "private": private,
-                        });
-                        println!("{}", serde_json::to_string_pretty(&resolved)?);
-                        eprintln!("Dry run — no task created.");
-                    } else {
-                        commands::task_create::run(
-                            &client,
-                            title,
-                            &project_id,
-                            &task_list_id,
-                            status_id.as_deref(),
-                            assignee_id.as_deref(),
-                            desc.as_deref(),
-                            due_date.as_deref(),
-                            private,
-                            cli.json,
-                        )
-                        .await?;
-                    }
+        Commands::Describe {
+            resource_type,
+            include,
+        } => {
+            let s = schema::schema();
+            match s.resolve_resource(&resource_type) {
+                Some(resource) => {
+                    commands::resource::describe::run(resource, include.as_deref());
+                }
+                None => {
+                    commands::resource::describe::print_all_types();
                 }
             }
-            TaskAction::Update {
-                id,
-                status,
-                title,
-                assignee,
-                description,
-                description_file,
-                description_stdin,
-                due_date,
-                starts_on,
-                task_list,
-            } => {
-                let desc = read_text_input(
-                    description.as_deref(),
-                    description_file.as_deref(),
-                    description_stdin,
-                )?;
-
-                if status.is_none()
-                    && title.is_none()
-                    && assignee.is_none()
-                    && desc.is_none()
-                    && due_date.is_none()
-                    && starts_on.is_none()
-                    && task_list.is_none()
-                {
-                    return Err(tb_prod::error::TbProdError::Other(
-                        "Provide at least one field to update".into(),
-                    ));
-                }
-
-                let cache = Cache::new(client.org_id())?;
-                cache.ensure_fresh(&client).await?;
-
-                // Fetch task for workflow resolution or task-list resolution
-                let task_resp = if status.is_some() || task_list.is_some() {
-                    Some(client.get_task(&id).await?)
-                } else {
-                    None
-                };
-
-                let project_id = task_resp
-                    .as_ref()
-                    .and_then(|r| r.data.relationship_id("project"))
-                    .map(|s| s.to_string());
-
-                let workflow_id = if status.is_some() {
-                    project_id
-                        .as_deref()
-                        .and_then(|pid| cache.workflow_id_for_project(pid).ok().flatten())
-                } else {
-                    None
-                };
-                let status_id = status
-                    .as_deref()
-                    .map(|s| cache.resolve_workflow_status(s, workflow_id.as_deref()))
-                    .transpose()?;
-                let assignee_id = assignee
-                    .as_deref()
-                    .map(|a| cache.resolve_person(a))
-                    .transpose()?;
-                let task_list_id = if let Some(ref tl) = task_list {
-                    Some(cache::resolve_task_list(&client, tl, project_id.as_deref()).await?)
-                } else {
-                    None
-                };
-
-                let params = commands::task_update::TaskUpdateParams {
-                    task_id: &id,
-                    workflow_status_id: status_id.as_deref(),
-                    title: title.as_deref(),
-                    assignee_id: assignee_id.as_deref(),
-                    description: desc.as_deref(),
-                    due_date: due_date.as_deref(),
-                    starts_on: starts_on.as_deref(),
-                    task_list_id: task_list_id.as_deref(),
-                };
-                commands::task_update::run(&client, &params, cli.json).await?;
-            }
-        },
-        Commands::Todo { action } => match action {
-            TodoAction::List { task_id } => {
-                commands::todos::list(&client, &task_id, cli.json).await?;
-            }
-            TodoAction::Create {
-                task_id,
-                title,
-                assignee,
-            } => {
-                let assignee_id = if let Some(ref a) = assignee {
-                    let cache = Cache::new(client.org_id())?;
-                    cache.ensure_fresh(&client).await?;
-                    Some(cache.resolve_person(a)?)
-                } else {
-                    None
-                };
-                commands::todos::create(
-                    &client,
-                    &task_id,
-                    &title,
-                    assignee_id.as_deref(),
-                    cli.json,
-                )
-                .await?;
-            }
-            TodoAction::Update {
-                todo_id,
-                done,
-                title,
-            } => {
-                if done.is_none() && title.is_none() {
-                    return Err(tb_prod::error::TbProdError::Other(
-                        "Provide at least one of --done or --title".into(),
-                    ));
-                }
-                commands::todos::update(&client, &todo_id, done, title.as_deref(), cli.json)
-                    .await?;
-            }
-        },
-        Commands::Comment { action } => match action {
-            CommentAction::Add {
-                id,
-                body,
-                body_file,
-                body_stdin,
-            } => {
-                let resolved_body =
-                    read_text_input(body.as_deref(), body_file.as_deref(), body_stdin)?.ok_or(
-                        tb_prod::error::TbProdError::Other(
-                            "Provide BODY, --body-file, or --body-stdin".into(),
-                        ),
-                    )?;
-                commands::task_comment::run(&client, &id, &resolved_body, cli.json).await?;
-            }
-        },
-        Commands::Project { action } => match action {
-            ProjectAction::Show { project } => {
-                commands::project::run(&client, &project, cli.json).await?;
-            }
-        },
-        Commands::People { query } => {
-            let cache = Cache::new(client.org_id())?;
-            cache.ensure_fresh(&client).await?;
-            commands::people::run(&cache, query.as_deref(), cli.json)?;
         }
-        Commands::Prime => {
-            commands::prime::run(&client, &config).await?;
+        Commands::Query {
+            resource_type,
+            filter,
+            sort,
+            page,
+            include,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            let filter_value = match &filter {
+                Some(f) => Some(f.clone()),
+                None => input::read_json_input(None).map(|v| v.to_string()),
+            };
+            commands::resource::query::run(
+                &client,
+                resource,
+                filter_value.as_deref(),
+                sort.as_deref(),
+                Some(page),
+                include.as_deref(),
+            )
+            .await;
+        }
+        Commands::Get {
+            resource_type,
+            id,
+            include,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            commands::resource::get::run(&client, resource, &id, include.as_deref()).await;
+        }
+        Commands::Create {
+            resource_type,
+            data,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            let json_data = input::require_json_input(data.as_deref(), "create");
+            commands::resource::create::run(&client, resource, &json_data).await;
+        }
+        Commands::Update {
+            resource_type,
+            id,
+            data,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            let json_data = input::require_json_input(data.as_deref(), "update");
+            commands::resource::update::run(&client, resource, &id, &json_data).await;
+        }
+        Commands::Delete {
+            resource_type,
+            id,
+            confirm,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            commands::resource::delete::run(&client, resource, &id, confirm).await;
+        }
+        Commands::Search {
+            resource_type,
+            query,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            commands::resource::search::run(&client, resource, &query).await;
+        }
+        Commands::Action {
+            resource_type,
+            id,
+            action_name,
+            data,
+        } => {
+            let resource = resolve_resource_or_exit(&resource_type);
+            let json_data = input::read_json_input(data.as_deref());
+            commands::resource::action::run(
+                &client,
+                resource,
+                &id,
+                &action_name,
+                json_data.as_ref(),
+            )
+            .await;
+        }
+        Commands::Prime { target } => {
+            match target {
+                None => {
+                    commands::prime::run(&client, &config).await?;
+                }
+                Some(PrimeTarget::Project { project }) => {
+                    commands::prime::run_project(&client, &project).await?;
+                }
+            }
             toolbox_core::version_check::print_update_hint("tb-prod", env!("CARGO_PKG_VERSION"));
         }
         Commands::Cache { action } => match action {
