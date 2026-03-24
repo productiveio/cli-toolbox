@@ -268,7 +268,30 @@
         }
       },
       "collections": {},
-      "defaultSort": "Sorted by -created_at by default."
+      "defaultSort": "Sorted by -created_at by default.",
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "action",
+          "source": "attribute",
+          "key": "action"
+        },
+        {
+          "label": "created_at",
+          "source": "attribute",
+          "key": "created_at"
+        },
+        {
+          "label": "person",
+          "source": "relationship",
+          "key": "person",
+          "target": "people"
+        }
+      ]
     },
     "agent_configs": {
       "type": "agent_configs",
@@ -879,7 +902,29 @@
           "notIncludable": true
         }
       },
-      "collections": {}
+      "collections": {},
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "name",
+          "source": "attribute",
+          "key": "name"
+        },
+        {
+          "label": "content_type",
+          "source": "attribute",
+          "key": "content_type"
+        },
+        {
+          "label": "created_at",
+          "source": "attribute",
+          "key": "created_at"
+        }
+      ]
     },
     "automations": {
       "type": "automations",
@@ -1418,7 +1463,52 @@
         "create": true,
         "update": true,
         "delete": true
-      }
+      },
+      "defaultFilters": {
+        "canceled": {
+          "eq": "false"
+        }
+      },
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "started_on",
+          "source": "attribute",
+          "key": "started_on"
+        },
+        {
+          "label": "ended_on",
+          "source": "attribute",
+          "key": "ended_on"
+        },
+        {
+          "label": "time",
+          "source": "attribute",
+          "key": "time"
+        },
+        {
+          "label": "person",
+          "source": "relationship",
+          "key": "person",
+          "target": "people"
+        },
+        {
+          "label": "project",
+          "source": "relationship",
+          "key": "project",
+          "target": "projects"
+        },
+        {
+          "label": "service",
+          "source": "relationship",
+          "key": "service",
+          "target": "services"
+        }
+      ]
     },
     "comments": {
       "type": "comments",
@@ -1536,7 +1626,30 @@
         }
       },
       "collections": {},
-      "searchFilterParam": "full_query"
+      "searchFilterParam": "full_query",
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "body_preview",
+          "source": "attribute",
+          "key": "body_preview"
+        },
+        {
+          "label": "created_at",
+          "source": "attribute",
+          "key": "created_at"
+        },
+        {
+          "label": "person",
+          "source": "relationship",
+          "key": "person",
+          "target": "people"
+        }
+      ]
     },
     "companies": {
       "type": "companies",
@@ -1764,7 +1877,39 @@
         "syncFilter": {
           "status": "1"
         }
-      }
+      },
+      "defaultFilters": {
+        "status": {
+          "eq": "1"
+        }
+      },
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "name",
+          "source": "attribute",
+          "key": "name"
+        },
+        {
+          "label": "status",
+          "source": "attribute",
+          "key": "status"
+        },
+        {
+          "label": "email",
+          "source": "attribute",
+          "key": "email"
+        },
+        {
+          "label": "phone",
+          "source": "attribute",
+          "key": "phone"
+        }
+      ]
     },
     "contact_entries": {
       "type": "contact_entries",
@@ -3044,7 +3189,55 @@
       "bulkActions": {
         "update": true,
         "delete": true
-      }
+      },
+      "defaultFilters": {
+        "budget": {
+          "eq": "false"
+        },
+        "stage_status_id": {
+          "eq": "1"
+        }
+      },
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "name",
+          "source": "attribute",
+          "key": "name"
+        },
+        {
+          "label": "budget",
+          "source": "attribute",
+          "key": "budget"
+        },
+        {
+          "label": "date",
+          "source": "attribute",
+          "key": "date"
+        },
+        {
+          "label": "company",
+          "source": "relationship",
+          "key": "company",
+          "target": "companies"
+        },
+        {
+          "label": "deal_status",
+          "source": "relationship",
+          "key": "deal_status",
+          "target": "deal_statuses"
+        },
+        {
+          "label": "responsible",
+          "source": "relationship",
+          "key": "responsible",
+          "target": "people"
+        }
+      ]
     },
     "deleted_items": {
       "type": "deleted_items",
@@ -3364,7 +3557,12 @@
         "document template"
       ],
       "queryHints": "Users typically care about active document types, unless they specify otherwise. The default filter scope for document types should be: { status: {eq: '1'} }",
-      "defaultSort": "Sorted by name (ascending) by default."
+      "defaultSort": "Sorted by name (ascending) by default.",
+      "defaultFilters": {
+        "status": {
+          "eq": "1"
+        }
+      }
     },
     "einvoice_configurations": {
       "type": "einvoice_configurations",
@@ -3808,6 +4006,11 @@
           "id",
           "name"
         ]
+      },
+      "defaultFilters": {
+        "status": {
+          "eq": "1"
+        }
       }
     },
     "expenses": {
@@ -4259,7 +4462,46 @@
         }
       },
       "collections": {},
-      "searchFilterParam": "query"
+      "searchFilterParam": "query",
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "name",
+          "source": "attribute",
+          "key": "name"
+        },
+        {
+          "label": "date",
+          "source": "attribute",
+          "key": "date"
+        },
+        {
+          "label": "amount",
+          "source": "attribute",
+          "key": "amount"
+        },
+        {
+          "label": "approved",
+          "source": "attribute",
+          "key": "approved"
+        },
+        {
+          "label": "person",
+          "source": "relationship",
+          "key": "person",
+          "target": "people"
+        },
+        {
+          "label": "service",
+          "source": "relationship",
+          "key": "service",
+          "target": "services"
+        }
+      ]
     },
     "filters": {
       "type": "filters",
@@ -4395,7 +4637,24 @@
           "project_id",
           "status"
         ]
-      }
+      },
+      "defaultFilters": {
+        "status": {
+          "eq": "1"
+        }
+      },
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "name",
+          "source": "attribute",
+          "key": "name"
+        }
+      ]
     },
     "holiday_calendars": {
       "type": "holiday_calendars",
@@ -4916,7 +5175,45 @@
         }
       },
       "collections": {},
-      "searchFilterParam": "query"
+      "searchFilterParam": "query",
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "number",
+          "source": "attribute",
+          "key": "number"
+        },
+        {
+          "label": "date",
+          "source": "attribute",
+          "key": "date"
+        },
+        {
+          "label": "due_date",
+          "source": "attribute",
+          "key": "due_date"
+        },
+        {
+          "label": "total",
+          "source": "attribute",
+          "key": "total"
+        },
+        {
+          "label": "status",
+          "source": "attribute",
+          "key": "status"
+        },
+        {
+          "label": "company",
+          "source": "relationship",
+          "key": "company",
+          "target": "companies"
+        }
+      ]
     },
     "kpd_codes": {
       "type": "kpd_codes",
@@ -5510,7 +5807,35 @@
         }
       },
       "collections": {},
-      "queryHints": "Users typically care about active (non-dismissed) notifications they are subscribed to (important=true), unless they specify otherwise. The default filter scope for notifications should be: { dismissed: {eq: 'false'}, important: {eq: 'true'} }."
+      "queryHints": "Users typically care about active (non-dismissed) notifications they are subscribed to (important=true), unless they specify otherwise. The default filter scope for notifications should be: { dismissed: {eq: 'false'}, important: {eq: 'true'} }.",
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "subject",
+          "source": "attribute",
+          "key": "subject"
+        },
+        {
+          "label": "read",
+          "source": "attribute",
+          "key": "read"
+        },
+        {
+          "label": "created_at",
+          "source": "attribute",
+          "key": "created_at"
+        },
+        {
+          "label": "person",
+          "source": "relationship",
+          "key": "person",
+          "target": "people"
+        }
+      ]
     },
     "organization_memberships": {
       "type": "organization_memberships",
@@ -5938,6 +6263,34 @@
       "collections": {},
       "searchQuickResultType": [
         "page"
+      ],
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "title",
+          "source": "attribute",
+          "key": "title"
+        },
+        {
+          "label": "published",
+          "source": "attribute",
+          "key": "published"
+        },
+        {
+          "label": "last_activity_at",
+          "source": "attribute",
+          "key": "last_activity_at"
+        },
+        {
+          "label": "project",
+          "source": "relationship",
+          "key": "project",
+          "target": "projects"
+        }
       ]
     },
     "payments": {
@@ -6351,7 +6704,45 @@
           "status": "1",
           "person_type": "1"
         }
-      }
+      },
+      "defaultFilters": {
+        "status": {
+          "eq": "1"
+        }
+      },
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "first_name",
+          "source": "attribute",
+          "key": "first_name"
+        },
+        {
+          "label": "last_name",
+          "source": "attribute",
+          "key": "last_name"
+        },
+        {
+          "label": "email",
+          "source": "attribute",
+          "key": "email"
+        },
+        {
+          "label": "title",
+          "source": "attribute",
+          "key": "title"
+        },
+        {
+          "label": "company",
+          "source": "relationship",
+          "key": "company",
+          "target": "companies"
+        }
+      ]
     },
     "pipelines": {
       "type": "pipelines",
@@ -6793,7 +7184,47 @@
         "syncFilter": {
           "status": "1"
         }
-      }
+      },
+      "defaultFilters": {
+        "status": {
+          "eq": "1"
+        }
+      },
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "name",
+          "source": "attribute",
+          "key": "name"
+        },
+        {
+          "label": "status",
+          "source": "attribute",
+          "key": "status"
+        },
+        {
+          "label": "company",
+          "source": "relationship",
+          "key": "company",
+          "target": "companies"
+        },
+        {
+          "label": "workflow",
+          "source": "relationship",
+          "key": "workflow",
+          "target": "workflows"
+        },
+        {
+          "label": "project_manager",
+          "source": "relationship",
+          "key": "project_manager",
+          "target": "people"
+        }
+      ]
     },
     "proposal_sections": {
       "type": "proposal_sections",
@@ -8747,6 +9178,11 @@
         "syncFilter": {
           "status": "1"
         }
+      },
+      "defaultFilters": {
+        "status": {
+          "eq": "1"
+        }
       }
     },
     "services": {
@@ -9033,7 +9469,41 @@
         "create": true,
         "update": true,
         "delete": true
-      }
+      },
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "name",
+          "source": "attribute",
+          "key": "name"
+        },
+        {
+          "label": "billing_type",
+          "source": "attribute",
+          "key": "billing_type"
+        },
+        {
+          "label": "unit",
+          "source": "attribute",
+          "key": "unit"
+        },
+        {
+          "label": "deal",
+          "source": "relationship",
+          "key": "deal",
+          "target": "deals"
+        },
+        {
+          "label": "service_type",
+          "source": "relationship",
+          "key": "service_type",
+          "target": "service_types"
+        }
+      ]
     },
     "slack_channel": {
       "type": "slack_channel",
@@ -9546,7 +10016,30 @@
           "project_id",
           "status"
         ]
-      }
+      },
+      "defaultFilters": {
+        "status": {
+          "eq": "1"
+        }
+      },
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "name",
+          "source": "attribute",
+          "key": "name"
+        },
+        {
+          "label": "project",
+          "source": "relationship",
+          "key": "project",
+          "target": "projects"
+        }
+      ]
     },
     "tasks": {
       "type": "tasks",
@@ -9912,7 +10405,61 @@
         "create": true,
         "update": true,
         "delete": true
-      }
+      },
+      "defaultFilters": {
+        "project.status": {
+          "eq": "1"
+        },
+        "task_list_status": {
+          "eq": "1"
+        },
+        "board_status": {
+          "eq": "1"
+        },
+        "workflow_status_category_id": {
+          "not_eq": "3"
+        }
+      },
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "title",
+          "source": "attribute",
+          "key": "title"
+        },
+        {
+          "label": "taskNumber",
+          "source": "attribute",
+          "key": "task_number"
+        },
+        {
+          "label": "dueDate",
+          "source": "attribute",
+          "key": "due_date"
+        },
+        {
+          "label": "project",
+          "source": "relationship",
+          "key": "project",
+          "target": "projects"
+        },
+        {
+          "label": "workflow_status",
+          "source": "relationship",
+          "key": "workflow_status",
+          "target": "workflow_statuses"
+        },
+        {
+          "label": "assignee",
+          "source": "relationship",
+          "key": "assignee",
+          "target": "people"
+        }
+      ]
     },
     "tax_rates": {
       "type": "tax_rates",
@@ -10303,7 +10850,47 @@
         "create": true,
         "update": true,
         "delete": true
-      }
+      },
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "date",
+          "source": "attribute",
+          "key": "date"
+        },
+        {
+          "label": "time",
+          "source": "attribute",
+          "key": "time"
+        },
+        {
+          "label": "note",
+          "source": "attribute",
+          "key": "note"
+        },
+        {
+          "label": "person",
+          "source": "relationship",
+          "key": "person",
+          "target": "people"
+        },
+        {
+          "label": "service",
+          "source": "relationship",
+          "key": "service",
+          "target": "services"
+        },
+        {
+          "label": "task",
+          "source": "relationship",
+          "key": "task",
+          "target": "tasks"
+        }
+      ]
     },
     "timers": {
       "type": "timers",
@@ -10507,7 +11094,30 @@
         "create": true,
         "update": true,
         "delete": true
-      }
+      },
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "title",
+          "source": "attribute",
+          "key": "title"
+        },
+        {
+          "label": "completed",
+          "source": "attribute",
+          "key": "completed"
+        },
+        {
+          "label": "assignee",
+          "source": "relationship",
+          "key": "assignee",
+          "target": "people"
+        }
+      ]
     },
     "users": {
       "type": "users",
@@ -10620,7 +11230,29 @@
           "color_id",
           "category_id"
         ]
-      }
+      },
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "name",
+          "source": "attribute",
+          "key": "name"
+        },
+        {
+          "label": "category_id",
+          "source": "attribute",
+          "key": "category_id"
+        },
+        {
+          "label": "color_id",
+          "source": "attribute",
+          "key": "color_id"
+        }
+      ]
     },
     "workflows": {
       "type": "workflows",
@@ -10673,7 +11305,19 @@
           "id",
           "name"
         ]
-      }
+      },
+      "displayColumns": [
+        {
+          "label": "ID",
+          "source": "id",
+          "key": "id"
+        },
+        {
+          "label": "name",
+          "source": "attribute",
+          "key": "name"
+        }
+      ]
     }
   },
   "enums": {

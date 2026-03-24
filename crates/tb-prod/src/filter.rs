@@ -50,6 +50,24 @@ impl FilterValue {
     }
 }
 
+// --- Helpers ---
+
+fn value_to_filter_value(value: Value) -> FilterValue {
+    match value {
+        Value::String(s) => FilterValue::Single(s),
+        Value::Number(n) => FilterValue::Single(n.to_string()),
+        Value::Array(arr) => FilterValue::Array(
+            arr.into_iter()
+                .map(|v| match v {
+                    Value::String(s) => s,
+                    other => other.to_string().trim_matches('"').to_string(),
+                })
+                .collect(),
+        ),
+        other => FilterValue::Single(other.to_string().trim_matches('"').to_string()),
+    }
+}
+
 // --- Normalization ---
 
 /// Normalize a FilterInput into a FilterGroup.
@@ -61,26 +79,26 @@ pub fn normalize_filter(input: FilterInput) -> FilterGroup {
             let conditions = map
                 .into_iter()
                 .map(|(field, value)| {
-                    let val = match value {
-                        Value::String(s) => FilterValue::Single(s),
-                        Value::Number(n) => FilterValue::Single(n.to_string()),
-                        Value::Array(arr) => FilterValue::Array(
-                            arr.into_iter()
-                                .map(|v| match v {
-                                    Value::String(s) => s,
-                                    other => other.to_string().trim_matches('"').to_string(),
-                                })
-                                .collect(),
-                        ),
-                        other => {
-                            FilterValue::Single(other.to_string().trim_matches('"').to_string())
+                    match value {
+                        // Operator object: {"eq": "175235"} or {"not_eq": "3"}
+                        Value::Object(obj) if !obj.is_empty() => {
+                            let (op, val) = obj.into_iter().next().unwrap();
+                            let filter_val = value_to_filter_value(val);
+                            FilterEntry::Condition(FilterCondition {
+                                field,
+                                operator: op,
+                                value: filter_val,
+                            })
                         }
-                    };
-                    FilterEntry::Condition(FilterCondition {
-                        field,
-                        operator: "eq".to_string(),
-                        value: val,
-                    })
+                        _ => {
+                            let val = value_to_filter_value(value);
+                            FilterEntry::Condition(FilterCondition {
+                                field,
+                                operator: "eq".to_string(),
+                                value: val,
+                            })
+                        }
+                    }
                 })
                 .collect();
             FilterGroup {
@@ -312,6 +330,37 @@ mod tests {
         let group = normalize_filter(input);
         assert_eq!(group.op, "and");
         assert_eq!(group.conditions.len(), 2);
+    }
+
+    #[test]
+    fn normalize_flat_filter_with_operator_object() {
+        let input: FilterInput = serde_json::from_str(
+            r#"{"assignee_id": {"eq": "175235"}, "workflow_status_category_id": {"not_eq": "3"}}"#,
+        )
+        .unwrap();
+        let group = normalize_filter(input);
+        assert_eq!(group.op, "and");
+        assert_eq!(group.conditions.len(), 2);
+
+        // Verify operators are extracted correctly
+        let mut found_eq = false;
+        let mut found_not_eq = false;
+        for entry in &group.conditions {
+            if let FilterEntry::Condition(c) = entry {
+                if c.field == "assignee_id" {
+                    assert_eq!(c.operator, "eq");
+                    assert_eq!(c.value.as_strings(), vec!["175235"]);
+                    found_eq = true;
+                }
+                if c.field == "workflow_status_category_id" {
+                    assert_eq!(c.operator, "not_eq");
+                    assert_eq!(c.value.as_strings(), vec!["3"]);
+                    found_not_eq = true;
+                }
+            }
+        }
+        assert!(found_eq, "missing assignee_id condition");
+        assert!(found_not_eq, "missing workflow_status_category_id condition");
     }
 
     #[test]

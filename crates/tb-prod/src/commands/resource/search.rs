@@ -1,8 +1,14 @@
 use crate::api::{ProductiveClient, Query};
+use crate::commands::resource::query;
 use crate::json_error;
 use crate::schema::ResourceDef;
 
-pub async fn run(client: &ProductiveClient, resource: &ResourceDef, query_text: &str) {
+pub async fn run(
+    client: &ProductiveClient,
+    resource: &ResourceDef,
+    query_text: &str,
+    format: &str,
+) {
     let search_param = match &resource.search_filter_param {
         Some(p) => p.as_str(),
         None => {
@@ -13,11 +19,23 @@ pub async fn run(client: &ProductiveClient, resource: &ResourceDef, query_text: 
         }
     };
 
-    let query = Query::new().filter(search_param, query_text);
+    let schema = crate::schema::schema();
+    let json_mode = format == "json";
+
+    let mut api_query = Query::new().filter(search_param, query_text);
+
+    // Auto-include for CSV mode
+    if !json_mode {
+        let auto = query::auto_includes_from_columns_pub(resource);
+        if !auto.is_empty() {
+            api_query = api_query.include(&auto.join(","));
+        }
+    }
+
     let path = resource.api_path();
     let page_size = 20;
 
-    match client.get_page(&path, &query, 1, page_size).await {
+    match client.get_page(&path, &api_query, 1, page_size).await {
         Ok(resp) => {
             let total_count = resp
                 .meta
@@ -25,14 +43,27 @@ pub async fn run(client: &ProductiveClient, resource: &ResourceDef, query_text: 
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
 
-            let output = serde_json::json!({
-                "data": resp.data,
-                "meta": {
-                    "totalCount": total_count,
-                    "query": query_text,
-                }
-            });
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            if json_mode {
+                let output = serde_json::json!({
+                    "data": resp.data,
+                    "meta": {
+                        "totalCount": total_count,
+                        "query": query_text,
+                    }
+                });
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            } else {
+                query::print_csv(
+                    &resp.data,
+                    &resp.included,
+                    resource,
+                    schema,
+                    client.org_id(),
+                    total_count,
+                    1,
+                    1,
+                );
+            }
         }
         Err(e) => json_error::exit_with_tb_error(&e),
     }

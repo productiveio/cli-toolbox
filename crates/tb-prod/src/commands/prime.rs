@@ -63,14 +63,27 @@ pub async fn run(client: &ProductiveClient, config: &Config) -> Result<()> {
 
     // --- Notes ---
     println!("## Notes\n");
-    println!("- Output is JSON for all resource commands (except `describe` and `prime`)");
-    println!("- `--filter` and `--data` accept JSON via flag or piped stdin");
+    println!("- Default output is CSV with resolved relationship names (use `--format json` for raw JSON)");
+    println!("- Default filters auto-apply (e.g. tasks auto-scoped to open tasks in active projects). Only add filters you need.");
+    println!("- `--filter` accepts JSON: flat `{{\"field\": \"value\"}}` or operator `{{\"field\": {{\"not_eq\": \"value\"}}}}`");
     println!(
         "- Filter values for cacheable types (projects, people, etc.) auto-resolve names to IDs"
     );
     println!("- `tb-prod describe <type>` for full field/filter/action details");
     println!("- `tb-prod prime project <name>` for deep project context");
     println!("- `tb-prod cache sync` to refresh cached data");
+
+    // --- Common queries ---
+    println!("\n## Common Queries\n");
+    println!("```");
+    println!(
+        "tb-prod query tasks --filter '{{\"assignee_id\": \"{}\"}}'",
+        person_id
+    );
+    println!("tb-prod query projects");
+    println!("tb-prod query time_entries --filter '{{\"person_id\": \"{}\"}}'", person_id);
+    println!("tb-prod query bookings --filter '{{\"person_id\": \"{}\"}}'", person_id);
+    println!("```");
 
     Ok(())
 }

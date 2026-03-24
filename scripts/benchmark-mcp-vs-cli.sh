@@ -24,17 +24,22 @@ RUN_PREFIX="$RESULTS_DIR/${TIMESTAMP}-${TASK_NAME}"
 case "$TASK_NAME" in
   my_tasks)
     DESCRIPTION="List my Productive tasks assigned to me"
-    MCP_PROMPT="List all Productive.io tasks assigned to me using the mcp__productive__query_tasks tool. Show task title, status, and project. Do NOT use any CLI skills or Bash commands — only use MCP tools."
-    CLI_PROMPT="List all Productive.io tasks assigned to me. Use the Bash tool to run: tb-prod tasks. Show task title, status, and project. Do NOT use any MCP tools — only Bash."
+    MCP_PROMPT="List all Productive.io tasks assigned to me. Show task title, status, and project. Do NOT use any CLI skills or Bash commands — only use MCP tools (mcp__plugin_p-mcp-productive_productive__*)."
+    PRIME_CONTEXT=$(cd /tmp && tb-prod prime 2>&1)
+    CLI_PROMPT="List all Productive.io tasks assigned to me. IMPORTANT: Run all tb-prod commands from /tmp (e.g. 'cd /tmp && tb-prod ...'). Output defaults to CSV with resolved relationship names. Default filters auto-apply. Show task title, status, and project. Do NOT use any MCP tools — only Bash.
+
+Here is your tb-prod context (pre-loaded):
+
+$PRIME_CONTEXT"
     MCP_EXTRA_FLAGS=(--disable-slash-commands)
-    CLI_EXTRA_FLAGS=(--disallowed-tools "mcp__productive__query_tasks,mcp__productive__filter_tasks_by_prompt,mcp__productive__load_task_details")
+    CLI_EXTRA_FLAGS=(--disallowed-tools "mcp__plugin_p-mcp-productive_productive__query_resources,mcp__plugin_p-mcp-productive_productive__describe_resource,mcp__plugin_p-mcp-productive_productive__load_resource_details,mcp__plugin_p-mcp-productive_productive__search,mcp__plugin_p-mcp-productive_productive__search_resource,mcp__plugin_p-mcp-productive_productive__create_resource,mcp__plugin_p-mcp-productive_productive__update_resource,mcp__plugin_p-mcp-productive_productive__delete_resource,mcp__plugin_p-mcp-productive_productive__perform_resource_action,mcp__plugin_p-mcp-productive_productive__search_organization_data,mcp__plugin_p-mcp-productive_productive__search_project_data,mcp__plugin_p-mcp-productive_productive__load_current_context,mcp__plugin_p-mcp-productive_productive__describe_report,mcp__plugin_p-mcp-productive_productive__query_report,mcp__plugin_p-mcp-productive_productive__load_guides,mcp__plugin_p-mcp-productive_productive__search_guides,mcp__plugin_p-mcp-productive_productive__describe_skill,mcp__plugin_p-mcp-productive_productive__perform_skill_action,mcp__plugin_p-mcp-productive_productive__get_supported_currencies,mcp__plugin_p-mcp-productive_productive__read_file_from_url")
     ;;
   my_projects)
     DESCRIPTION="List my Productive projects"
-    MCP_PROMPT="List my Productive.io projects using MCP tools (mcp__productive__query_projects or mcp__productive__filter_projects_by_prompt). Show project name and status. Do NOT use any CLI skills or Bash commands — only use MCP tools."
-    CLI_PROMPT="List my Productive.io projects. Use the Bash tool to run: tb-prod projects. Show project name and status. Do NOT use any MCP tools — only Bash."
+    MCP_PROMPT="List my Productive.io projects. Show project name and status. Do NOT use any CLI skills or Bash commands — only use MCP tools (mcp__plugin_p-mcp-productive_productive__*)."
+    CLI_PROMPT="List my Productive.io projects. IMPORTANT: Run all tb-prod commands from /tmp (e.g. 'cd /tmp && tb-prod ...'). First run 'cd /tmp && tb-prod prime' to get your user context and command reference, then query projects with --format table. Show project name and status. Do NOT use any MCP tools — only Bash."
     MCP_EXTRA_FLAGS=(--disable-slash-commands)
-    CLI_EXTRA_FLAGS=(--disallowed-tools "mcp__productive__query_projects,mcp__productive__filter_projects_by_prompt,mcp__productive__load_project_details")
+    CLI_EXTRA_FLAGS=(--disallowed-tools "mcp__plugin_p-mcp-productive_productive__query_resources,mcp__plugin_p-mcp-productive_productive__describe_resource,mcp__plugin_p-mcp-productive_productive__load_resource_details,mcp__plugin_p-mcp-productive_productive__search,mcp__plugin_p-mcp-productive_productive__search_resource,mcp__plugin_p-mcp-productive_productive__create_resource,mcp__plugin_p-mcp-productive_productive__update_resource,mcp__plugin_p-mcp-productive_productive__delete_resource,mcp__plugin_p-mcp-productive_productive__perform_resource_action,mcp__plugin_p-mcp-productive_productive__search_organization_data,mcp__plugin_p-mcp-productive_productive__search_project_data,mcp__plugin_p-mcp-productive_productive__load_current_context,mcp__plugin_p-mcp-productive_productive__describe_report,mcp__plugin_p-mcp-productive_productive__query_report,mcp__plugin_p-mcp-productive_productive__load_guides,mcp__plugin_p-mcp-productive_productive__search_guides,mcp__plugin_p-mcp-productive_productive__describe_skill,mcp__plugin_p-mcp-productive_productive__perform_skill_action,mcp__plugin_p-mcp-productive_productive__get_supported_currencies,mcp__plugin_p-mcp-productive_productive__read_file_from_url")
     ;;
   *)
     echo "Unknown task: $TASK_NAME"
