@@ -29,8 +29,8 @@ struct Cli {
 enum Commands {
     /// Full-text search across sessions
     Search {
-        /// Search query
-        query: String,
+        /// Search query (optional when --pr is used)
+        query: Option<String>,
 
         /// Filter by git branch name
         #[arg(long)]
@@ -55,6 +55,10 @@ enum Commands {
         /// Only sessions modified on or before this date (ISO 8601)
         #[arg(long)]
         before: Option<String>,
+
+        /// Search for sessions mentioning a PR (number or URL)
+        #[arg(long)]
+        pr: Option<String>,
     },
 
     /// List sessions by metadata (no full-text search)
@@ -141,6 +145,17 @@ fn main() {
     }
 }
 
+/// Build an FTS5 search query from a PR reference (number or URL).
+fn build_pr_query(pr_ref: &str) -> String {
+    if pr_ref.starts_with("http") {
+        // Full URL — search for it directly
+        pr_ref.to_string()
+    } else {
+        // PR number — search for "pull/<number>" which matches GitHub PR URLs
+        format!("pull/{}", pr_ref)
+    }
+}
+
 fn resolve_and_freshen(
     conn: &rusqlite::Connection,
     projects_dir: &std::path::Path,
@@ -183,7 +198,18 @@ fn run() -> tb_session::error::Result<()> {
             limit,
             after,
             before,
+            pr,
         } => {
+            let effective_query = match (&query, &pr) {
+                (Some(q), _) => q.clone(),
+                (None, Some(pr_ref)) => build_pr_query(pr_ref),
+                (None, None) => {
+                    return Err(tb_session::error::Error::Other(
+                        "provide a search query or use --pr <number|url>".into(),
+                    ));
+                }
+            };
+
             let config = Config::load()?;
             let conn = tb_session::index::open_db(cli.no_cache)?;
             let projects_dir = config.projects_dir();
@@ -192,7 +218,7 @@ fn run() -> tb_session::error::Result<()> {
 
             tb_session::commands::search::run(
                 &conn,
-                &query,
+                &effective_query,
                 branch.as_deref(),
                 after.as_deref(),
                 before.as_deref(),
