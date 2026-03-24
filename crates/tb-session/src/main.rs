@@ -302,3 +302,28 @@ fn run() -> tb_session::error::Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_pr_query() {
+        // PR number → pull/N
+        assert_eq!(build_pr_query("557"), "pull/557");
+        assert_eq!(build_pr_query("1"), "pull/1");
+
+        // Full URL → returned verbatim
+        assert_eq!(
+            build_pr_query("https://github.com/org/repo/pull/557"),
+            "https://github.com/org/repo/pull/557"
+        );
+        assert_eq!(
+            build_pr_query("http://github.com/org/repo/pull/1"),
+            "http://github.com/org/repo/pull/1"
+        );
+
+        // Non-numeric non-URL string (documents current behavior)
+        assert_eq!(build_pr_query("feature-branch"), "pull/feature-branch");
+    }
+}

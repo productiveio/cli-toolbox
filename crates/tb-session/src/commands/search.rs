@@ -327,4 +327,22 @@ mod tests {
             "\"column:value\" \"OR\" \"other\""
         );
     }
+
+    #[test]
+    fn test_sanitize_fts5_query_edge_cases() {
+        // Empty string → empty string (caller guards this)
+        assert_eq!(sanitize_fts5_query(""), "");
+
+        // Whitespace-only → empty string (split_whitespace yields nothing)
+        assert_eq!(sanitize_fts5_query("   "), "");
+
+        // Embedded double quotes are stripped
+        assert_eq!(sanitize_fts5_query("say \"hi\" world"), "\"say\" \"hi\" \"world\"");
+
+        // FTS5 operators get quoted as literal terms
+        assert_eq!(sanitize_fts5_query("AND OR NOT"), "\"AND\" \"OR\" \"NOT\"");
+
+        // Single special character
+        assert_eq!(sanitize_fts5_query("*"), "\"*\"");
+    }
 }

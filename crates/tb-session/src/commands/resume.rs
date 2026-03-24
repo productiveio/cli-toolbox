@@ -204,6 +204,67 @@ mod tests {
         assert!(!looks_like_uuid("PR #6"));
         assert!(!looks_like_uuid("abc")); // too short
     }
+
+    #[test]
+    fn test_shell_escape() {
+        // Plain string — no escaping needed
+        assert_eq!(shell_escape("claude"), "claude");
+        assert_eq!(shell_escape("/usr/bin/claude"), "/usr/bin/claude");
+
+        // String with spaces — single-quoted
+        assert_eq!(shell_escape("/path/to my dir"), "'/path/to my dir'");
+
+        // String with single quote — escaped within single quotes
+        assert_eq!(shell_escape("it's"), "'it'\\''s'");
+
+        // String with double quote — single-quoted wrapper
+        assert_eq!(shell_escape("say \"hi\""), "'say \"hi\"'");
+
+        // String with backslash — single-quoted
+        assert_eq!(shell_escape("back\\slash"), "'back\\slash'");
+
+        // Empty string — returned as-is
+        assert_eq!(shell_escape(""), "");
+    }
+
+    #[test]
+    fn test_build_osascript_iterm() {
+        let script = build_osascript("iTerm.app");
+        assert!(script.contains("iTerm2"));
+        assert!(script.contains("create tab with default profile"));
+        assert!(script.contains("system attribute \"TB_SESSION_CMD\""));
+    }
+
+    #[test]
+    fn test_build_osascript_terminal() {
+        let script = build_osascript("Apple_Terminal");
+        assert!(script.contains("Terminal"));
+        assert!(script.contains("do script"));
+        assert!(script.contains("system attribute \"TB_SESSION_CMD\""));
+    }
+
+    #[test]
+    fn test_build_osascript_unknown_falls_to_terminal() {
+        let script = build_osascript("");
+        assert!(script.contains("Terminal"));
+        assert!(script.contains("do script"));
+    }
+
+    #[test]
+    fn test_looks_like_uuid_edge_cases() {
+        // Exactly 7 hex chars — too short
+        assert!(!looks_like_uuid("abcdef1"));
+
+        // Exactly 8 hex chars — minimum valid
+        assert!(looks_like_uuid("abcdef12"));
+
+        // All dashes — currently true (8+ chars, all are hex or dash)
+        // This documents current behavior: dashes-only passes the check
+        assert!(looks_like_uuid("--------"));
+
+        // Whitespace-padded — trim should handle
+        assert!(looks_like_uuid("  9a06add5  "));
+    }
 }
 
 fn which_claude() -> Result<String> {

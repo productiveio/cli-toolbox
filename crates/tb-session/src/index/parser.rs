@@ -214,6 +214,81 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_zero_messages() {
+        // All lines are non-message entries — message_count should be 0
+        let file = write_jsonl(&[
+            r#"{"type":"progress","text":"Thinking..."}"#,
+            r#"{"type":"file-history-snapshot","files":[]}"#,
+            r#"{"cwd":"/Users/test/myapp"}"#,
+        ]);
+
+        let parsed = parse_session(file.path()).unwrap();
+        assert_eq!(parsed.messages.len(), 0);
+        assert_eq!(parsed.message_count, 0);
+        assert!(parsed.first_prompt.is_none());
+        assert!(parsed.summary.is_none());
+    }
+
+    #[test]
+    fn test_parse_skips_non_user_assistant_roles() {
+        let file = write_jsonl(&[
+            r#"{"timestamp":"2024-01-01T00:00:00Z","message":{"role":"system","content":"System prompt"}}"#,
+            r#"{"timestamp":"2024-01-01T00:00:01Z","message":{"role":"tool","content":"Tool output"}}"#,
+            r#"{"timestamp":"2024-01-01T00:00:02Z","message":{"role":"user","content":"Hello"}}"#,
+        ]);
+
+        let parsed = parse_session(file.path()).unwrap();
+        assert_eq!(parsed.messages.len(), 1);
+        assert_eq!(parsed.message_count, 1);
+        assert_eq!(parsed.messages[0].role, "user");
+    }
+
+    #[test]
+    fn test_parse_first_prompt_skips_empty_content() {
+        let file = write_jsonl(&[
+            r#"{"timestamp":"2024-01-01T00:00:00Z","message":{"role":"user","content":""}}"#,
+            r#"{"timestamp":"2024-01-01T00:00:01Z","message":{"role":"user","content":"Real prompt"}}"#,
+        ]);
+
+        let parsed = parse_session(file.path()).unwrap();
+        assert_eq!(parsed.first_prompt.as_deref(), Some("Real prompt"));
+    }
+
+    #[test]
+    fn test_parse_summary_skips_empty_assistant() {
+        let file = write_jsonl(&[
+            r#"{"timestamp":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":""}}"#,
+            r#"{"timestamp":"2024-01-01T00:00:01Z","message":{"role":"assistant","content":"Real summary"}}"#,
+        ]);
+
+        let parsed = parse_session(file.path()).unwrap();
+        assert_eq!(parsed.summary.as_deref(), Some("Real summary"));
+    }
+
+    #[test]
+    fn test_parse_summary_not_overwritten_by_second_assistant() {
+        let file = write_jsonl(&[
+            r#"{"timestamp":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"First response"}}"#,
+            r#"{"timestamp":"2024-01-01T00:00:01Z","message":{"role":"assistant","content":"Second response"}}"#,
+        ]);
+
+        let parsed = parse_session(file.path()).unwrap();
+        assert_eq!(parsed.summary.as_deref(), Some("First response"));
+    }
+
+    #[test]
+    fn test_parse_extract_content_non_standard_types() {
+        // Content that is null/number/object should produce empty string
+        let file = write_jsonl(&[
+            r#"{"timestamp":"2024-01-01T00:00:00Z","message":{"role":"user","content":null}}"#,
+        ]);
+
+        let parsed = parse_session(file.path()).unwrap();
+        assert_eq!(parsed.messages.len(), 1);
+        assert_eq!(parsed.messages[0].content, "");
+    }
+
+    #[test]
     fn test_parse_summary_from_first_assistant() {
         let long_text = "A".repeat(300);
         let line = format!(
