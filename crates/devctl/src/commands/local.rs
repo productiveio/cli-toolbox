@@ -11,8 +11,17 @@ use crate::state::{ServiceState, State};
 /// Build a shell command that initializes runtime version managers and
 /// cd's into the service directory before running the actual command.
 /// This ensures rbenv/nvm detect .ruby-version/.node-version/.nvmrc.
-fn shell_cmd(svc_dir: &Path, cmd: &str) -> String {
+fn shell_cmd(
+    svc_dir: &Path,
+    cmd: &str,
+    env: &std::collections::BTreeMap<String, String>,
+) -> String {
     let mut parts = Vec::new();
+
+    // Per-service env vars from devctl.toml
+    for (key, val) in env {
+        parts.push(format!("export {}={}", key, shell_escape(val)));
+    }
 
     // rbenv init puts shims first in PATH (needed for .ruby-version detection)
     if svc_dir.join(".ruby-version").exists() {
@@ -27,6 +36,14 @@ fn shell_cmd(svc_dir: &Path, cmd: &str) -> String {
     parts.push(format!("cd {}", svc_dir.display()));
     parts.push(cmd.to_string());
     parts.join(" && ")
+}
+
+fn shell_escape(s: &str) -> String {
+    if s.contains(' ') || s.contains('"') || s.contains('$') {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    } else {
+        s.to_string()
+    }
 }
 
 pub fn start(
@@ -119,7 +136,7 @@ pub fn start(
 
             // git restore: clean up generated files after migrations
             if step.starts_with("git restore") {
-                let cmd = shell_cmd(&svc_dir, step);
+                let cmd = shell_cmd(&svc_dir, step, &svc.env);
                 let status = Command::new("bash").args(["-lc", &cmd]).status()?;
                 if !status.success() {
                     println!("  {} {} (non-fatal)", "!".yellow(), step);
@@ -129,7 +146,7 @@ pub fn start(
 
             println!("  {}", step);
             // Explicit cd so rbenv/nvm detect .ruby-version/.node-version
-            let cmd = shell_cmd(&svc_dir, step);
+            let cmd = shell_cmd(&svc_dir, step, &svc.env);
             let status = Command::new("bash").args(["-lc", &cmd]).status()?;
 
             if !status.success() {
@@ -162,7 +179,7 @@ pub fn start(
             log_file.display()
         );
 
-        let full_cmd = shell_cmd(&svc_dir, cmd);
+        let full_cmd = shell_cmd(&svc_dir, cmd, &svc.env);
         let child = Command::new("bash")
             .args(["-lc", &full_cmd])
             .stdout(log.try_clone()?)
@@ -207,7 +224,7 @@ pub fn start(
         );
         state.save(project_root)?;
 
-        let full_cmd = shell_cmd(&svc_dir, cmd);
+        let full_cmd = shell_cmd(&svc_dir, cmd, &svc.env);
         let status = Command::new("bash").args(["-lc", &full_cmd]).status()?;
 
         // Clean up state after exit

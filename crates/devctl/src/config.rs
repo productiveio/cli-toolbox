@@ -55,6 +55,8 @@ pub struct ServiceConfig {
     pub init: Vec<String>,
     #[serde(default)]
     pub start: Vec<String>,
+    #[serde(default)]
+    pub env: std::collections::BTreeMap<String, String>,
 }
 
 /// Walk up from `start` looking for `devctl.toml`.

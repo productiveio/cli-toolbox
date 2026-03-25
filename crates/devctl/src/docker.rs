@@ -177,6 +177,23 @@ pub fn generate_compose(
         }
     }
 
+    // Collect per-service env vars from selected services (+ companions)
+    let mut service_env_lines = Vec::new();
+    for svc_name in services {
+        if let Some(svc) = config.services.get(svc_name) {
+            for (key, val) in &svc.env {
+                service_env_lines.push(format!("      - {}={}", key, val));
+            }
+            if let Some(companion) = &svc.companion {
+                if let Some(comp) = config.services.get(companion) {
+                    for (key, val) in &comp.env {
+                        service_env_lines.push(format!("      - {}={}", key, val));
+                    }
+                }
+            }
+        }
+    }
+
     // Build ports section
     let ports_yaml: Vec<String> = ports
         .iter()
@@ -221,6 +238,7 @@ services:
       - PUPPETEER_EXECUTABLE_PATH=/opt/chromium/chrome-linux/chrome
       - PRODUCTIVE_API_BASE_URL=http://api.productive.io.localhost:3000
 {service_urls}
+{service_env}
     ports:
 {ports}
     volumes:
@@ -228,6 +246,7 @@ services:
         container = config.docker.container,
         selected_repos = selected_repos.join(","),
         service_urls = service_urls.join("\n"),
+        service_env = service_env_lines.join("\n"),
         ports = ports_yaml.join("\n"),
     );
 
