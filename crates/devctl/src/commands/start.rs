@@ -226,11 +226,10 @@ fn capture_env(project_root: &Path) -> Result<()> {
         .unwrap_or_default();
     lines.push(format!("GH_TOKEN={}", gh_token));
 
-    // AWS
-    let aws_region = std::env::var("AWS_DEFAULT_REGION").unwrap_or_else(|_| "eu-central-1".into());
-    lines.push(format!("AWS_DEFAULT_REGION={}", aws_region));
-
+    // AWS — only forward explicit credentials, never override region
+    // (region comes from ~/.aws/config which is mounted into the container)
     for var in &[
+        "AWS_DEFAULT_REGION",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
         "AWS_SESSION_TOKEN",
