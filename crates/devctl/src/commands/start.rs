@@ -30,7 +30,13 @@ pub fn docker(
         }
     }
 
-    // --- Check port conflicts ---
+    // --- Stop existing container if running (declarative: new list replaces old) ---
+    if docker::container_is_running(config) {
+        println!("{}", "Replacing existing container...".yellow());
+        docker::stop_container(config, project_root)?;
+    }
+
+    // --- Check port conflicts (after stopping our container, before starting new) ---
     println!("{}", "Checking ports...".blue());
     let mut conflicts = Vec::new();
     for svc_name in services {
@@ -125,12 +131,6 @@ pub fn docker(
         }
     }
 
-    // --- Stop existing container if running ---
-    if docker::container_is_running(config) {
-        println!("{}", "Stopping existing container...".yellow());
-        docker::stop_container(config, project_root)?;
-    }
-
     // --- Capture env vars ---
     println!("{}", "Capturing environment...".blue());
     capture_env(project_root)?;
@@ -143,12 +143,7 @@ pub fn docker(
     println!("{}", "Starting container...".blue());
     docker::start_container(config, project_root, services)?;
 
-    // --- Wait for healthy ---
-    print!("{}", "Waiting for container to be ready".blue());
-    docker::wait_for_healthy(config)?;
-    println!(" {}", "ready!".green());
-
-    // --- Update state ---
+    // --- Update state immediately (so status works during boot) ---
     let now = chrono::Utc::now().to_rfc3339();
     let mut state = State::load(project_root)?;
     // Clear previous docker services
@@ -182,6 +177,11 @@ pub fn docker(
         }
     }
     state.save(project_root)?;
+
+    // --- Wait for healthy ---
+    print!("{}", "Waiting for container to be ready".blue());
+    docker::wait_for_healthy(config)?;
+    println!(" {}", "ready!".green());
 
     // --- Report ---
     println!();

@@ -366,9 +366,10 @@ pub fn start_container(
 }
 
 /// Wait for the container healthcheck to pass.
+/// Timeout: 10 minutes (first-time setup may compile Ruby/Node from source).
 pub fn wait_for_healthy(config: &Config) -> Result<()> {
     let container = &config.docker.container;
-    for i in 0..60 {
+    for i in 0..300 {
         let output = Command::new("docker")
             .args(["inspect", "--format", "{{.State.Health.Status}}", container])
             .output()?;
@@ -378,13 +379,15 @@ pub fn wait_for_healthy(config: &Config) -> Result<()> {
             return Ok(());
         }
 
-        if i % 5 == 0 && i > 0 {
+        if i % 15 == 0 && i > 0 {
+            eprint!(" {}s", i * 2);
+        } else if i % 5 == 0 {
             eprint!(".");
         }
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
     Err(Error::Other(
-        "Container did not become healthy within 2 minutes".into(),
+        "Container did not become healthy within 10 minutes".into(),
     ))
 }
