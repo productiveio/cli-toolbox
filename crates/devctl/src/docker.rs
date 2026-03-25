@@ -223,7 +223,6 @@ services:
       - RAILS_ENV=development
       - NODE_ENV=development
       - PRODUCTIVE_API_BASE_URL=http://api.productive.io.localhost:3000
-      - BUGSNAG_AUTH_TOKEN=
 {service_urls}
     ports:
 {ports}
@@ -296,13 +295,16 @@ networks:
 
 /// Check if the dev container is currently running.
 pub fn container_is_running(config: &Config) -> bool {
+    // Use ^name$ anchor for exact match (docker filter does substring by default)
     Command::new("docker")
         .args([
             "ps",
             "--filter",
-            &format!("name={}", config.docker.container),
+            &format!("name=^{}$", config.docker.container),
+            "--filter",
+            "status=running",
             "--format",
-            "{{.Status}}",
+            "{{.Names}}",
         ])
         .output()
         .is_ok_and(|o| !o.stdout.is_empty())
