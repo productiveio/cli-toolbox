@@ -214,6 +214,9 @@ services:
       - RAISE_ON_MISSING_FEATURES=false
       - RAILS_ENV=development
       - NODE_ENV=development
+      - COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+      - COREPACK_ENABLE_AUTO_PIN=0
+      - CI=true
       - PRODUCTIVE_API_BASE_URL=http://api.productive.io.localhost:3000
 {service_urls}
     ports:
