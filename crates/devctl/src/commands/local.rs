@@ -18,6 +18,9 @@ fn shell_cmd(
 ) -> String {
     let mut parts = Vec::new();
 
+    // Suppress interactive prompts (pnpm, corepack, etc.)
+    parts.push("export CI=true".to_string());
+
     // Per-service env vars from devctl.toml (shared + local-specific)
     for (key, val) in env {
         parts.push(format!("export {}={}", key, shell_escape(val)));
@@ -30,7 +33,7 @@ fn shell_cmd(
 
     // nvm init for .node-version/.nvmrc detection
     if svc_dir.join(".node-version").exists() || svc_dir.join(".nvmrc").exists() {
-        parts.push("export NVM_DIR=\"$HOME/.nvm\" && [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\" 2>/dev/null".to_string());
+        parts.push("export NVM_DIR=\"${NVM_DIR:-$HOME/.nvm}\"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\" 2>/dev/null; true".to_string());
     }
 
     parts.push(format!("cd {}", svc_dir.display()));
