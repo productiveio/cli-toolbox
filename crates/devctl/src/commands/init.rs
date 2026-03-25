@@ -45,10 +45,13 @@ pub fn run(config: &Config, project_root: &Path, service: &str) -> Result<()> {
         );
 
         if container_up {
-            // Run inside Docker container as root (needed for gem/package installs)
+            // Run inside Docker container as root (needed for gem/package installs).
+            // Set HOME=/home/dev so AWS SDK finds the mounted ~/.aws credentials.
             let status = Command::new("docker")
                 .args([
                     "exec",
+                    "-e",
+                    "HOME=/home/dev",
                     "-w",
                     &format!("/workspace/{}", repo),
                     &config.docker.container,
