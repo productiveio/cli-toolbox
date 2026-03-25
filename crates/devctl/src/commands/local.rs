@@ -66,17 +66,11 @@ pub fn start(
     }
 
     // Auto-start infra if needed
-    if !svc.infra.is_empty() {
-        let infra_compose = project_root.join(&config.infra.compose_file);
-        let infra_running = health::compose_is_running(
-            &config.infra.compose_project,
-            &infra_compose.to_string_lossy(),
-        );
-        if !infra_running {
+    if !svc.infra.is_empty()
+        && !health::infra_is_running(config, project_root) {
             println!("{}", "Starting infrastructure...".blue());
             crate::commands::infra::up(config, project_root)?;
         }
-    }
 
     // Run start steps (git pull, deps, migrate)
     if !svc.start.is_empty() {

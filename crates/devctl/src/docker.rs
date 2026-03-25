@@ -4,6 +4,10 @@ use std::process::Command;
 use crate::config::{Config, ServiceConfig};
 use crate::error::{Error, Result};
 
+/// Default runtime versions — must match Dockerfile.base ARGs.
+const DEFAULT_RUBY: &str = "3.4.7";
+const DEFAULT_NODE: &str = "22.16.0";
+
 /// Generate a Procfile for overmind from the selected services.
 /// Writes to `.docker-sessions/.dev/Procfile.dev`.
 pub fn generate_procfile(
@@ -22,14 +26,14 @@ pub fn generate_procfile(
             Error::Config(format!("Unknown service: {}", svc_name))
         })?;
 
-        if let Some(entry) = procfile_entry(svc_name, svc, config, project_root) {
+        if let Some(entry) = procfile_entry(svc_name, svc, project_root) {
             lines.push(entry);
         }
 
         // Add companion (e.g., sidekiq for api)
         if let Some(companion) = &svc.companion
             && let Some(comp_svc) = config.services.get(companion)
-                && let Some(entry) = procfile_entry(companion, comp_svc, config, project_root) {
+                && let Some(entry) = procfile_entry(companion, comp_svc, project_root) {
                     lines.push(entry);
                 }
     }
@@ -42,7 +46,6 @@ pub fn generate_procfile(
 fn procfile_entry(
     name: &str,
     svc: &ServiceConfig,
-    _config: &Config,
     project_root: &Path,
 ) -> Option<String> {
     let repo = svc.repo.as_deref()?;
@@ -56,20 +59,17 @@ fn procfile_entry(
     if ruby_version_file.exists()
         && let Ok(version) = std::fs::read_to_string(&ruby_version_file) {
             let version = version.trim();
-            let default_ruby = "3.4.7"; // matches Dockerfile.base ARG
-            if version != default_ruby {
+            if version != DEFAULT_RUBY {
                 wrapper.push_str(&format!("rvm use {} && ", version));
             }
         }
 
     // Check if repo needs a different Node version
     let node_version = read_node_version(&repos_dir.join(repo));
-    if let Some(version) = node_version {
-        let default_node = "22.16.0"; // matches Dockerfile.base ARG
-        if version != default_node {
+    if let Some(version) = node_version
+        && version != DEFAULT_NODE {
             wrapper.push_str(&format!(". /usr/local/nvm/nvm.sh && nvm use {} && ", version));
         }
-    }
 
     let full_cmd = if wrapper.is_empty() {
         format!("{}: cd /workspace/{} && {}", name, repo, cmd)
@@ -142,29 +142,30 @@ pub fn generate_compose(
     std::fs::create_dir_all(&compose_dir)?;
     let compose_path = compose_dir.join("docker-compose.yml");
 
-    // Collect ports and repos for selected services (+ companions)
+    // Collect ports and repo names for selected services (+ companions)
     let mut ports = Vec::new();
-    let mut repos = std::collections::BTreeSet::new();
+    let mut selected_repos = Vec::new();
 
     for svc_name in services {
         if let Some(svc) = config.services.get(svc_name) {
             if let Some(port) = svc.port {
                 ports.push(port);
             }
-            if let Some(repo) = &svc.repo {
-                repos.insert(repo.clone());
-            }
+            if let Some(repo) = &svc.repo
+                && !selected_repos.contains(repo) {
+                    selected_repos.push(repo.clone());
+                }
             // Include companion
-            if let Some(companion) = &svc.companion {
-                if let Some(comp) = config.services.get(companion) {
+            if let Some(companion) = &svc.companion
+                && let Some(comp) = config.services.get(companion) {
                     if let Some(port) = comp.port {
                         ports.push(port);
                     }
-                    if let Some(repo) = &comp.repo {
-                        repos.insert(repo.clone());
-                    }
+                    if let Some(repo) = &comp.repo
+                        && !selected_repos.contains(repo) {
+                            selected_repos.push(repo.clone());
+                        }
                 }
-            }
         }
     }
 
@@ -229,13 +230,13 @@ services:
     volumes:
 "#,
         container = config.docker.container,
-        selected_repos = services.join(","),
+        selected_repos = selected_repos.join(","),
         service_urls = service_urls.join("\n"),
         ports = ports_yaml.join("\n"),
     );
 
     // Mount all repos (static, same as dev-compose.yml)
-    for (_, svc) in &config.services {
+    for svc in config.services.values() {
         if let Some(repo) = &svc.repo {
             content.push_str(&format!(
                 "      - {}/repos/{}:/workspace/{}\n",

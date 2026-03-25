@@ -85,13 +85,7 @@ pub fn down(config: &Config, project_root: &Path) -> Result<()> {
 }
 
 pub fn status(config: &Config, project_root: &Path) -> Result<()> {
-    let compose_file = project_root.join(&config.infra.compose_file);
-    let running = health::compose_is_running(
-        &config.infra.compose_project,
-        &compose_file.to_string_lossy(),
-    );
-
-    if running {
+    if health::infra_is_running(config, project_root) {
         println!("{}", "Infrastructure is running.".green());
     } else {
         println!("{}", "Infrastructure is not running.".red());

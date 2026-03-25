@@ -57,11 +57,7 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
     println!();
     println!("{}", "Infrastructure".bold());
 
-    let compose_file = project_root.join(&config.infra.compose_file);
-    let infra_running = health::compose_is_running(
-        &config.infra.compose_project,
-        &compose_file.to_string_lossy(),
-    );
+    let infra_running = health::infra_is_running(config, project_root);
 
     for (name, svc) in &config.infra.services {
         if infra_running && health::port_is_open(svc.port) {
@@ -95,12 +91,6 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
                 }
             }
         }
-
-        // Port conflict with non-devctl process?
-        if let Some(port) = svc.port
-            && health::port_is_open(port) {
-                // Port is in use — could be devctl or something else, just note it
-            }
 
         if svc_issues.is_empty() {
             println!("  {} {}", "✓".green(), name);

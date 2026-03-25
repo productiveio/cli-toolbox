@@ -84,16 +84,13 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
     }
 
     // Infra status
-    let compose_file = project_root.join(&config.infra.compose_file);
-    let infra_running = health::compose_is_running(
-        &config.infra.compose_project,
-        &compose_file.to_string_lossy(),
-    );
+    let infra_running = health::infra_is_running(config, project_root);
+    let infra_compose = project_root.join(&config.infra.compose_file);
 
     let infra_containers = if infra_running {
         health::compose_container_states(
             &config.infra.compose_project,
-            &compose_file.to_string_lossy(),
+            &infra_compose.to_string_lossy(),
         )
     } else {
         Default::default()

@@ -113,17 +113,12 @@ pub fn docker(
     }
 
     // --- Auto-start infra if needed ---
-    let infra_compose = project_root.join(&config.infra.compose_file);
     let infra_needed = services.iter().any(|svc_name| {
         !config.services[svc_name].infra.is_empty()
     });
 
     if infra_needed {
-        let infra_running = health::compose_is_running(
-            &config.infra.compose_project,
-            &infra_compose.to_string_lossy(),
-        );
-        if !infra_running {
+        if !health::infra_is_running(config, project_root) {
             println!("{}", "Starting infrastructure...".blue());
             crate::commands::infra::up(config, project_root)?;
         } else {
