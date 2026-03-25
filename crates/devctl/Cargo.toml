@@ -1,0 +1,25 @@
+[package]
+name = "devctl"
+version = "0.1.0"
+edition = "2024"
+description = "Local dev environment orchestrator for Productive services"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "devctl"
+path = "src/main.rs"
+
+[lib]
+doctest = false
+
+[dependencies]
+toolbox-core.workspace = true
+clap.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+colored.workspace = true
+thiserror.workspace = true
