@@ -95,6 +95,42 @@ fn read_node_version(repo_path: &Path) -> Option<String> {
     None
 }
 
+/// Query overmind inside the container to get running service names and their status.
+/// Returns a map of service_name → "running" | "stopped" | "dead".
+pub fn overmind_status(config: &Config) -> std::collections::BTreeMap<String, String> {
+    let mut result = std::collections::BTreeMap::new();
+
+    let output = Command::new("docker")
+        .args([
+            "exec",
+            &config.docker.container,
+            "overmind",
+            "status",
+        ])
+        .output();
+
+    let Ok(output) = output else {
+        return result;
+    };
+
+    // overmind status output:
+    // PROCESS   PID       STATUS
+    // api       5796      running
+    // sidekiq   5797      running
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines().skip(1) {
+        // Skip header
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 3 {
+            let name = parts[0].to_string();
+            let status = parts[2].to_string();
+            result.insert(name, status);
+        }
+    }
+
+    result
+}
+
 /// Check if the dev container is currently running.
 pub fn container_is_running(config: &Config) -> bool {
     Command::new("docker")

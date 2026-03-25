@@ -34,6 +34,39 @@ pub fn compose_is_running(project: &str, compose_file: &str) -> bool {
         .is_ok_and(|o| !o.stdout.is_empty())
 }
 
+/// Get container states from a docker compose project.
+/// Returns a map of service_name → status string (e.g., "Up 7 hours (healthy)").
+pub fn compose_container_states(
+    project: &str,
+    compose_file: &str,
+) -> std::collections::BTreeMap<String, String> {
+    let mut result = std::collections::BTreeMap::new();
+
+    let output = Command::new("docker")
+        .args([
+            "compose",
+            "-p",
+            project,
+            "-f",
+            compose_file,
+            "ps",
+            "--format",
+            "{{.Service}}\t{{.Status}}",
+        ])
+        .output();
+
+    if let Ok(output) = output {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if let Some((service, status)) = line.split_once('\t') {
+                result.insert(service.to_string(), status.to_string());
+            }
+        }
+    }
+
+    result
+}
+
 /// Get the PID and command of the process listening on a port.
 /// Returns None if no process is found.
 pub fn port_owner(port: u16) -> Option<(u32, String)> {

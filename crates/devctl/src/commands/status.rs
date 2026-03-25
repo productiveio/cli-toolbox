@@ -3,6 +3,7 @@ use std::path::Path;
 use colored::Colorize;
 
 use crate::config::Config;
+use crate::docker;
 use crate::error::Result;
 use crate::health;
 use crate::state::State;
@@ -21,6 +22,14 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
         println!("{} Caddy is not running (localhost:2019)", "!".yellow());
     }
 
+    // If container is running, get overmind status for accurate service state
+    let container_up = docker::container_is_running(config);
+    let overmind = if container_up {
+        docker::overmind_status(config)
+    } else {
+        Default::default()
+    };
+
     // Service table header
     println!();
     println!(
@@ -33,43 +42,17 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
     );
 
     for (name, svc) in &config.services {
-        let mode;
-        let state_str;
-
-        if let Some(svc_state) = state.services.get(name) {
-            mode = svc_state.mode.clone();
+        let mode = if let Some(svc_state) = state.services.get(name) {
+            svc_state.mode.clone()
         } else {
-            mode = "-".to_string();
-        }
+            "-".to_string()
+        };
 
-        // Determine actual running state by probing the port
-        if let Some(port) = svc.port {
-            if health::port_is_open(port) {
-                state_str = "running".green().to_string();
-            } else if mode != "-" {
-                state_str = "stopped".red().to_string();
-            } else {
-                state_str = "stopped".dimmed().to_string();
-            }
-        } else {
-            // No port (e.g., sidekiq) — can't probe
-            if mode != "-" {
-                state_str = "running".green().to_string();
-            } else {
-                state_str = "-".dimmed().to_string();
-            }
-        }
+        let state_str = determine_service_state(name, svc.port, &mode, &overmind, container_up);
 
-        let url = svc
-            .hostname
-            .as_deref()
-            .unwrap_or("-")
-            .to_string();
+        let url = svc.hostname.as_deref().unwrap_or("-").to_string();
 
-        println!(
-            "  {:<20} {:<10} {:<22} {}",
-            name, mode, state_str, url
-        );
+        println!("  {:<20} {:<10} {:<22} {}", name, mode, state_str, url);
     }
 
     // Infra status
@@ -80,24 +63,67 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
     );
 
     println!();
-    println!(
-        "  {:<20} {:<10}",
-        "INFRA", "STATE"
-    );
-    println!(
-        "  {:<20} {:<10}",
-        "─────", "─────"
-    );
+    println!("  {:<20} {:<10}", "INFRA", "STATE");
+    println!("  {:<20} {:<10}", "─────", "─────");
 
-    for (name, svc) in &config.infra.services {
-        let state_str = if infra_running && health::port_is_open(svc.port) {
-            "running".green().to_string()
-        } else {
-            "stopped".red().to_string()
+    let infra_containers = if infra_running {
+        health::compose_container_states(
+            &config.infra.compose_project,
+            &compose_file.to_string_lossy(),
+        )
+    } else {
+        Default::default()
+    };
+
+    for (name, _svc) in &config.infra.services {
+        let state_str = match infra_containers.get(name.as_str()).map(|s| s.as_str()) {
+            Some(s) if s.starts_with("Up") => "running".green().to_string(),
+            Some(s) => s.yellow().to_string(),
+            None => "stopped".red().to_string(),
         };
         println!("  {:<20} {}", name, state_str);
     }
 
     println!();
     Ok(())
+}
+
+fn determine_service_state(
+    name: &str,
+    port: Option<u16>,
+    mode: &str,
+    overmind: &std::collections::BTreeMap<String, String>,
+    container_up: bool,
+) -> String {
+    // Docker mode: use overmind as source of truth
+    if mode == "docker" && container_up {
+        return match overmind.get(name).map(|s| s.as_str()) {
+            Some("running") => "running".green().to_string(),
+            Some("dead") => "crashed".red().to_string(),
+            Some(other) => other.yellow().to_string(),
+            None => "not in procfile".dimmed().to_string(),
+        };
+    }
+
+    // No mode set: check if something is actually listening on the port
+    // but only if the container is NOT running (to avoid false positives
+    // from Docker's static port bindings)
+    if mode == "-" {
+        if let Some(port) = port {
+            if !container_up && health::port_is_open(port) {
+                // Something external is using this port
+                return "running (external)".yellow().to_string();
+            }
+        }
+        return "-".dimmed().to_string();
+    }
+
+    // Local mode (future): probe port
+    if let Some(port) = port {
+        if health::port_is_open(port) {
+            return "running".green().to_string();
+        }
+    }
+
+    "stopped".red().to_string()
 }
