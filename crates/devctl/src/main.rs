@@ -21,11 +21,43 @@ enum Commands {
     /// Show status of all services and infrastructure
     Status,
 
+    /// Start services
+    Start {
+        /// Comma-separated list of services
+        services: String,
+
+        /// Run in Docker container
+        #[arg(long)]
+        docker: bool,
+
+        /// Skip dependency install and DB setup
+        #[arg(long)]
+        skip_setup: bool,
+    },
+
+    /// Stop the Docker dev container
+    Stop,
+
+    /// Restart a service inside the running container
+    Restart {
+        /// Service name
+        service: String,
+    },
+
+    /// View logs for a service
+    Logs {
+        /// Service name
+        service: String,
+    },
+
     /// Manage shared infrastructure (MySQL, Redis, etc.)
     Infra {
         #[command(subcommand)]
         action: InfraAction,
     },
+
+    /// Diagnose environment health
+    Doctor,
 }
 
 #[derive(clap::Subcommand)]
@@ -56,11 +88,29 @@ fn main() {
 
     let result = match cli.command {
         Commands::Status => commands::status::run(&cfg, &root),
+        Commands::Start {
+            services,
+            docker,
+            skip_setup,
+        } => {
+            let svc_list: Vec<String> = services.split(',').map(|s| s.trim().to_string()).collect();
+            if docker {
+                commands::start::docker(&cfg, &root, &svc_list, skip_setup)
+            } else {
+                Err(devctl::error::Error::Other(
+                    "Local mode (--local) not yet implemented. Use --docker.".into(),
+                ))
+            }
+        }
+        Commands::Stop => commands::stop::run(&cfg, &root),
+        Commands::Restart { service } => commands::stop::restart_service(&cfg, &service),
+        Commands::Logs { service } => commands::logs::run(&cfg, &root, &service),
         Commands::Infra { action } => match action {
             InfraAction::Up => commands::infra::up(&cfg, &root),
             InfraAction::Down => commands::infra::down(&cfg, &root),
             InfraAction::Status => commands::infra::status(&cfg, &root),
         },
+        Commands::Doctor => commands::doctor::run(&cfg, &root),
     };
 
     if let Err(e) = result {
