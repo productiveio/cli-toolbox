@@ -24,6 +24,14 @@ pub fn run(config: &Config, project_root: &Path, service: &str) -> Result<()> {
     // Determine execution context
     let container_up = docker::container_is_running(config);
 
+    // Check AWS SSO if any init step needs it
+    let needs_aws = svc.init.iter().any(|s| s.contains("secrets-manager"));
+    if needs_aws && !crate::health::aws_sso_is_valid() {
+        return Err(Error::Other(
+            "AWS SSO session expired or invalid. Run: aws sso login".into(),
+        ));
+    }
+
     println!("{} {}", "Initializing".blue(), service.bold());
     println!("  Steps: {}", svc.init.len());
     println!();

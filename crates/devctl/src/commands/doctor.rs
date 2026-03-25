@@ -32,6 +32,15 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
         issues += 1;
     }
 
+    let aws_ok = health::aws_sso_is_valid();
+    if aws_ok {
+        println!("  {} AWS SSO session", "✓".green());
+    } else {
+        println!("  {} AWS SSO — expired or invalid", "!".yellow());
+        println!("      Run: aws sso login");
+        // Warning only, not an issue — only needed for init/secrets
+    }
+
     // --- Infrastructure ---
     println!();
     println!("{}", "Infrastructure".bold());

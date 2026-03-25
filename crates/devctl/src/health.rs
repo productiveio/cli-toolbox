@@ -67,6 +67,16 @@ pub fn compose_container_states(
     result
 }
 
+/// Check if AWS SSO session is valid by calling sts get-caller-identity.
+pub fn aws_sso_is_valid() -> bool {
+    Command::new("aws")
+        .args(["sts", "get-caller-identity", "--no-cli-pager"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
 /// Get the PID and command of the process listening on a port.
 /// Returns None if no process is found.
 pub fn port_owner(port: u16) -> Option<(u32, String)> {
