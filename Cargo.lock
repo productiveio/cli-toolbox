@@ -408,6 +408,7 @@ dependencies = [
  "chrono",
  "clap",
  "colored",
+ "dirs",
  "reqwest",
  "serde",
  "serde_json",

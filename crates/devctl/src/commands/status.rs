@@ -22,6 +22,20 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
         println!("{} Caddy is not running (localhost:2019)", "!".yellow());
     }
 
+    match health::aws_sso_status() {
+        health::AwsSsoStatus::Valid(Some(remaining)) if remaining.as_secs() < 1800 => {
+            println!(
+                "{} AWS SSO expires in {}",
+                "!".yellow(),
+                health::format_duration(&remaining)
+            );
+        }
+        health::AwsSsoStatus::Expired => {
+            println!("{} AWS SSO expired (run: aws sso login)", "!".yellow());
+        }
+        _ => {} // Valid with plenty of time, or not installed — don't clutter
+    }
+
     // If container is running, get overmind status for accurate service state
     let container_up = docker::container_is_running(config);
     let overmind = if container_up {

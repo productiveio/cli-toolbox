@@ -32,13 +32,25 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
         issues += 1;
     }
 
-    let aws_ok = health::aws_sso_is_valid();
-    if aws_ok {
-        println!("  {} AWS SSO session", "✓".green());
-    } else {
-        println!("  {} AWS SSO — expired or invalid", "!".yellow());
-        println!("      Run: aws sso login");
-        // Warning only, not an issue — only needed for init/secrets
+    match health::aws_sso_status() {
+        health::AwsSsoStatus::Valid(Some(remaining)) => {
+            let time_str = health::format_duration(&remaining);
+            if remaining.as_secs() < 1800 {
+                println!("  {} AWS SSO ({} remaining)", "!".yellow(), time_str);
+            } else {
+                println!("  {} AWS SSO ({} remaining)", "✓".green(), time_str);
+            }
+        }
+        health::AwsSsoStatus::Valid(None) => {
+            println!("  {} AWS SSO (valid, expiry unknown)", "✓".green());
+        }
+        health::AwsSsoStatus::Expired => {
+            println!("  {} AWS SSO — expired or invalid", "!".yellow());
+            println!("      Run: aws sso login");
+        }
+        health::AwsSsoStatus::NotInstalled => {
+            println!("  {} AWS CLI not installed", "!".yellow());
+        }
     }
 
     // --- Infrastructure ---
