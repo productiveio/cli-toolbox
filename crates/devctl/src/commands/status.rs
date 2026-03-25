@@ -30,16 +30,8 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
         Default::default()
     };
 
-    // Service table header
-    println!();
-    println!(
-        "  {:<20} {:<10} {:<10} {:<30}",
-        "SERVICE", "MODE", "STATE", "URL"
-    );
-    println!(
-        "  {:<20} {:<10} {:<10} {:<30}",
-        "───────", "────", "─────", "───"
-    );
+    // Collect rows first, then format with correct alignment
+    let mut rows: Vec<(String, String, String, String, String)> = Vec::new();
 
     for (name, svc) in &config.services {
         let mode = if let Some(svc_state) = state.services.get(name) {
@@ -48,11 +40,33 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
             "-".to_string()
         };
 
-        let state_str = determine_service_state(name, svc.port, &mode, &overmind, container_up);
-
+        let (state_text, state_color) =
+            determine_service_state(name, svc.port, &mode, &overmind, container_up);
         let url = svc.hostname.as_deref().unwrap_or("-").to_string();
 
-        println!("  {:<20} {:<10} {:<22} {}", name, mode, state_str, url);
+        rows.push((name.clone(), mode, state_text, state_color, url));
+    }
+
+    // Print service table with padding applied before colorization
+    println!();
+    println!(
+        "  {:<20} {:<10} {:<10} {}",
+        "SERVICE", "MODE", "STATE", "URL"
+    );
+    println!(
+        "  {:<20} {:<10} {:<10} {}",
+        "───────", "────", "─────", "───"
+    );
+
+    for (name, mode, state_text, state_color, url) in &rows {
+        let padded_state = format!("{:<10}", state_text);
+        let colored_state = match state_color.as_str() {
+            "green" => padded_state.green().to_string(),
+            "red" => padded_state.red().to_string(),
+            "yellow" => padded_state.yellow().to_string(),
+            _ => padded_state.dimmed().to_string(),
+        };
+        println!("  {:<20} {:<10} {} {}", name, mode, colored_state, url);
     }
 
     // Infra status
@@ -61,10 +75,6 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
         &config.infra.compose_project,
         &compose_file.to_string_lossy(),
     );
-
-    println!();
-    println!("  {:<20} {:<10}", "INFRA", "STATE");
-    println!("  {:<20} {:<10}", "─────", "─────");
 
     let infra_containers = if infra_running {
         health::compose_container_states(
@@ -75,55 +85,61 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
         Default::default()
     };
 
+    println!();
+    println!("  {:<20} {:<10}", "INFRA", "STATE");
+    println!("  {:<20} {:<10}", "─────", "─────");
+
     for (name, _svc) in &config.infra.services {
-        let state_str = match infra_containers.get(name.as_str()).map(|s| s.as_str()) {
-            Some(s) if s.starts_with("Up") => "running".green().to_string(),
-            Some(s) => s.yellow().to_string(),
-            None => "stopped".red().to_string(),
+        let is_up = infra_containers
+            .get(name.as_str())
+            .is_some_and(|s| s.starts_with("Up"));
+        let padded = format!("{:<10}", if is_up { "running" } else { "stopped" });
+        let colored = if is_up {
+            padded.green().to_string()
+        } else {
+            padded.red().to_string()
         };
-        println!("  {:<20} {}", name, state_str);
+        println!("  {:<20} {}", name, colored);
     }
 
     println!();
     Ok(())
 }
 
+/// Returns (display_text, color_name) for a service state.
 fn determine_service_state(
     name: &str,
     port: Option<u16>,
     mode: &str,
     overmind: &std::collections::BTreeMap<String, String>,
     container_up: bool,
-) -> String {
+) -> (String, String) {
     // Docker mode: use overmind as source of truth
     if mode == "docker" && container_up {
         return match overmind.get(name).map(|s| s.as_str()) {
-            Some("running") => "running".green().to_string(),
-            Some("dead") => "crashed".red().to_string(),
-            Some(other) => other.yellow().to_string(),
-            None => "not in procfile".dimmed().to_string(),
+            Some("running") => ("running".into(), "green".into()),
+            Some("dead") => ("crashed".into(), "red".into()),
+            Some(other) => (other.into(), "yellow".into()),
+            None => ("no proc".into(), "dim".into()),
         };
     }
 
-    // No mode set: check if something is actually listening on the port
-    // but only if the container is NOT running (to avoid false positives
-    // from Docker's static port bindings)
+    // No mode set
     if mode == "-" {
         if let Some(port) = port {
             if !container_up && health::port_is_open(port) {
-                // Something external is using this port
-                return "running (external)".yellow().to_string();
+                return ("external".into(), "yellow".into());
             }
         }
-        return "-".dimmed().to_string();
+        return ("-".into(), "dim".into());
     }
 
     // Local mode (future): probe port
     if let Some(port) = port {
         if health::port_is_open(port) {
-            return "running".green().to_string();
+            return ("running".into(), "green".into());
         }
     }
 
-    "stopped".red().to_string()
+    ("stopped".into(), "red".into())
 }
