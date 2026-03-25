@@ -50,12 +50,12 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
     // Print service table with padding applied before colorization
     println!();
     println!(
-        "  {:<20} {:<10} {:<10} {}",
-        "SERVICE", "MODE", "STATE", "URL"
+        "  {:<20} {:<10} {:<10} URL",
+        "SERVICE", "MODE", "STATE"
     );
     println!(
-        "  {:<20} {:<10} {:<10} {}",
-        "───────", "────", "─────", "───"
+        "  {:<20} {:<10} {:<10} ───",
+        "───────", "────", "─────"
     );
 
     for (name, mode, state_text, state_color, url) in &rows {
@@ -89,7 +89,7 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
     println!("  {:<20} {:<10}", "INFRA", "STATE");
     println!("  {:<20} {:<10}", "─────", "─────");
 
-    for (name, _svc) in &config.infra.services {
+    for name in config.infra.services.keys() {
         let is_up = infra_containers
             .get(name.as_str())
             .is_some_and(|s| s.starts_with("Up"));
@@ -126,20 +126,18 @@ fn determine_service_state(
 
     // No mode set
     if mode == "-" {
-        if let Some(port) = port {
-            if !container_up && health::port_is_open(port) {
+        if let Some(port) = port
+            && !container_up && health::port_is_open(port) {
                 return ("external".into(), "yellow".into());
             }
-        }
         return ("-".into(), "dim".into());
     }
 
     // Local mode (future): probe port
-    if let Some(port) = port {
-        if health::port_is_open(port) {
+    if let Some(port) = port
+        && health::port_is_open(port) {
             return ("running".into(), "green".into());
         }
-    }
 
     ("stopped".into(), "red".into())
 }

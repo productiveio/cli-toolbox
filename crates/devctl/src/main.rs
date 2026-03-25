@@ -23,16 +23,31 @@ enum Commands {
 
     /// Start services
     Start {
-        /// Comma-separated list of services
+        /// Comma-separated list of services (Docker) or single service (local)
         services: String,
 
         /// Run in Docker container
-        #[arg(long)]
+        #[arg(long, conflicts_with_all = ["local"])]
         docker: bool,
+
+        /// Run locally from repos/ (or --dir)
+        #[arg(long, conflicts_with_all = ["docker"])]
+        local: bool,
+
+        /// Service directory override (local mode only)
+        #[arg(long, requires = "local")]
+        dir: Option<String>,
+
+        /// Run in background (local mode only)
+        #[arg(long, requires = "local")]
+        bg: bool,
     },
 
-    /// Stop the Docker dev container
-    Stop,
+    /// Stop services
+    Stop {
+        /// Service name (local mode). Omit to stop Docker container.
+        service: Option<String>,
+    },
 
     /// Restart a service inside the running container
     Restart {
@@ -42,6 +57,12 @@ enum Commands {
 
     /// View logs for a service
     Logs {
+        /// Service name
+        service: String,
+    },
+
+    /// First-time setup for a service (secrets, schema, seeding)
+    Init {
         /// Service name
         service: String,
     },
@@ -87,19 +108,38 @@ fn main() {
         Commands::Start {
             services,
             docker,
+            local,
+            dir,
+            bg,
         } => {
-            let svc_list: Vec<String> = services.split(',').map(|s| s.trim().to_string()).collect();
             if docker {
+                let svc_list: Vec<String> =
+                    services.split(',').map(|s| s.trim().to_string()).collect();
                 commands::start::docker(&cfg, &root, &svc_list)
+            } else if local {
+                commands::local::start(
+                    &cfg,
+                    &root,
+                    &services,
+                    dir.as_deref(),
+                    bg,
+                )
             } else {
                 Err(devctl::error::Error::Other(
-                    "Local mode (--local) not yet implemented. Use --docker.".into(),
+                    "Specify --docker or --local mode.".into(),
                 ))
             }
         }
-        Commands::Stop => commands::stop::run(&cfg, &root),
+        Commands::Stop { service } => {
+            if let Some(svc) = service {
+                commands::local::stop(&root, &svc)
+            } else {
+                commands::stop::run(&cfg, &root)
+            }
+        }
         Commands::Restart { service } => commands::stop::restart_service(&cfg, &service),
         Commands::Logs { service } => commands::logs::run(&cfg, &root, &service),
+        Commands::Init { service } => commands::init::run(&cfg, &root, &service),
         Commands::Infra { action } => match action {
             InfraAction::Up => commands::infra::up(&cfg, &root),
             InfraAction::Down => commands::infra::down(&cfg, &root),
