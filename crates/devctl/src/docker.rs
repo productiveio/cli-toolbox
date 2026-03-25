@@ -218,6 +218,7 @@ services:
       - COREPACK_ENABLE_DOWNLOAD_PROMPT=0
       - COREPACK_ENABLE_AUTO_PIN=0
       - CI=true
+      - PUPPETEER_EXECUTABLE_PATH=/opt/chromium/chrome-linux/chrome
       - PRODUCTIVE_API_BASE_URL=http://api.productive.io.localhost:3000
 {service_urls}
     ports:
