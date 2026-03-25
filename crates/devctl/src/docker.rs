@@ -206,6 +206,7 @@ services:
       - MYSQL_USER=root
       - MYSQL_PASSWORD=
       - REDIS_URL=redis://productive-dev-redis:6379/0
+      - redis_host=productive-dev-redis
       - MEILISEARCH_URL=http://productive-dev-meilisearch:7700
       - MEMCACHE_SERVERS=productive-dev-memcached:11211
       - cache_url=productive-dev-memcached:11211
