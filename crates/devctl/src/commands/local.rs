@@ -8,6 +8,27 @@ use crate::error::{Error, Result};
 use crate::health;
 use crate::state::{ServiceState, State};
 
+/// Build a shell command that initializes runtime version managers and
+/// cd's into the service directory before running the actual command.
+/// This ensures rbenv/nvm detect .ruby-version/.node-version/.nvmrc.
+fn shell_cmd(svc_dir: &Path, cmd: &str) -> String {
+    let mut parts = Vec::new();
+
+    // rbenv init puts shims first in PATH (needed for .ruby-version detection)
+    if svc_dir.join(".ruby-version").exists() {
+        parts.push("eval \"$(rbenv init - bash)\" 2>/dev/null".to_string());
+    }
+
+    // nvm init for .node-version/.nvmrc detection
+    if svc_dir.join(".node-version").exists() || svc_dir.join(".nvmrc").exists() {
+        parts.push("export NVM_DIR=\"$HOME/.nvm\" && [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\" 2>/dev/null".to_string());
+    }
+
+    parts.push(format!("cd {}", svc_dir.display()));
+    parts.push(cmd.to_string());
+    parts.join(" && ")
+}
+
 pub fn start(
     config: &Config,
     project_root: &Path,
@@ -30,9 +51,14 @@ pub fn start(
         .as_deref()
         .ok_or_else(|| Error::Config(format!("Service '{}' has no repo defined", service)))?;
 
-    // Determine service directory
+    // Determine service directory (--dir paths resolved relative to project root)
     let svc_dir: PathBuf = if let Some(dir) = dir_override {
-        PathBuf::from(dir)
+        let p = PathBuf::from(dir);
+        if p.is_absolute() {
+            p
+        } else {
+            project_root.join(p)
+        }
     } else {
         project_root.join("repos").join(repo)
     };
@@ -93,10 +119,8 @@ pub fn start(
 
             // git restore: clean up generated files after migrations
             if step.starts_with("git restore") {
-                let status = Command::new("bash")
-                    .args(["-lc", step])
-                    .current_dir(&svc_dir)
-                    .status()?;
+                let cmd = shell_cmd(&svc_dir, step);
+                let status = Command::new("bash").args(["-lc", &cmd]).status()?;
                 if !status.success() {
                     println!("  {} {} (non-fatal)", "!".yellow(), step);
                 }
@@ -104,10 +128,9 @@ pub fn start(
             }
 
             println!("  {}", step);
-            let status = Command::new("bash")
-                .args(["-lc", step])
-                .current_dir(&svc_dir)
-                .status()?;
+            // Explicit cd so rbenv/nvm detect .ruby-version/.node-version
+            let cmd = shell_cmd(&svc_dir, step);
+            let status = Command::new("bash").args(["-lc", &cmd]).status()?;
 
             if !status.success() {
                 return Err(Error::Other(format!("Setup step failed: {}", step)));
@@ -139,9 +162,9 @@ pub fn start(
             log_file.display()
         );
 
+        let full_cmd = shell_cmd(&svc_dir, cmd);
         let child = Command::new("bash")
-            .args(["-lc", cmd])
-            .current_dir(&svc_dir)
+            .args(["-lc", &full_cmd])
             .stdout(log.try_clone()?)
             .stderr(log)
             .spawn()?;
@@ -184,10 +207,8 @@ pub fn start(
         );
         state.save(project_root)?;
 
-        let status = Command::new("bash")
-            .args(["-lc", cmd])
-            .current_dir(&svc_dir)
-            .status()?;
+        let full_cmd = shell_cmd(&svc_dir, cmd);
+        let status = Command::new("bash").args(["-lc", &full_cmd]).status()?;
 
         // Clean up state after exit
         let mut state = State::load(project_root)?;
