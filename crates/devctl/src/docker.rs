@@ -170,28 +170,23 @@ pub fn start_container(
     config: &Config,
     project_root: &Path,
     services: &[String],
-    skip_setup: bool,
 ) -> Result<()> {
     let compose_file = project_root.join(&config.docker.compose_file);
 
     let selected_repos = services.join(",");
 
-    let mut cmd = Command::new("docker");
-    cmd.args([
-        "compose",
-        "-p",
-        &config.docker.compose_project,
-        "-f",
-        &compose_file.to_string_lossy(),
-        "up",
-        "-d",
-    ]);
-    cmd.env("SELECTED_REPOS", &selected_repos);
-    if skip_setup {
-        cmd.env("SKIP_SETUP", "true");
-    }
-
-    let status = cmd.status()?;
+    let status = Command::new("docker")
+        .args([
+            "compose",
+            "-p",
+            &config.docker.compose_project,
+            "-f",
+            &compose_file.to_string_lossy(),
+            "up",
+            "-d",
+        ])
+        .env("SELECTED_REPOS", &selected_repos)
+        .status()?;
     if !status.success() {
         return Err(Error::Other("Failed to start dev container".into()));
     }

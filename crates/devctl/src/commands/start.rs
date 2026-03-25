@@ -12,7 +12,6 @@ pub fn docker(
     config: &Config,
     project_root: &Path,
     services: &[String],
-    skip_setup: bool,
 ) -> Result<()> {
     // --- Prerequisite: Docker running ---
     if !health::docker_is_running() {
@@ -142,7 +141,7 @@ pub fn docker(
 
     // --- Start container ---
     println!("{}", "Starting container...".blue());
-    docker::start_container(config, project_root, services, skip_setup)?;
+    docker::start_container(config, project_root, services)?;
 
     // --- Wait for healthy ---
     print!("{}", "Waiting for container to be ready".blue());

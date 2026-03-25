@@ -29,10 +29,6 @@ enum Commands {
         /// Run in Docker container
         #[arg(long)]
         docker: bool,
-
-        /// Skip dependency install and DB setup
-        #[arg(long)]
-        skip_setup: bool,
     },
 
     /// Stop the Docker dev container
@@ -91,11 +87,10 @@ fn main() {
         Commands::Start {
             services,
             docker,
-            skip_setup,
         } => {
             let svc_list: Vec<String> = services.split(',').map(|s| s.trim().to_string()).collect();
             if docker {
-                commands::start::docker(&cfg, &root, &svc_list, skip_setup)
+                commands::start::docker(&cfg, &root, &svc_list)
             } else {
                 Err(devctl::error::Error::Other(
                     "Local mode (--local) not yet implemented. Use --docker.".into(),
