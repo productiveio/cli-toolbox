@@ -491,4 +491,70 @@ pub struct Feature {
     pub queue_item_count: Option<u64>,
 }
 
+// --- Flags ---
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FlagInfo {
+    pub flag_name: String,
+    pub trace_count: u64,
+    #[serde(default)]
+    pub first_seen: Option<String>,
+    #[serde(default)]
+    pub last_seen: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CohortStats {
+    pub trace_count: u64,
+    #[serde(default)]
+    pub cost: Option<CohortCost>,
+    #[serde(default)]
+    pub latency_ms: Option<CohortLatency>,
+    #[serde(default)]
+    pub errors: Option<u64>,
+    #[serde(default)]
+    pub tokens: Option<CohortTokens>,
+    #[serde(default)]
+    pub tool_calls: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CohortCost {
+    #[serde(default)]
+    pub total: f64,
+    #[serde(default)]
+    pub avg: f64,
+    #[serde(default)]
+    pub p_50: f64,
+    #[serde(default)]
+    pub p_95: f64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CohortLatency {
+    #[serde(default)]
+    pub avg: f64,
+    #[serde(default)]
+    pub p_50: f64,
+    #[serde(default)]
+    pub p_95: f64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CohortTokens {
+    #[serde(default)]
+    pub input: u64,
+    #[serde(default)]
+    pub output: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FlagStatsResponse {
+    pub flag_name: String,
+    pub from: String,
+    pub to: String,
+    pub on: CohortStats,
+    pub off: CohortStats,
+}
+
 // --- Tags ---
