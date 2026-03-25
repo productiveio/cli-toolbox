@@ -10,11 +10,7 @@ const DEFAULT_NODE: &str = "22.16.0";
 
 /// Generate a Procfile for overmind from the selected services.
 /// Writes to `.docker-sessions/.dev/Procfile.dev`.
-pub fn generate_procfile(
-    config: &Config,
-    services: &[String],
-    project_root: &Path,
-) -> Result<()> {
+pub fn generate_procfile(config: &Config, services: &[String], project_root: &Path) -> Result<()> {
     let procfile_dir = project_root.join(".docker-sessions/.dev");
     std::fs::create_dir_all(&procfile_dir)?;
     let procfile_path = procfile_dir.join("Procfile.dev");
@@ -22,9 +18,10 @@ pub fn generate_procfile(
     let mut lines = Vec::new();
 
     for svc_name in services {
-        let svc = config.services.get(svc_name).ok_or_else(|| {
-            Error::Config(format!("Unknown service: {}", svc_name))
-        })?;
+        let svc = config
+            .services
+            .get(svc_name)
+            .ok_or_else(|| Error::Config(format!("Unknown service: {}", svc_name)))?;
 
         if let Some(entry) = procfile_entry(svc_name, svc, project_root) {
             lines.push(entry);
@@ -33,9 +30,10 @@ pub fn generate_procfile(
         // Add companion (e.g., sidekiq for api)
         if let Some(companion) = &svc.companion
             && let Some(comp_svc) = config.services.get(companion)
-                && let Some(entry) = procfile_entry(companion, comp_svc, project_root) {
-                    lines.push(entry);
-                }
+            && let Some(entry) = procfile_entry(companion, comp_svc, project_root)
+        {
+            lines.push(entry);
+        }
     }
 
     std::fs::write(&procfile_path, lines.join("\n") + "\n")?;
@@ -43,11 +41,7 @@ pub fn generate_procfile(
 }
 
 /// Build a single Procfile entry, with runtime version wrappers if needed.
-fn procfile_entry(
-    name: &str,
-    svc: &ServiceConfig,
-    project_root: &Path,
-) -> Option<String> {
+fn procfile_entry(name: &str, svc: &ServiceConfig, project_root: &Path) -> Option<String> {
     let repo = svc.repo.as_deref()?;
     let cmd = svc.cmd.as_deref()?;
 
@@ -57,19 +51,24 @@ fn procfile_entry(
     // Check if repo needs a different Ruby version
     let ruby_version_file = repos_dir.join(repo).join(".ruby-version");
     if ruby_version_file.exists()
-        && let Ok(version) = std::fs::read_to_string(&ruby_version_file) {
-            let version = version.trim();
-            if version != DEFAULT_RUBY {
-                wrapper.push_str(&format!("rvm use {} && ", version));
-            }
+        && let Ok(version) = std::fs::read_to_string(&ruby_version_file)
+    {
+        let version = version.trim();
+        if version != DEFAULT_RUBY {
+            wrapper.push_str(&format!("rvm use {} && ", version));
         }
+    }
 
     // Check if repo needs a different Node version
     let node_version = read_node_version(&repos_dir.join(repo));
     if let Some(version) = node_version
-        && version != DEFAULT_NODE {
-            wrapper.push_str(&format!(". /usr/local/nvm/nvm.sh && nvm use {} && ", version));
-        }
+        && version != DEFAULT_NODE
+    {
+        wrapper.push_str(&format!(
+            ". /usr/local/nvm/nvm.sh && nvm use {} && ",
+            version
+        ));
+    }
 
     let full_cmd = if wrapper.is_empty() {
         format!("{}: cd /workspace/{} && {}", name, repo, cmd)
@@ -88,9 +87,10 @@ fn read_node_version(repo_path: &Path) -> Option<String> {
     for filename in &[".node-version", ".nvmrc"] {
         let path = repo_path.join(filename);
         if path.exists()
-            && let Ok(version) = std::fs::read_to_string(&path) {
-                return Some(version.trim().to_string());
-            }
+            && let Ok(version) = std::fs::read_to_string(&path)
+        {
+            return Some(version.trim().to_string());
+        }
     }
     None
 }
@@ -101,12 +101,7 @@ pub fn overmind_status(config: &Config) -> std::collections::BTreeMap<String, St
     let mut result = std::collections::BTreeMap::new();
 
     let output = Command::new("docker")
-        .args([
-            "exec",
-            &config.docker.container,
-            "overmind",
-            "status",
-        ])
+        .args(["exec", &config.docker.container, "overmind", "status"])
         .output();
 
     let Ok(output) = output else {
@@ -152,20 +147,23 @@ pub fn generate_compose(
                 ports.push(port);
             }
             if let Some(repo) = &svc.repo
-                && !selected_repos.contains(repo) {
-                    selected_repos.push(repo.clone());
-                }
+                && !selected_repos.contains(repo)
+            {
+                selected_repos.push(repo.clone());
+            }
             // Include companion
             if let Some(companion) = &svc.companion
-                && let Some(comp) = config.services.get(companion) {
-                    if let Some(port) = comp.port {
-                        ports.push(port);
-                    }
-                    if let Some(repo) = &comp.repo
-                        && !selected_repos.contains(repo) {
-                            selected_repos.push(repo.clone());
-                        }
+                && let Some(comp) = config.services.get(companion)
+            {
+                if let Some(port) = comp.port {
+                    ports.push(port);
                 }
+                if let Some(repo) = &comp.repo
+                    && !selected_repos.contains(repo)
+                {
+                    selected_repos.push(repo.clone());
+                }
+            }
         }
     }
 
@@ -174,14 +172,8 @@ pub fn generate_compose(
     let mut service_urls = Vec::new();
     for (name, svc) in &config.services {
         if let (Some(hostname), Some(port)) = (&svc.hostname, svc.port) {
-            let env_key = format!(
-                "{}_SERVICE_URL",
-                name.to_uppercase().replace('-', "_")
-            );
-            service_urls.push(format!(
-                "      - {}=http://{}:{}",
-                env_key, hostname, port
-            ));
+            let env_key = format!("{}_SERVICE_URL", name.to_uppercase().replace('-', "_"));
+            service_urls.push(format!("      - {}=http://{}:{}", env_key, hostname, port));
         }
     }
 
@@ -338,16 +330,11 @@ pub fn stop_container(config: &Config, project_root: &Path) -> Result<()> {
 }
 
 fn generated_compose_path(project_root: &Path) -> std::path::PathBuf {
-    project_root
-        .join(".docker-sessions/.dev/docker-compose.yml")
+    project_root.join(".docker-sessions/.dev/docker-compose.yml")
 }
 
 /// Start the dev container using the generated compose file.
-pub fn start_container(
-    config: &Config,
-    project_root: &Path,
-    services: &[String],
-) -> Result<()> {
+pub fn start_container(config: &Config, project_root: &Path, services: &[String]) -> Result<()> {
     // Generate compose with only the needed ports
     let compose_file = generate_compose(config, services, project_root)?;
 

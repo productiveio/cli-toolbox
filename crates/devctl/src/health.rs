@@ -29,13 +29,24 @@ pub fn caddy_is_running() -> bool {
 /// Check if the shared infrastructure is running.
 pub fn infra_is_running(config: &crate::config::Config, project_root: &std::path::Path) -> bool {
     let compose_file = project_root.join(&config.infra.compose_file);
-    compose_is_running(&config.infra.compose_project, &compose_file.to_string_lossy())
+    compose_is_running(
+        &config.infra.compose_project,
+        &compose_file.to_string_lossy(),
+    )
 }
 
 /// Check if a Docker compose project has running containers.
 pub fn compose_is_running(project: &str, compose_file: &str) -> bool {
     Command::new("docker")
-        .args(["compose", "-p", project, "-f", compose_file, "ps", "--quiet"])
+        .args([
+            "compose",
+            "-p",
+            project,
+            "-f",
+            compose_file,
+            "ps",
+            "--quiet",
+        ])
         .output()
         .is_ok_and(|o| !o.stdout.is_empty())
 }
@@ -134,9 +145,10 @@ fn sso_session_remaining() -> Option<std::time::Duration> {
                 // Parse expiresAt from JSON
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
                     && let Some(expires_at) = json.get("expiresAt").and_then(|v| v.as_str())
-                        && let Ok(dt) = expires_at.parse::<chrono::DateTime<chrono::Utc>>() {
-                            newest_expiry = Some(dt);
-                        }
+                    && let Ok(dt) = expires_at.parse::<chrono::DateTime<chrono::Utc>>()
+                {
+                    newest_expiry = Some(dt);
+                }
             }
         }
     }

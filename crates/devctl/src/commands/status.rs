@@ -63,14 +63,8 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
 
     // Print service table with padding applied before colorization
     println!();
-    println!(
-        "  {:<20} {:<10} {:<10} URL",
-        "SERVICE", "MODE", "STATE"
-    );
-    println!(
-        "  {:<20} {:<10} {:<10} ───",
-        "───────", "────", "─────"
-    );
+    println!("  {:<20} {:<10} {:<10} URL", "SERVICE", "MODE", "STATE");
+    println!("  {:<20} {:<10} {:<10} ───", "───────", "────", "─────");
 
     for (name, mode, state_text, state_color, url) in &rows {
         let padded_state = format!("{:<10}", state_text);
@@ -138,17 +132,20 @@ fn determine_service_state(
     // No mode set
     if mode == "-" {
         if let Some(port) = port
-            && !container_up && health::port_is_open(port) {
-                return ("external".into(), "yellow".into());
-            }
+            && !container_up
+            && health::port_is_open(port)
+        {
+            return ("external".into(), "yellow".into());
+        }
         return ("-".into(), "dim".into());
     }
 
     // Local mode (future): probe port
     if let Some(port) = port
-        && health::port_is_open(port) {
-            return ("running".into(), "green".into());
-        }
+        && health::port_is_open(port)
+    {
+        return ("running".into(), "green".into());
+    }
 
     ("stopped".into(), "red".into())
 }

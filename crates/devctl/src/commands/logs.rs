@@ -32,9 +32,7 @@ pub fn run(config: &Config, project_root: &Path, service: &str) -> Result<()> {
 
     // App services → overmind tmux pane capture (non-interactive)
     if !docker::container_is_running(config) {
-        return Err(Error::Other(
-            "Dev container is not running.".into(),
-        ));
+        return Err(Error::Other("Dev container is not running.".into()));
     }
 
     // Find the overmind tmux socket
@@ -52,9 +50,7 @@ pub fn run(config: &Config, project_root: &Path, service: &str) -> Result<()> {
 
     let socket = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if socket.is_empty() {
-        return Err(Error::Other(
-            "Overmind not running in container.".into(),
-        ));
+        return Err(Error::Other("Overmind not running in container.".into()));
     }
 
     // Capture last 100 lines from tmux pane

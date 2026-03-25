@@ -35,7 +35,13 @@ pub fn restart_service(config: &Config, service: &str) -> Result<()> {
 
     println!("Restarting {}...", service.bold());
     let status = std::process::Command::new("docker")
-        .args(["exec", &config.docker.container, "overmind", "restart", service])
+        .args([
+            "exec",
+            &config.docker.container,
+            "overmind",
+            "restart",
+            service,
+        ])
         .status()?;
 
     if !status.success() {

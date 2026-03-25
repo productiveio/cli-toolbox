@@ -9,7 +9,9 @@ use crate::health;
 
 pub fn up(config: &Config, project_root: &Path) -> Result<()> {
     if !health::docker_is_running() {
-        return Err(Error::Other("Docker is not running. Start Docker Desktop first.".into()));
+        return Err(Error::Other(
+            "Docker is not running. Start Docker Desktop first.".into(),
+        ));
     }
 
     let compose_file = project_root.join(&config.infra.compose_file);

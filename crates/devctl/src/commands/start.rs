@@ -8,11 +8,7 @@ use crate::error::{Error, Result};
 use crate::health;
 use crate::state::{ServiceState, State};
 
-pub fn docker(
-    config: &Config,
-    project_root: &Path,
-    services: &[String],
-) -> Result<()> {
+pub fn docker(config: &Config, project_root: &Path, services: &[String]) -> Result<()> {
     // --- Prerequisite: Docker running ---
     if !health::docker_is_running() {
         return Err(Error::Other(
@@ -42,27 +38,32 @@ pub fn docker(
     for svc_name in services {
         let svc = &config.services[svc_name];
         if let Some(port) = svc.port
-            && health::port_is_open(port) {
-                let owner = health::port_owner(port)
-                    .map(|(pid, cmd)| format!("{} (PID {})", cmd, pid))
-                    .unwrap_or_else(|| "unknown".into());
-                conflicts.push(format!("  {} (port {}) — occupied by {}", svc_name, port, owner));
-            }
+            && health::port_is_open(port)
+        {
+            let owner = health::port_owner(port)
+                .map(|(pid, cmd)| format!("{} (PID {})", cmd, pid))
+                .unwrap_or_else(|| "unknown".into());
+            conflicts.push(format!(
+                "  {} (port {}) — occupied by {}",
+                svc_name, port, owner
+            ));
+        }
     }
     // Also check companion ports
     for svc_name in services {
         if let Some(companion) = &config.services[svc_name].companion
             && let Some(comp_svc) = config.services.get(companion)
-                && let Some(port) = comp_svc.port
-                    && health::port_is_open(port) {
-                        let owner = health::port_owner(port)
-                            .map(|(pid, cmd)| format!("{} (PID {})", cmd, pid))
-                            .unwrap_or_else(|| "unknown".into());
-                        conflicts.push(format!(
-                            "  {} (port {}) — occupied by {}",
-                            companion, port, owner
-                        ));
-                    }
+            && let Some(port) = comp_svc.port
+            && health::port_is_open(port)
+        {
+            let owner = health::port_owner(port)
+                .map(|(pid, cmd)| format!("{} (PID {})", cmd, pid))
+                .unwrap_or_else(|| "unknown".into());
+            conflicts.push(format!(
+                "  {} (port {}) — occupied by {}",
+                companion, port, owner
+            ));
+        }
     }
     if !conflicts.is_empty() {
         eprintln!("{}", "Port conflicts detected:".red());
@@ -80,12 +81,13 @@ pub fn docker(
     for svc_name in services {
         let svc = &config.services[svc_name];
         if let Some(repo) = &svc.repo
-            && !repos_dir.join(repo).exists() {
-                return Err(Error::Config(format!(
-                    "Repo not cloned: repos/{}. Run: git clone https://github.com/productiveio/{}.git repos/{}",
-                    repo, repo, repo
-                )));
-            }
+            && !repos_dir.join(repo).exists()
+        {
+            return Err(Error::Config(format!(
+                "Repo not cloned: repos/{}. Run: git clone https://github.com/productiveio/{}.git repos/{}",
+                repo, repo, repo
+            )));
+        }
     }
 
     // --- Check secrets ---
@@ -113,9 +115,9 @@ pub fn docker(
     }
 
     // --- Auto-start infra if needed ---
-    let infra_needed = services.iter().any(|svc_name| {
-        !config.services[svc_name].infra.is_empty()
-    });
+    let infra_needed = services
+        .iter()
+        .any(|svc_name| !config.services[svc_name].infra.is_empty());
 
     if infra_needed {
         if !health::infra_is_running(config, project_root) {
@@ -163,7 +165,9 @@ pub fn docker(
                 ServiceState {
                     mode: "docker".into(),
                     started_at: now.clone(),
-                    dir: config.services.get(companion)
+                    dir: config
+                        .services
+                        .get(companion)
                         .and_then(|s| s.repo.as_ref())
                         .map(|r| format!("repos/{}", r)),
                     pid: None,
@@ -226,11 +230,17 @@ fn capture_env(project_root: &Path) -> Result<()> {
     let aws_region = std::env::var("AWS_DEFAULT_REGION").unwrap_or_else(|_| "eu-central-1".into());
     lines.push(format!("AWS_DEFAULT_REGION={}", aws_region));
 
-    for var in &["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_PROFILE"] {
+    for var in &[
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_PROFILE",
+    ] {
         if let Ok(val) = std::env::var(var)
-            && !val.is_empty() {
-                lines.push(format!("{}={}", var, val));
-            }
+            && !val.is_empty()
+        {
+            lines.push(format!("{}={}", var, val));
+        }
     }
 
     std::fs::write(&env_file, lines.join("\n") + "\n")?;

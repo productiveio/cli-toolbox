@@ -24,10 +24,7 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
     if caddy_ok {
         println!("  {} Caddy (localhost:2019)", "✓".green());
     } else {
-        println!(
-            "  {} Caddy — not responding on localhost:2019",
-            "✗".red()
-        );
+        println!("  {} Caddy — not responding on localhost:2019", "✗".red());
         println!("      Run: ./scripts/setup-caddy.sh");
         issues += 1;
     }
@@ -95,12 +92,7 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
         if svc_issues.is_empty() {
             println!("  {} {}", "✓".green(), name);
         } else {
-            println!(
-                "  {} {} — {}",
-                "✗".red(),
-                name,
-                svc_issues.join(", ")
-            );
+            println!("  {} {} — {}", "✗".red(), name, svc_issues.join(", "));
             issues += 1;
         }
     }
@@ -110,11 +102,7 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
     if issues == 0 {
         println!("{}", "Everything looks good!".green().bold());
     } else {
-        println!(
-            "{} {} issue(s) found.",
-            "!".yellow().bold(),
-            issues
-        );
+        println!("{} {} issue(s) found.", "!".yellow().bold(), issues);
     }
 
     Ok(())

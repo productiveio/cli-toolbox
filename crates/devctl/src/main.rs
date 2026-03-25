@@ -91,7 +91,11 @@ fn main() {
     let cli = Cli::parse();
 
     let cwd = env::current_dir().unwrap_or_else(|e| {
-        eprintln!("{} Cannot determine current directory: {}", "Error:".red().bold(), e);
+        eprintln!(
+            "{} Cannot determine current directory: {}",
+            "Error:".red().bold(),
+            e
+        );
         std::process::exit(1);
     });
 
@@ -117,13 +121,7 @@ fn main() {
                     services.split(',').map(|s| s.trim().to_string()).collect();
                 commands::start::docker(&cfg, &root, &svc_list)
             } else if local {
-                commands::local::start(
-                    &cfg,
-                    &root,
-                    &services,
-                    dir.as_deref(),
-                    bg,
-                )
+                commands::local::start(&cfg, &root, &services, dir.as_deref(), bg)
             } else {
                 Err(devctl::error::Error::Other(
                     "Specify --docker or --local mode.".into(),

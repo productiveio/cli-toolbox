@@ -15,17 +15,20 @@ pub fn start(
     dir_override: Option<&str>,
     background: bool,
 ) -> Result<()> {
-    let svc = config.services.get(service).ok_or_else(|| {
-        Error::Config(format!("Unknown service: '{}'", service))
-    })?;
+    let svc = config
+        .services
+        .get(service)
+        .ok_or_else(|| Error::Config(format!("Unknown service: '{}'", service)))?;
 
-    let cmd = svc.cmd.as_deref().ok_or_else(|| {
-        Error::Config(format!("Service '{}' has no cmd defined", service))
-    })?;
+    let cmd = svc
+        .cmd
+        .as_deref()
+        .ok_or_else(|| Error::Config(format!("Service '{}' has no cmd defined", service)))?;
 
-    let repo = svc.repo.as_deref().ok_or_else(|| {
-        Error::Config(format!("Service '{}' has no repo defined", service))
-    })?;
+    let repo = svc
+        .repo
+        .as_deref()
+        .ok_or_else(|| Error::Config(format!("Service '{}' has no repo defined", service)))?;
 
     // Determine service directory
     let svc_dir: PathBuf = if let Some(dir) = dir_override {
@@ -43,15 +46,16 @@ pub fn start(
 
     // Check port conflicts
     if let Some(port) = svc.port
-        && health::port_is_open(port) {
-            let owner = health::port_owner(port)
-                .map(|(pid, cmd)| format!("{} (PID {})", cmd, pid))
-                .unwrap_or_else(|| "unknown".into());
-            return Err(Error::Other(format!(
-                "Port {} is already in use by {}",
-                port, owner
-            )));
-        }
+        && health::port_is_open(port)
+    {
+        let owner = health::port_owner(port)
+            .map(|(pid, cmd)| format!("{} (PID {})", cmd, pid))
+            .unwrap_or_else(|| "unknown".into());
+        return Err(Error::Other(format!(
+            "Port {} is already in use by {}",
+            port, owner
+        )));
+    }
 
     // Check secrets
     for secret in &svc.secrets {
@@ -66,11 +70,10 @@ pub fn start(
     }
 
     // Auto-start infra if needed
-    if !svc.infra.is_empty()
-        && !health::infra_is_running(config, project_root) {
-            println!("{}", "Starting infrastructure...".blue());
-            crate::commands::infra::up(config, project_root)?;
-        }
+    if !svc.infra.is_empty() && !health::infra_is_running(config, project_root) {
+        println!("{}", "Starting infrastructure...".blue());
+        crate::commands::infra::up(config, project_root)?;
+    }
 
     // Run start steps (git pull, deps, migrate)
     if !svc.start.is_empty() {
@@ -207,9 +210,10 @@ pub fn start(
 pub fn stop(project_root: &Path, service: &str) -> Result<()> {
     let mut state = State::load(project_root)?;
 
-    let svc_state = state.services.get(service).ok_or_else(|| {
-        Error::Other(format!("Service '{}' is not tracked in state", service))
-    })?;
+    let svc_state = state
+        .services
+        .get(service)
+        .ok_or_else(|| Error::Other(format!("Service '{}' is not tracked in state", service)))?;
 
     if svc_state.mode != "local" {
         return Err(Error::Other(format!(
@@ -220,9 +224,7 @@ pub fn stop(project_root: &Path, service: &str) -> Result<()> {
 
     if let Some(pid) = svc_state.pid {
         println!("Stopping {} (PID {})...", service, pid);
-        let _ = Command::new("kill")
-            .arg(pid.to_string())
-            .status();
+        let _ = Command::new("kill").arg(pid.to_string()).status();
         std::thread::sleep(std::time::Duration::from_secs(2));
         println!("{} stopped.", service.green());
     } else {
