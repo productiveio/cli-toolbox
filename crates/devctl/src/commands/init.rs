@@ -45,12 +45,10 @@ pub fn run(config: &Config, project_root: &Path, service: &str) -> Result<()> {
         );
 
         if container_up {
-            // Run inside Docker container
+            // Run inside Docker container as root (needed for gem/package installs)
             let status = Command::new("docker")
                 .args([
                     "exec",
-                    "-u",
-                    "dev",
                     "-w",
                     &format!("/workspace/{}", repo),
                     &config.docker.container,
