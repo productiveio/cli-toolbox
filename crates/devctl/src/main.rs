@@ -9,6 +9,7 @@ use devctl::config;
 #[derive(Parser)]
 #[command(
     name = "devctl",
+    version,
     about = "Local dev environment orchestrator for Productive services"
 )]
 struct Cli {
@@ -23,8 +24,12 @@ enum Commands {
 
     /// Start services
     Start {
-        /// Comma-separated list of services (Docker) or single service (local)
-        services: String,
+        /// Comma-separated list of services, or omit when using --preset
+        services: Option<String>,
+
+        /// Use a named preset from devctl.toml
+        #[arg(long)]
+        preset: Option<String>,
 
         /// Run in Docker container
         #[arg(long, conflicts_with_all = ["local"])]
@@ -111,20 +116,29 @@ fn main() {
         Commands::Status => commands::status::run(&cfg, &root),
         Commands::Start {
             services,
+            preset,
             docker,
             local,
             dir,
             bg,
         } => {
-            if docker {
-                let svc_list: Vec<String> =
-                    services.split(',').map(|s| s.trim().to_string()).collect();
-                commands::start::docker(&cfg, &root, &svc_list)
-            } else if local {
-                commands::local::start(&cfg, &root, &services, dir.as_deref(), bg)
+            if let Some(preset_name) = preset {
+                commands::preset::run(&cfg, &root, &preset_name)
+            } else if let Some(services) = services {
+                if docker {
+                    let svc_list: Vec<String> =
+                        services.split(',').map(|s| s.trim().to_string()).collect();
+                    commands::start::docker(&cfg, &root, &svc_list)
+                } else if local {
+                    commands::local::start(&cfg, &root, &services, dir.as_deref(), bg)
+                } else {
+                    Err(devctl::error::Error::Other(
+                        "Specify --docker or --local mode.".into(),
+                    ))
+                }
             } else {
                 Err(devctl::error::Error::Other(
-                    "Specify --docker or --local mode.".into(),
+                    "Specify services or --preset.".into(),
                 ))
             }
         }

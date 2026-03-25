@@ -10,7 +10,20 @@ pub struct Config {
     pub infra: InfraConfig,
     pub docker: DockerConfig,
     #[serde(default)]
+    pub presets: BTreeMap<String, PresetConfig>,
+    #[serde(default)]
     pub services: BTreeMap<String, ServiceConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PresetConfig {
+    #[serde(default)]
+    pub description: Option<String>,
+    pub services: Vec<String>,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
