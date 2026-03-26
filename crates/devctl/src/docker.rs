@@ -185,11 +185,11 @@ pub fn generate_compose(
             for (key, val) in svc.env.iter().chain(svc.env_docker.iter()) {
                 service_env_lines.push(format!("      - {}={}", key, val));
             }
-            if let Some(companion) = &svc.companion {
-                if let Some(comp) = config.services.get(companion) {
-                    for (key, val) in comp.env.iter().chain(comp.env_docker.iter()) {
-                        service_env_lines.push(format!("      - {}={}", key, val));
-                    }
+            if let Some(companion) = &svc.companion
+                && let Some(comp) = config.services.get(companion)
+            {
+                for (key, val) in comp.env.iter().chain(comp.env_docker.iter()) {
+                    service_env_lines.push(format!("      - {}={}", key, val));
                 }
             }
         }
