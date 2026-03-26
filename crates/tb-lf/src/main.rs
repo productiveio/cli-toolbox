@@ -392,6 +392,48 @@ enum Commands {
         #[command(subcommand)]
         action: toolbox_core::skill::SkillAction,
     },
+    /// List feature flags seen in traces
+    #[command(after_help = "Examples:\n  tb-lf flags\n  tb-lf flags --json")]
+    Flags,
+    /// Compare cohort stats for a feature flag (ON vs OFF)
+    #[command(
+        name = "flag-cohort",
+        after_help = "Examples:\n  tb-lf flag-cohort aiAgentLazyOutput --from 7d\n  tb-lf flag-cohort aiAgentLazyOutput --from 2026-03-20 --to 2026-03-25\n  tb-lf flag-cohort aiAgentLazyOutput --from 7d --name agent-generation\n  tb-lf flag-cohort aiAgentLazyOutput --from 7d --json"
+    )]
+    FlagCohort {
+        /// Flag name to compare
+        flag_name: String,
+        /// Filter by trace name
+        #[arg(long)]
+        name: Option<String>,
+        /// Filter by environment
+        #[arg(long)]
+        env: Option<String>,
+        #[command(flatten)]
+        time: TimeRange,
+    },
+    /// Download trace summaries for a flag cohort as JSON
+    #[command(
+        name = "flag-traces",
+        after_help = "Examples:\n  tb-lf flag-traces aiAgentLazyOutput --from 7d\n  tb-lf flag-traces aiAgentLazyOutput --value false --from 7d\n  tb-lf flag-traces aiAgentLazyOutput --from 7d --name agent-generation"
+    )]
+    FlagTraces {
+        /// Flag name to filter by
+        flag_name: String,
+        /// Flag value to filter (default: true)
+        #[arg(long, default_value = "true")]
+        value: String,
+        /// Filter by trace name
+        #[arg(long)]
+        name: Option<String>,
+        /// Filter by environment
+        #[arg(long)]
+        env: Option<String>,
+        #[command(flatten)]
+        time: TimeRange,
+        #[command(flatten)]
+        pagination: Pagination,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -2438,6 +2480,201 @@ async fn run() -> tb_lf::error::Result<()> {
             };
             println!("  {:<10} {} files, {}", "Cache:", count, size_str);
             toolbox_core::version_check::print_update_hint("tb-lf", env!("CARGO_PKG_VERSION"));
+        }
+
+        Commands::Flags => {
+            let path = DevPortalClient::build_path("/flags", &[("project_id", pid)]);
+            let resp: serde_json::Value = client.get(&path, CacheTtl::Short).await?;
+            let flags: Vec<FlagInfo> =
+                serde_json::from_value(resp["data"].clone()).unwrap_or_default();
+
+            if cli.json {
+                println!("{}", output::render_json(&flags));
+                return Ok(());
+            }
+
+            if flags.is_empty() {
+                println!(
+                    "{}",
+                    output::empty_hint(
+                        "flags",
+                        "No flags found. Flags are extracted during trace sync."
+                    )
+                );
+                return Ok(());
+            }
+
+            println!("{}\n", "Flags".bold());
+            for f in &flags {
+                let first = f
+                    .first_seen
+                    .as_deref()
+                    .and_then(|s| s.get(..10))
+                    .unwrap_or("?");
+                let last = f
+                    .last_seen
+                    .as_deref()
+                    .and_then(|s| s.get(..10))
+                    .unwrap_or("?");
+                println!(
+                    "  {:<45} {:>6} traces  {} → {}",
+                    f.flag_name.cyan(),
+                    f.trace_count,
+                    first.dimmed(),
+                    last.dimmed()
+                );
+            }
+            println!("\n  {} flags total.\n", flags.len());
+        }
+
+        Commands::FlagCohort {
+            flag_name,
+            name,
+            env,
+            time,
+        } => {
+            let mut params: Vec<(&str, Option<String>)> = vec![
+                ("project_id", pid),
+                ("flag_name", Some(flag_name.clone())),
+                ("name", name),
+                ("environment", env),
+            ];
+            time.push_date_params_inclusive_or_exit(&mut params);
+            let path = DevPortalClient::build_path("/traces/flag_stats", &params);
+            let resp: FlagStatsResponse = client.get(&path, CacheTtl::Short).await?;
+
+            if cli.json {
+                println!("{}", output::render_json(&resp));
+                return Ok(());
+            }
+
+            println!("{} {}\n", "Flag Cohort:".bold(), flag_name.cyan());
+            println!("  Period: {} → {}", resp.from, resp.to);
+            println!();
+
+            fn print_cohort(label: &str, s: &CohortStats) {
+                println!("  {} ({} traces)", label.bold(), s.trace_count);
+                if let Some(ref c) = s.cost {
+                    println!(
+                        "    Cost:    total {} | avg {} | p50 {} | p95 {}",
+                        output::fmt_cost(c.total),
+                        output::fmt_cost(c.avg),
+                        output::fmt_cost(c.p_50),
+                        output::fmt_cost(c.p_95)
+                    );
+                }
+                if let Some(ref l) = s.latency_ms {
+                    println!(
+                        "    Latency: avg {:.0}ms | p50 {:.0}ms | p95 {:.0}ms",
+                        l.avg, l.p_50, l.p_95
+                    );
+                }
+                if let Some(errors) = s.errors {
+                    println!("    Errors:  {}", errors);
+                }
+                if let Some(ref t) = s.tokens {
+                    println!("    Tokens:  {} input | {} output", t.input, t.output);
+                }
+                if let Some(ref tools) = s.tool_calls
+                    && let Some(map) = tools.as_object()
+                    && !map.is_empty()
+                {
+                    let top: Vec<_> = map
+                        .iter()
+                        .map(|(k, v)| (k.as_str(), v.as_u64().unwrap_or(0)))
+                        .collect();
+                    let tool_str: Vec<_> =
+                        top.iter().map(|(k, v)| format!("{}:{}", k, v)).collect();
+                    println!("    Tools:   {}", tool_str.join(", "));
+                }
+            }
+
+            print_cohort("ON ", &resp.on);
+            println!();
+            print_cohort("OFF", &resp.off);
+
+            if resp.on.trace_count > 0 && resp.off.trace_count > 0 {
+                let total = resp.on.trace_count + resp.off.trace_count;
+                let pct = (resp.on.trace_count as f64 / total as f64 * 100.0).round();
+                println!(
+                    "\n  {} of traces have flag ON ({}/{}).",
+                    format!("{:.0}%", pct).yellow(),
+                    resp.on.trace_count,
+                    total
+                );
+                if resp.on.trace_count < 10 || resp.off.trace_count < 10 {
+                    println!(
+                        "  {}",
+                        "⚠ Small cohort — results may not be meaningful.".yellow()
+                    );
+                }
+            }
+            println!();
+        }
+
+        Commands::FlagTraces {
+            flag_name,
+            value,
+            name,
+            env,
+            time,
+            pagination,
+        } => {
+            let mut params: Vec<(&str, Option<String>)> = vec![
+                ("project_id", pid),
+                ("flag_name", Some(flag_name)),
+                ("flag_value", Some(value)),
+                ("name", name),
+                ("environment", env),
+            ];
+            time.push_date_params_inclusive_or_exit(&mut params);
+            pagination.push_params(&mut params);
+            let path = DevPortalClient::build_path("/traces", &params);
+            let resp: PaginatedResponse<Trace> = client.get(&path, CacheTtl::Short).await?;
+
+            if cli.json {
+                println!("{}", output::render_json(&resp.data));
+                return Ok(());
+            }
+
+            if resp.data.is_empty() {
+                println!(
+                    "{}",
+                    output::empty_hint(
+                        "flag traces",
+                        "No traces found for this flag/value combination."
+                    )
+                );
+                return Ok(());
+            }
+
+            println!("{}\n", "Flag Traces".bold());
+            for t in &resp.data {
+                let name = t
+                    .display_name
+                    .as_deref()
+                    .or(t.name.as_deref())
+                    .unwrap_or("(unnamed)");
+                let cost = t.cost_usd.map(output::fmt_cost).unwrap_or_default();
+                let latency = t
+                    .latency_ms
+                    .map(|ms| format!("{:.0}ms", ms))
+                    .unwrap_or_default();
+                let age = output::relative_time(&t.timestamp);
+                println!(
+                    "  {} {} {} {}  {}",
+                    t.langfuse_id.dimmed(),
+                    name.cyan(),
+                    cost,
+                    latency,
+                    age.dimmed()
+                );
+            }
+            if let Some(hint) =
+                output::pagination_hint(pagination.page, pagination.limit, resp.meta.total)
+            {
+                println!("\n  {}", hint.dimmed());
+            }
         }
 
         Commands::Config { .. } | Commands::Skill { .. } => {} // handled before client construction
