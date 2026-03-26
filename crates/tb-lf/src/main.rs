@@ -393,9 +393,7 @@ enum Commands {
         action: toolbox_core::skill::SkillAction,
     },
     /// List feature flags seen in traces
-    #[command(
-        after_help = "Examples:\n  tb-lf flags\n  tb-lf flags --json"
-    )]
+    #[command(after_help = "Examples:\n  tb-lf flags\n  tb-lf flags --json")]
     Flags,
     /// Compare cohort stats for a feature flag (ON vs OFF)
     #[command(
@@ -2498,7 +2496,10 @@ async fn run() -> tb_lf::error::Result<()> {
             if flags.is_empty() {
                 println!(
                     "{}",
-                    output::empty_hint("flags", "No flags found. Flags are extracted during trace sync.")
+                    output::empty_hint(
+                        "flags",
+                        "No flags found. Flags are extracted during trace sync."
+                    )
                 );
                 return Ok(());
             }
@@ -2523,10 +2524,7 @@ async fn run() -> tb_lf::error::Result<()> {
                     last.dimmed()
                 );
             }
-            println!(
-                "\n  {} flags total.\n",
-                flags.len()
-            );
+            println!("\n  {} flags total.\n", flags.len());
         }
 
         Commands::FlagCohort {
@@ -2579,15 +2577,16 @@ async fn run() -> tb_lf::error::Result<()> {
                 }
                 if let Some(ref tools) = s.tool_calls
                     && let Some(map) = tools.as_object()
-                        && !map.is_empty() {
-                            let top: Vec<_> = map
-                                .iter()
-                                .map(|(k, v)| (k.as_str(), v.as_u64().unwrap_or(0)))
-                                .collect();
-                            let tool_str: Vec<_> =
-                                top.iter().map(|(k, v)| format!("{}:{}", k, v)).collect();
-                            println!("    Tools:   {}", tool_str.join(", "));
-                        }
+                    && !map.is_empty()
+                {
+                    let top: Vec<_> = map
+                        .iter()
+                        .map(|(k, v)| (k.as_str(), v.as_u64().unwrap_or(0)))
+                        .collect();
+                    let tool_str: Vec<_> =
+                        top.iter().map(|(k, v)| format!("{}:{}", k, v)).collect();
+                    println!("    Tools:   {}", tool_str.join(", "));
+                }
             }
 
             print_cohort("ON ", &resp.on);
