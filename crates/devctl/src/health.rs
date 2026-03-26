@@ -130,16 +130,21 @@ fn sso_session_remaining() -> Option<std::time::Duration> {
     let mut newest_expiry: Option<chrono::DateTime<chrono::Utc>> = None;
     let mut newest_mtime = std::time::SystemTime::UNIX_EPOCH;
 
-    for entry in std::fs::read_dir(&cache_dir).ok()? {
-        let entry = entry.ok()?;
+    let Ok(entries) = std::fs::read_dir(&cache_dir) else {
+        return None;
+    };
+    for entry in entries {
+        let Ok(entry) = entry else { continue };
         let path = entry.path();
         if path.extension().is_some_and(|e| e == "json") {
-            let content = std::fs::read_to_string(&path).ok()?;
+            let Ok(content) = std::fs::read_to_string(&path) else { continue };
             // Only consider files with an accessToken (SSO session files)
             if !content.contains("accessToken") {
                 continue;
             }
-            let mtime = entry.metadata().ok()?.modified().ok()?;
+            let Some(mtime) = entry.metadata().ok().and_then(|m| m.modified().ok()) else {
+                continue;
+            };
             if mtime > newest_mtime {
                 newest_mtime = mtime;
                 // Parse expiresAt from JSON
@@ -171,6 +176,324 @@ pub fn format_duration(d: &std::time::Duration) -> String {
         format!("{}h {}m", hours, mins)
     } else {
         format!("{}m", mins)
+    }
+}
+
+/// Result of checking a single requirement.
+pub struct RequirementStatus {
+    pub ok: bool,
+    /// Human-readable detail for the issue line (shown on failure).
+    pub detail: Option<String>,
+}
+
+/// Check whether a local requirement is satisfied.
+pub fn check_requirement(req: &str, repo_path: Option<&std::path::Path>) -> RequirementStatus {
+    match req {
+        "ruby" => check_ruby(repo_path),
+        "node" => check_node(repo_path),
+        "python3" => check_python(repo_path),
+        "chromium" => check_chromium(),
+        _ => check_command(req),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ruby
+// ---------------------------------------------------------------------------
+
+fn check_ruby(repo_path: Option<&std::path::Path>) -> RequirementStatus {
+    let home = dirs::home_dir().unwrap_or_default();
+
+    let manager = if home.join(".rvm").exists() {
+        Some("rvm")
+    } else if command_exists("rbenv") {
+        Some("rbenv")
+    } else if command_exists("asdf") && asdf_has_plugin("ruby") {
+        Some("asdf")
+    } else {
+        None
+    };
+
+    if manager.is_none() && !command_exists("ruby") {
+        return fail("no version manager found (install rvm or rbenv)");
+    }
+
+    let version_check =
+        repo_path.and_then(|p| check_runtime_version(p, ".ruby-version", manager, "ruby"));
+    runtime_result(version_check, manager, manager.is_some() || command_exists("ruby"))
+}
+
+// ---------------------------------------------------------------------------
+// Node
+// ---------------------------------------------------------------------------
+
+fn check_node(repo_path: Option<&std::path::Path>) -> RequirementStatus {
+    let home = dirs::home_dir().unwrap_or_default();
+
+    // Detect version manager — n is NOT supported
+    let manager = if home.join(".nvm").exists() || std::env::var("NVM_DIR").is_ok() {
+        Some("nvm")
+    } else if command_exists("fnm") {
+        Some("fnm")
+    } else if command_exists("volta") {
+        Some("volta")
+    } else if command_exists("asdf") && asdf_has_plugin("nodejs") {
+        Some("asdf")
+    } else {
+        None
+    };
+
+    // n detected as the only tool → hard fail
+    if manager.is_none() && command_exists("n") {
+        return fail("n is not supported (install nvm or fnm for multi-version)");
+    }
+
+    if manager.is_none() && !command_exists("node") {
+        return fail("no version manager found (install nvm or fnm)");
+    }
+
+    let version_check = repo_path.and_then(|p| {
+        check_runtime_version(p, ".node-version", manager, "node")
+            .or_else(|| check_runtime_version(p, ".nvmrc", manager, "node"))
+    });
+    runtime_result(version_check, manager, manager.is_some() || command_exists("node"))
+}
+
+// ---------------------------------------------------------------------------
+// Python
+// ---------------------------------------------------------------------------
+
+fn check_python(repo_path: Option<&std::path::Path>) -> RequirementStatus {
+    let manager = if command_exists("pyenv") {
+        Some("pyenv")
+    } else if command_exists("asdf") && asdf_has_plugin("python") {
+        Some("asdf")
+    } else {
+        None
+    };
+
+    if manager.is_none() && !command_exists("python3") {
+        return fail("not found");
+    }
+
+    let version_check =
+        repo_path.and_then(|p| check_runtime_version(p, ".python-version", manager, "python3"));
+    runtime_result(version_check, manager, true)
+}
+
+// ---------------------------------------------------------------------------
+// Chromium
+// ---------------------------------------------------------------------------
+
+fn check_chromium() -> RequirementStatus {
+    let home = dirs::home_dir().unwrap_or_default();
+    let chrome_dir = home.join(".cache/puppeteer/chrome");
+
+    // Check for at least one Chrome binary in the Puppeteer cache
+    if chrome_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&chrome_dir) {
+            for entry in entries.flatten() {
+                let sub = entry.path();
+                if sub.is_dir() && has_chrome_binary(&sub) {
+                    return RequirementStatus { ok: true, detail: None };
+                }
+            }
+        }
+    }
+
+    // Fallback: system chromium
+    if command_exists("chromium") {
+        return RequirementStatus { ok: true, detail: None };
+    }
+
+    fail("not found (run: npx puppeteer install chrome)")
+}
+
+// ---------------------------------------------------------------------------
+// Shared runtime result builder
+// ---------------------------------------------------------------------------
+
+/// Build a RequirementStatus from a version check result.
+/// Used by all three runtime checks (ruby, node, python).
+fn runtime_result(
+    version_check: Option<(String, bool)>,
+    manager: Option<&str>,
+    fallback_ok: bool,
+) -> RequirementStatus {
+    match version_check {
+        Some((_version, true)) => RequirementStatus { ok: true, detail: None },
+        Some((version, false)) => RequirementStatus {
+            ok: false,
+            detail: Some(format!(
+                "{} not installed ({})",
+                version,
+                manager.unwrap_or("no version manager")
+            )),
+        },
+        None => RequirementStatus { ok: fallback_ok, detail: None },
+    }
+}
+
+fn fail(detail: &str) -> RequirementStatus {
+    RequirementStatus { ok: false, detail: Some(detail.into()) }
+}
+
+/// Check if a Puppeteer chrome version directory contains an actual Chrome binary.
+fn has_chrome_binary(version_dir: &std::path::Path) -> bool {
+    // Structure: <version_dir>/chrome-mac-arm64/Google Chrome for Testing.app/...
+    // or: <version_dir>/chrome-linux64/chrome
+    if let Ok(entries) = std::fs::read_dir(version_dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                // macOS: look for .app bundle
+                if let Ok(inner) = std::fs::read_dir(&p) {
+                    for inner_entry in inner.flatten() {
+                        let name = inner_entry.file_name();
+                        let name_str = name.to_string_lossy();
+                        if name_str.ends_with(".app") || name_str == "chrome" {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+// ---------------------------------------------------------------------------
+// Generic command check
+// ---------------------------------------------------------------------------
+
+fn check_command(cmd: &str) -> RequirementStatus {
+    if command_exists(cmd) {
+        RequirementStatus { ok: true, detail: None }
+    } else {
+        fail("not found")
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+fn command_exists(cmd: &str) -> bool {
+    Command::new("which")
+        .arg(cmd)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+fn asdf_has_plugin(plugin: &str) -> bool {
+    Command::new("asdf")
+        .args(["list", plugin])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Read a version file from the repo and check if the version is installed.
+/// Returns (wanted_version, is_installed).
+fn check_runtime_version(
+    repo_path: &std::path::Path,
+    version_filename: &str,
+    manager: Option<&str>,
+    runtime: &str,
+) -> Option<(String, bool)> {
+    let wanted = read_version_file(repo_path, version_filename)?;
+
+    let installed = match (runtime, manager) {
+        // Ruby
+        ("ruby", Some("rvm")) => {
+            let home = dirs::home_dir()?;
+            home.join(".rvm/rubies")
+                .join(format!("ruby-{}", wanted))
+                .exists()
+        }
+        ("ruby", Some("rbenv")) => {
+            let home = dirs::home_dir()?;
+            home.join(".rbenv/versions").join(&wanted).exists()
+        }
+        ("ruby", Some("asdf")) => {
+            let home = dirs::home_dir()?;
+            home.join(".asdf/installs/ruby").join(&wanted).exists()
+        }
+
+        // Node
+        ("node", Some("nvm")) => {
+            let nvm_dir = std::env::var("NVM_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".nvm"));
+            let v = if wanted.starts_with('v') {
+                wanted.clone()
+            } else {
+                format!("v{}", wanted)
+            };
+            nvm_dir.join("versions/node").join(&v).exists()
+        }
+        ("node", Some("fnm")) => {
+            let home = dirs::home_dir().unwrap_or_default();
+            let v = if wanted.starts_with('v') {
+                wanted.clone()
+            } else {
+                format!("v{}", wanted)
+            };
+            home.join(".local/share/fnm/node-versions")
+                .join(&v)
+                .exists()
+                || home.join(".fnm/node-versions").join(&v).exists()
+        }
+        ("node", Some("volta")) => {
+            let home = dirs::home_dir().unwrap_or_default();
+            let v = wanted.strip_prefix('v').unwrap_or(&wanted);
+            home.join(".volta/tools/image/node").join(v).exists()
+        }
+        ("node", Some("asdf")) => {
+            let home = dirs::home_dir().unwrap_or_default();
+            home.join(".asdf/installs/nodejs").join(&wanted).exists()
+        }
+
+        // Python
+        ("python3", Some("pyenv")) => {
+            let home = dirs::home_dir()?;
+            home.join(".pyenv/versions").join(&wanted).exists()
+        }
+        ("python3", Some("asdf")) => {
+            let home = dirs::home_dir()?;
+            home.join(".asdf/installs/python").join(&wanted).exists()
+        }
+
+        // Fallback: compare active version
+        _ => check_current_version(runtime, &wanted),
+    };
+
+    Some((wanted, installed))
+}
+
+/// Read a version file, trim whitespace.
+fn read_version_file(repo_path: &std::path::Path, filename: &str) -> Option<String> {
+    let content = std::fs::read_to_string(repo_path.join(filename)).ok()?;
+    let trimmed = content.trim().to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+/// Check if the currently active version of a command matches the wanted version.
+fn check_current_version(cmd: &str, wanted: &str) -> bool {
+    let output = Command::new(cmd).arg("--version").output().ok();
+    if let Some(output) = output {
+        let version_str = String::from_utf8_lossy(&output.stdout);
+        let clean = wanted.strip_prefix('v').unwrap_or(wanted);
+        version_str.contains(clean)
+    } else {
+        false
     }
 }
 

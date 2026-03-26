@@ -65,6 +65,8 @@ pub struct ServiceConfig {
     #[serde(default)]
     pub companion: Option<String>,
     #[serde(default)]
+    pub requires: Vec<String>,
+    #[serde(default)]
     pub init: Vec<String>,
     #[serde(default)]
     pub start: Vec<String>,
@@ -74,6 +76,19 @@ pub struct ServiceConfig {
     pub env_docker: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     pub env_local: std::collections::BTreeMap<String, String>,
+}
+
+impl Config {
+    /// Build a map of companion service name → parent service name.
+    pub fn companion_map(&self) -> BTreeMap<String, String> {
+        let mut map = BTreeMap::new();
+        for (name, svc) in &self.services {
+            if let Some(companion) = &svc.companion {
+                map.insert(companion.clone(), name.clone());
+            }
+        }
+        map
+    }
 }
 
 /// Walk up from `start` looking for `devctl.toml`.
