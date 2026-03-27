@@ -10,6 +10,7 @@ A Cargo workspace monorepo containing CLI tools built for internal use at [Produ
 | `tb-sem` | `tb-sem` | Semaphore CI insights — pipeline and job analysis |
 | `tb-prod` | `tb-prod` | Productive.io CLI — tasks, projects, people, time tracking |
 | `tb-bug` | `tb-bug` | Bugsnag insights — error and stability analysis |
+| `tb-devctl` | `tb-devctl` | Local dev environment orchestrator for Productive services |
 | `toolbox-core` | (library) | Shared infrastructure: config, HTTP, output formatting, time parsing |
 
 ## Naming convention
