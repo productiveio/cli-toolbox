@@ -300,16 +300,16 @@ fn check_chromium() -> RequirementStatus {
     let chrome_dir = home.join(".cache/puppeteer/chrome");
 
     // Check for at least one Chrome binary in the Puppeteer cache
-    if chrome_dir.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&chrome_dir) {
-            for entry in entries.flatten() {
-                let sub = entry.path();
-                if sub.is_dir() && has_chrome_binary(&sub) {
-                    return RequirementStatus {
-                        ok: true,
-                        detail: None,
-                    };
-                }
+    if chrome_dir.is_dir()
+        && let Ok(entries) = std::fs::read_dir(&chrome_dir)
+    {
+        for entry in entries.flatten() {
+            let sub = entry.path();
+            if sub.is_dir() && has_chrome_binary(&sub) {
+                return RequirementStatus {
+                    ok: true,
+                    detail: None,
+                };
             }
         }
     }
