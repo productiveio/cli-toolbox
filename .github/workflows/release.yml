@@ -2,13 +2,13 @@ name: Release
 
 on:
   push:
-    tags: ["tb-*-v*"]
+    tags: ["tb-*-v*", "devctl-v*"]
   workflow_dispatch:
     inputs:
       crate:
         description: "Crate to build (e.g. tb-prod)"
         type: choice
-        options: [tb-prod, tb-sem, tb-bug, tb-lf]
+        options: [tb-prod, tb-sem, tb-bug, tb-lf, devctl]
         required: true
       dry_run:
         description: "Dry run (build but don't create release)"
