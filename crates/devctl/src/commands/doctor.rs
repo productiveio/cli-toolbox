@@ -123,7 +123,11 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
 
         // Local requirements check (affects local only)
         for req in &svc.requires {
-            let check_path = if repo_exists { repo_path.as_deref() } else { None };
+            let check_path = if repo_exists {
+                repo_path.as_deref()
+            } else {
+                None
+            };
             let status = health::check_requirement(req, check_path);
             if !status.ok {
                 let msg = format!(
@@ -188,17 +192,16 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
             // "LOCAL   " is 8 chars, symbol is 1 visible char, so pad 7 after
             println!(
                 "  {:<width$}  {}       {}",
-                result.name, local, docker,
+                result.name,
+                local,
+                docker,
                 width = max_name_len
             );
         }
     }
 
     // --- Issues section ---
-    let failing: Vec<&ServiceResult> = results
-        .iter()
-        .filter(|r| !r.issues.is_empty())
-        .collect();
+    let failing: Vec<&ServiceResult> = results.iter().filter(|r| !r.issues.is_empty()).collect();
 
     if !failing.is_empty() {
         println!();

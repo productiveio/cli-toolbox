@@ -137,7 +137,9 @@ fn sso_session_remaining() -> Option<std::time::Duration> {
         let Ok(entry) = entry else { continue };
         let path = entry.path();
         if path.extension().is_some_and(|e| e == "json") {
-            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
             // Only consider files with an accessToken (SSO session files)
             if !content.contains("accessToken") {
                 continue;
@@ -220,7 +222,11 @@ fn check_ruby(repo_path: Option<&std::path::Path>) -> RequirementStatus {
 
     let version_check =
         repo_path.and_then(|p| check_runtime_version(p, ".ruby-version", manager, "ruby"));
-    runtime_result(version_check, manager, manager.is_some() || command_exists("ruby"))
+    runtime_result(
+        version_check,
+        manager,
+        manager.is_some() || command_exists("ruby"),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -256,7 +262,11 @@ fn check_node(repo_path: Option<&std::path::Path>) -> RequirementStatus {
         check_runtime_version(p, ".node-version", manager, "node")
             .or_else(|| check_runtime_version(p, ".nvmrc", manager, "node"))
     });
-    runtime_result(version_check, manager, manager.is_some() || command_exists("node"))
+    runtime_result(
+        version_check,
+        manager,
+        manager.is_some() || command_exists("node"),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -295,7 +305,10 @@ fn check_chromium() -> RequirementStatus {
             for entry in entries.flatten() {
                 let sub = entry.path();
                 if sub.is_dir() && has_chrome_binary(&sub) {
-                    return RequirementStatus { ok: true, detail: None };
+                    return RequirementStatus {
+                        ok: true,
+                        detail: None,
+                    };
                 }
             }
         }
@@ -303,7 +316,10 @@ fn check_chromium() -> RequirementStatus {
 
     // Fallback: system chromium
     if command_exists("chromium") {
-        return RequirementStatus { ok: true, detail: None };
+        return RequirementStatus {
+            ok: true,
+            detail: None,
+        };
     }
 
     fail("not found (run: npx puppeteer install chrome)")
@@ -321,7 +337,10 @@ fn runtime_result(
     fallback_ok: bool,
 ) -> RequirementStatus {
     match version_check {
-        Some((_version, true)) => RequirementStatus { ok: true, detail: None },
+        Some((_version, true)) => RequirementStatus {
+            ok: true,
+            detail: None,
+        },
         Some((version, false)) => RequirementStatus {
             ok: false,
             detail: Some(format!(
@@ -330,12 +349,18 @@ fn runtime_result(
                 manager.unwrap_or("no version manager")
             )),
         },
-        None => RequirementStatus { ok: fallback_ok, detail: None },
+        None => RequirementStatus {
+            ok: fallback_ok,
+            detail: None,
+        },
     }
 }
 
 fn fail(detail: &str) -> RequirementStatus {
-    RequirementStatus { ok: false, detail: Some(detail.into()) }
+    RequirementStatus {
+        ok: false,
+        detail: Some(detail.into()),
+    }
 }
 
 /// Check if a Puppeteer chrome version directory contains an actual Chrome binary.
@@ -368,7 +393,10 @@ fn has_chrome_binary(version_dir: &std::path::Path) -> bool {
 
 fn check_command(cmd: &str) -> RequirementStatus {
     if command_exists(cmd) {
-        RequirementStatus { ok: true, detail: None }
+        RequirementStatus {
+            ok: true,
+            detail: None,
+        }
     } else {
         fail("not found")
     }
