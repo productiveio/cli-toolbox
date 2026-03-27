@@ -8,7 +8,7 @@ on:
       crate:
         description: "Crate to build (e.g. tb-prod)"
         type: choice
-        options: [tb-prod, tb-sem, tb-bug, tb-lf]
+        options: [tb-prod, tb-sem, tb-bug, tb-lf, tb-devctl]
         required: true
       dry_run:
         description: "Dry run (build but don't create release)"
