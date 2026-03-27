@@ -3,12 +3,12 @@ use std::env;
 use clap::Parser;
 use colored::Colorize;
 
-use devctl::commands;
-use devctl::config;
+use tb_devctl::commands;
+use tb_devctl::config;
 
 #[derive(Parser)]
 #[command(
-    name = "devctl",
+    name = "tb-devctl",
     version,
     about = "Local dev environment orchestrator for Productive services"
 )]
@@ -27,7 +27,7 @@ enum Commands {
         /// Comma-separated list of services, or omit when using --preset
         services: Option<String>,
 
-        /// Use a named preset from devctl.toml
+        /// Use a named preset from tb-devctl.toml
         #[arg(long)]
         preset: Option<String>,
 
@@ -132,12 +132,12 @@ fn main() {
                 } else if local {
                     commands::local::start(&cfg, &root, &services, dir.as_deref(), bg)
                 } else {
-                    Err(devctl::error::Error::Other(
+                    Err(tb_devctl::error::Error::Other(
                         "Specify --docker or --local mode.".into(),
                     ))
                 }
             } else {
-                Err(devctl::error::Error::Other(
+                Err(tb_devctl::error::Error::Other(
                     "Specify services or --preset.".into(),
                 ))
             }

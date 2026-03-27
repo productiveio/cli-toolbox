@@ -23,7 +23,7 @@ Parse `$ARGUMENTS` to determine:
 - **`--install`**: after releases complete, install binaries locally via `scripts/install.sh`
 - **`--with-skill`**: when installing, also install Claude Code skills (passed through to install.sh)
 
-Valid tool names: `tb-prod`, `tb-sem`, `tb-bug`, `tb-lf`, `devctl`
+Valid tool names: `tb-prod`, `tb-sem`, `tb-bug`, `tb-lf`, `tb-devctl`
 
 If `--all` is used and no version is specified, read each crate's current version from `crates/<tool>/Cargo.toml` and suggest a patch bump for each. Ask the user to confirm.
 

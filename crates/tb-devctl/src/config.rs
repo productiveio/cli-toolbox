@@ -91,13 +91,13 @@ impl Config {
     }
 }
 
-/// Walk up from `start` looking for `devctl.toml`.
+/// Walk up from `start` looking for `tb-devctl.toml`.
 /// Returns (config, project_root) on success.
 pub fn find_and_load(start: &Path) -> Result<(Config, PathBuf)> {
     let config_path = find_config_file(start)?;
     let project_root = config_path
         .parent()
-        .ok_or_else(|| Error::Config("devctl.toml has no parent directory".into()))?
+        .ok_or_else(|| Error::Config("tb-devctl.toml has no parent directory".into()))?
         .to_path_buf();
 
     let content = std::fs::read_to_string(&config_path)?;
@@ -105,17 +105,17 @@ pub fn find_and_load(start: &Path) -> Result<(Config, PathBuf)> {
     Ok((config, project_root))
 }
 
-/// Walk up the directory tree to find `devctl.toml`.
+/// Walk up the directory tree to find `tb-devctl.toml`.
 fn find_config_file(start: &Path) -> Result<PathBuf> {
     let mut dir = start.to_path_buf();
     loop {
-        let candidate = dir.join("devctl.toml");
+        let candidate = dir.join("tb-devctl.toml");
         if candidate.exists() {
             return Ok(candidate);
         }
         if !dir.pop() {
             return Err(Error::Config(
-                "devctl.toml not found (searched up from current directory)".into(),
+                "tb-devctl.toml not found (searched up from current directory)".into(),
             ));
         }
     }

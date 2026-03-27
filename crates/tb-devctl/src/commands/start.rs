@@ -20,7 +20,7 @@ pub fn docker(config: &Config, project_root: &Path, services: &[String]) -> Resu
     for svc in services {
         if !config.services.contains_key(svc) {
             return Err(Error::Config(format!(
-                "Unknown service: '{}'. Check devctl.toml.",
+                "Unknown service: '{}'. Check tb-devctl.toml.",
                 svc
             )));
         }
@@ -110,7 +110,7 @@ pub fn docker(config: &Config, project_root: &Path, services: &[String]) -> Resu
             eprintln!("{}", m);
         }
         return Err(Error::Other(
-            "Pull secrets before starting. See devctl.toml init steps.".into(),
+            "Pull secrets before starting. See tb-devctl.toml init steps.".into(),
         ));
     }
 
@@ -193,7 +193,7 @@ pub fn docker(config: &Config, project_root: &Path, services: &[String]) -> Resu
     }
     println!();
     println!("Branch switch: cd repos/<repo> && git checkout <branch>");
-    println!("Then: devctl stop && devctl start <services> --docker");
+    println!("Then: tb-devctl stop && tb-devctl start <services> --docker");
 
     Ok(())
 }

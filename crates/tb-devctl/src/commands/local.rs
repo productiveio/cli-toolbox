@@ -21,7 +21,7 @@ fn shell_cmd(
     // Suppress interactive prompts (pnpm, corepack, etc.)
     parts.push("export CI=true".to_string());
 
-    // Per-service env vars from devctl.toml (shared + local-specific)
+    // Per-service env vars from tb-devctl.toml (shared + local-specific)
     for (key, val) in env {
         parts.push(format!("export {}={}", key, shell_escape(val)));
     }
@@ -107,7 +107,7 @@ pub fn start(
     for secret in &svc.secrets {
         if !svc_dir.join(secret).exists() {
             return Err(Error::Config(format!(
-                "Missing secret: {}/{}. Run `devctl init {}` first.",
+                "Missing secret: {}/{}. Run `tb-devctl init {}` first.",
                 svc_dir.display(),
                 secret,
                 service
@@ -174,7 +174,7 @@ pub fn start(
 
     if background {
         // Background mode: redirect output to log file
-        let log_dir = project_root.join(".devctl/logs");
+        let log_dir = project_root.join(".tb-devctl/logs");
         std::fs::create_dir_all(&log_dir)?;
         let log_file = log_dir.join(format!("{}.log", service));
         let log = std::fs::File::create(&log_file)?;

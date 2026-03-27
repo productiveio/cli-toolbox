@@ -29,7 +29,7 @@ pub fn run(config: &Config, project_root: &Path) -> Result<()> {
 pub fn restart_service(config: &Config, service: &str) -> Result<()> {
     if !docker::container_is_running(config) {
         return Err(Error::Other(
-            "Dev container is not running. Start with: devctl start <services> --docker".into(),
+            "Dev container is not running. Start with: tb-devctl start <services> --docker".into(),
         ));
     }
 

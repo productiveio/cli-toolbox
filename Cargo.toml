@@ -44,7 +44,7 @@ tb-lf = { path = "crates/tb-lf" }
 tb-sem = { path = "crates/tb-sem" }
 tb-prod = { path = "crates/tb-prod" }
 tb-bug = { path = "crates/tb-bug" }
-devctl = { path = "crates/devctl" }
+tb-devctl = { path = "crates/tb-devctl" }
 
 # Dev/test (also in workspace.dependencies so crates can inherit them)
 assert_cmd = "2"

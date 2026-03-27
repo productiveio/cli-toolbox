@@ -91,7 +91,7 @@ pub fn status(config: &Config, project_root: &Path) -> Result<()> {
         println!("{}", "Infrastructure is running.".green());
     } else {
         println!("{}", "Infrastructure is not running.".red());
-        println!("  Start with: devctl infra up");
+        println!("  Start with: tb-devctl infra up");
         return Ok(());
     }
 

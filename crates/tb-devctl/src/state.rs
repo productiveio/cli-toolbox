@@ -22,7 +22,7 @@ pub struct ServiceState {
 }
 
 impl State {
-    /// Load state from `.devctl/state.json` under the project root.
+    /// Load state from `.tb-devctl/state.json` under the project root.
     /// Returns empty state if file doesn't exist.
     pub fn load(project_root: &Path) -> Result<Self> {
         let path = state_path(project_root);
@@ -34,7 +34,7 @@ impl State {
         Ok(state)
     }
 
-    /// Save state to `.devctl/state.json` under the project root.
+    /// Save state to `.tb-devctl/state.json` under the project root.
     pub fn save(&self, project_root: &Path) -> Result<()> {
         let path = state_path(project_root);
         if let Some(parent) = path.parent() {
@@ -47,5 +47,5 @@ impl State {
 }
 
 fn state_path(project_root: &Path) -> PathBuf {
-    project_root.join(".devctl").join("state.json")
+    project_root.join(".tb-devctl").join("state.json")
 }
