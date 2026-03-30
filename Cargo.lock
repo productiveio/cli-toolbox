@@ -2034,8 +2034,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "tb-devctl"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "colored",
+ "dirs",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "toml",
+ "toolbox-core",
+]
+
+[[package]]
 name = "tb-lf"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "chrono",
  "clap",
