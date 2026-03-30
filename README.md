@@ -11,6 +11,7 @@ A Cargo workspace monorepo containing CLI tools built for internal use at [Produ
 | `tb-prod` | `tb-prod` | Productive.io CLI — tasks, projects, people, time tracking |
 | `tb-bug` | `tb-bug` | Bugsnag insights — error and stability analysis |
 | `tb-devctl` | `tb-devctl` | Local dev environment orchestrator for Productive services |
+| `tb-session` | `tb-session` | Claude Code session search — full-text index and resume past conversations |
 | `toolbox-core` | (library) | Shared infrastructure: config, HTTP, output formatting, time parsing |
 
 ## Naming convention
@@ -65,7 +66,8 @@ Each tool ships with a Claude Code skill that runs `tb-<tool> prime` on load to 
 "Bash(tb-bug:*)",
 "Bash(tb-lf:*)",
 "Bash(tb-prod:*)",
-"Bash(tb-sem:*)"
+"Bash(tb-sem:*)",
+"Bash(tb-session:*)"
 ```
 
 ## Building
