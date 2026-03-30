@@ -184,11 +184,10 @@ end tell"#
 }
 
 fn shell_escape(s: &str) -> String {
-    if s.contains(|c: char| c.is_whitespace() || c == '\'' || c == '"' || c == '\\') {
-        format!("'{}'", s.replace('\'', "'\\''"))
-    } else {
-        s.to_string()
+    if s.is_empty() {
+        return s.to_string();
     }
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 #[cfg(test)]
@@ -208,21 +207,28 @@ mod tests {
 
     #[test]
     fn test_shell_escape() {
-        // Plain string — no escaping needed
-        assert_eq!(shell_escape("claude"), "claude");
-        assert_eq!(shell_escape("/usr/bin/claude"), "/usr/bin/claude");
+        // Plain strings — always single-quoted
+        assert_eq!(shell_escape("claude"), "'claude'");
+        assert_eq!(shell_escape("/usr/bin/claude"), "'/usr/bin/claude'");
 
-        // String with spaces — single-quoted
+        // String with spaces
         assert_eq!(shell_escape("/path/to my dir"), "'/path/to my dir'");
 
         // String with single quote — escaped within single quotes
         assert_eq!(shell_escape("it's"), "'it'\\''s'");
 
-        // String with double quote — single-quoted wrapper
+        // String with double quote
         assert_eq!(shell_escape("say \"hi\""), "'say \"hi\"'");
 
-        // String with backslash — single-quoted
+        // String with backslash
         assert_eq!(shell_escape("back\\slash"), "'back\\slash'");
+
+        // Shell metacharacters — safely quoted
+        assert_eq!(shell_escape("$(whoami)"), "'$(whoami)'");
+        assert_eq!(shell_escape("foo;rm -rf /"), "'foo;rm -rf /'");
+        assert_eq!(shell_escape("a|b"), "'a|b'");
+        assert_eq!(shell_escape("a&b"), "'a&b'");
+        assert_eq!(shell_escape("`cmd`"), "'`cmd`'");
 
         // Empty string — returned as-is
         assert_eq!(shell_escape(""), "");
