@@ -33,7 +33,7 @@ indicatif = "0.18"
 inquire = "0.7"
 
 # Database
-rusqlite = { version = "0.38", features = ["bundled"] }
+rusqlite = { version = "0.38", features = ["bundled", "modern_sqlite"] }
 
 # Error handling
 thiserror = "2.0"
@@ -45,6 +45,7 @@ tb-sem = { path = "crates/tb-sem" }
 tb-prod = { path = "crates/tb-prod" }
 tb-bug = { path = "crates/tb-bug" }
 tb-devctl = { path = "crates/tb-devctl" }
+tb-session = { path = "crates/tb-session" }
 
 # Dev/test (also in workspace.dependencies so crates can inherit them)
 assert_cmd = "2"

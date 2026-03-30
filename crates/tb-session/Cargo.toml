@@ -1,0 +1,32 @@
+[package]
+name = "tb-session"
+version = "0.1.0"
+edition = "2024"
+description = "Claude Code session search CLI"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "tb-session"
+path = "src/main.rs"
+
+[lib]
+doctest = false
+
+[dependencies]
+toolbox-core = { workspace = true, features = ["version-check"] }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+colored.workspace = true
+rusqlite.workspace = true
+toml.workspace = true
+dirs = "6"
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true
