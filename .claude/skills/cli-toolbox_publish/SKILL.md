@@ -44,7 +44,6 @@ This will:
 - Update `crates/<tool>/Cargo.toml`
 - Run `cargo check -p <tool>`
 - Create a commit: `<tool>: bump version to <version>`
-- Create a tag: `<tool>-v<version>`
 
 ## Step 4: Push commits
 
@@ -53,7 +52,16 @@ Push all bump commits at once:
 git push
 ```
 
-## Step 5: Push tags ONE AT A TIME
+## Step 5: Create tags
+
+For each tool, create the tag locally:
+```bash
+git tag <tool>-v<version>
+```
+
+Tags must only be created on `main` after bump commits have been pushed (or merged via PR).
+
+## Step 6: Push tags ONE AT A TIME
 
 **This is the critical step.** Push each tag individually, not with `git push --tags`:
 
@@ -63,7 +71,7 @@ git push origin refs/tags/<tool>-v<version>
 
 Do this for each tool, one at a time. This ensures each tag triggers its own GitHub Actions workflow.
 
-## Step 6: Monitor pipelines
+## Step 7: Monitor pipelines
 
 After pushing all tags, monitor the release pipelines:
 1. Run `gh run list --limit <n>` to see all triggered runs
@@ -72,7 +80,7 @@ After pushing all tags, monitor the release pipelines:
 
 If a pipeline fails, show the failure details and ask the user how to proceed.
 
-## Step 7: Verify releases
+## Step 8: Verify releases
 
 For each tool, verify the GitHub Release was created with binaries:
 ```
@@ -81,7 +89,7 @@ gh release view <tool>-v<version>
 
 Report: tool name, version, assets (macos-arm64, linux-x86_64).
 
-## Step 8: Install locally (if --install)
+## Step 9: Install locally (if --install)
 
 If `--install` was requested, run:
 ```
