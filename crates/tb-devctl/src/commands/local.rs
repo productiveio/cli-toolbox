@@ -129,7 +129,7 @@ pub fn start(
     if !svc.start.is_empty() {
         println!("{}", "Running setup steps...".blue());
         for step in &svc.start {
-            // git pull: skip if working tree is dirty
+            // git pull: skip if working tree is dirty or branch has no upstream
             if step.starts_with("git pull") {
                 let output = Command::new("git")
                     .args(["status", "--porcelain"])
@@ -137,6 +137,19 @@ pub fn start(
                     .output()?;
                 if !output.stdout.is_empty() {
                     println!("  {} git pull (dirty working tree, skipping)", "!".yellow());
+                    continue;
+                }
+
+                let upstream = Command::new("git")
+                    .args(["rev-parse", "--abbrev-ref", "@{upstream}"])
+                    .current_dir(&svc_dir)
+                    .stderr(std::process::Stdio::null())
+                    .output()?;
+                if !upstream.status.success() {
+                    println!(
+                        "  {} git pull (no upstream tracking, skipping)",
+                        "!".yellow()
+                    );
                     continue;
                 }
             }
