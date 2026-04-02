@@ -4,10 +4,6 @@ use std::process::Command;
 use crate::config::{Config, ServiceConfig};
 use crate::error::{Error, Result};
 
-/// Default runtime versions — must match Dockerfile.base ARGs.
-const DEFAULT_RUBY: &str = "3.4.7";
-const DEFAULT_NODE: &str = "22.16.0";
-
 /// Generate a Procfile for overmind from the selected services.
 /// Writes to `.docker-sessions/.dev/Procfile.dev`.
 pub fn generate_procfile(config: &Config, services: &[String], project_root: &Path) -> Result<()> {
@@ -23,14 +19,14 @@ pub fn generate_procfile(config: &Config, services: &[String], project_root: &Pa
             .get(svc_name)
             .ok_or_else(|| Error::Config(format!("Unknown service: {}", svc_name)))?;
 
-        if let Some(entry) = procfile_entry(svc_name, svc, project_root) {
+        if let Some(entry) = procfile_entry(svc_name, svc) {
             lines.push(entry);
         }
 
         // Add companion (e.g., sidekiq for api)
         if let Some(companion) = &svc.companion
             && let Some(comp_svc) = config.services.get(companion)
-            && let Some(entry) = procfile_entry(companion, comp_svc, project_root)
+            && let Some(entry) = procfile_entry(companion, comp_svc)
         {
             lines.push(entry);
         }
@@ -40,59 +36,13 @@ pub fn generate_procfile(config: &Config, services: &[String], project_root: &Pa
     Ok(())
 }
 
-/// Build a single Procfile entry, with runtime version wrappers if needed.
-fn procfile_entry(name: &str, svc: &ServiceConfig, project_root: &Path) -> Option<String> {
+/// Build a single Procfile entry.
+/// mise shims resolve Ruby/Node versions from .ruby-version/.node-version
+/// in each repo's working directory — no version wrappers needed.
+fn procfile_entry(name: &str, svc: &ServiceConfig) -> Option<String> {
     let repo = svc.repo.as_deref()?;
     let cmd = svc.cmd.as_deref()?;
-
-    let repos_dir = project_root.join("repos");
-    let mut wrapper = String::new();
-
-    // Check if repo needs a different Ruby version
-    let ruby_version_file = repos_dir.join(repo).join(".ruby-version");
-    if ruby_version_file.exists()
-        && let Ok(version) = std::fs::read_to_string(&ruby_version_file)
-    {
-        let version = version.trim();
-        if version != DEFAULT_RUBY {
-            wrapper.push_str(&format!("rvm use {} && ", version));
-        }
-    }
-
-    // Check if repo needs a different Node version
-    let node_version = read_node_version(&repos_dir.join(repo));
-    if let Some(version) = node_version
-        && version != DEFAULT_NODE
-    {
-        wrapper.push_str(&format!(
-            ". /usr/local/nvm/nvm.sh && nvm use {} && ",
-            version
-        ));
-    }
-
-    let full_cmd = if wrapper.is_empty() {
-        format!("{}: cd /workspace/{} && {}", name, repo, cmd)
-    } else {
-        format!(
-            "{}: bash -lc '{} cd /workspace/{} && {}'",
-            name, wrapper, repo, cmd
-        )
-    };
-
-    Some(full_cmd)
-}
-
-/// Read Node version from .node-version or .nvmrc
-fn read_node_version(repo_path: &Path) -> Option<String> {
-    for filename in &[".node-version", ".nvmrc"] {
-        let path = repo_path.join(filename);
-        if path.exists()
-            && let Ok(version) = std::fs::read_to_string(&path)
-        {
-            return Some(version.trim().to_string());
-        }
-    }
-    None
+    Some(format!("{}: cd /workspace/{} && {}", name, repo, cmd))
 }
 
 /// Query overmind inside the container to get running service names and their status.
@@ -381,7 +331,7 @@ pub fn start_container(config: &Config, project_root: &Path, services: &[String]
 }
 
 /// Wait for the container healthcheck to pass.
-/// Timeout: 10 minutes (first-time setup may compile Ruby/Node from source).
+/// Timeout: 10 minutes (first-time setup installs dependencies and runs migrations).
 pub fn wait_for_healthy(config: &Config) -> Result<()> {
     let container = &config.docker.container;
     for i in 0..300 {
