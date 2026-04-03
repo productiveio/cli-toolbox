@@ -2,18 +2,24 @@ use serde_json::Value;
 
 use crate::api::ProductiveClient;
 use crate::body;
+use crate::commands::resource::query;
 use crate::json_error;
 use crate::schema::ResourceDef;
 use crate::validate;
 
-pub async fn run(client: &ProductiveClient, resource: &ResourceDef, data: &Value) {
+pub async fn run(
+    client: &ProductiveClient,
+    resource: &ResourceDef,
+    data: &Value,
+    format: &str,
+) {
     let schema = crate::schema::schema();
 
     // Bulk or single?
     if let Some(items) = data.as_array() {
-        run_bulk(client, resource, items).await;
+        run_bulk(client, resource, items, format).await;
     } else {
-        run_single(client, resource, data, schema).await;
+        run_single(client, resource, data, schema, format).await;
     }
 }
 
@@ -22,6 +28,7 @@ async fn run_single(
     resource: &ResourceDef,
     data: &Value,
     schema: &crate::schema::Schema,
+    format: &str,
 ) {
     if !resource.supports_action("create") {
         json_error::exit_with_error(
@@ -55,14 +62,31 @@ async fn run_single(
     let path = resource.api_path();
     match client.create(&path, &payload).await {
         Ok(resp) => {
-            let output = serde_json::json!({"data": resp.data});
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            if format == "json" {
+                let output = serde_json::json!({"data": resp.data});
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            } else {
+                let name = query::extract_display_name(&resp.data);
+                if name.is_empty() {
+                    println!("Created {} {}", resource.item_name, resp.data.id);
+                } else {
+                    println!(
+                        "Created {} {} — {}",
+                        resource.item_name, resp.data.id, name
+                    );
+                }
+            }
         }
         Err(e) => json_error::exit_with_tb_error(&e),
     }
 }
 
-async fn run_bulk(client: &ProductiveClient, resource: &ResourceDef, items: &[Value]) {
+async fn run_bulk(
+    client: &ProductiveClient,
+    resource: &ResourceDef,
+    items: &[Value],
+    format: &str,
+) {
     if !resource.supports_bulk("create") {
         json_error::exit_with_error(
             "bulk_not_supported",
@@ -98,8 +122,24 @@ async fn run_bulk(client: &ProductiveClient, resource: &ResourceDef, items: &[Va
     let path = resource.api_path();
     match client.bulk_create(&path, &payload).await {
         Ok(resp) => {
-            let output = serde_json::json!({"data": resp.data});
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            if format == "json" {
+                let output = serde_json::json!({"data": resp.data});
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            } else {
+                println!(
+                    "Created {} {}",
+                    resp.data.len(),
+                    resource.collection_name
+                );
+                for r in &resp.data {
+                    let name = query::extract_display_name(r);
+                    if name.is_empty() {
+                        println!("  {} {}", resource.item_name, r.id);
+                    } else {
+                        println!("  {} {} — {}", resource.item_name, r.id, name);
+                    }
+                }
+            }
         }
         Err(e) => json_error::exit_with_tb_error(&e),
     }

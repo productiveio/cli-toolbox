@@ -48,6 +48,9 @@ enum Commands {
         /// Include relationships (comma-separated)
         #[arg(long)]
         include: Option<String>,
+        /// Output format: csv (default), table, or json
+        #[arg(long, default_value = "csv")]
+        format: String,
     },
     /// Get a single resource by ID
     Get {
@@ -66,6 +69,9 @@ enum Commands {
         /// JSON data (object for single, array for bulk)
         #[arg(long)]
         data: Option<String>,
+        /// Output format: compact (default) or json
+        #[arg(long, default_value = "compact")]
+        format: String,
     },
     /// Update a resource by ID
     Update {
@@ -76,6 +82,9 @@ enum Commands {
         /// JSON data (partial fields to update)
         #[arg(long)]
         data: Option<String>,
+        /// Output format: compact (default) or json
+        #[arg(long, default_value = "compact")]
+        format: String,
     },
     /// Delete a resource by ID
     Delete {
@@ -94,6 +103,9 @@ enum Commands {
         /// Search query text
         #[arg(long)]
         query: String,
+        /// Output format: csv (default) or json
+        #[arg(long, default_value = "csv")]
+        format: String,
     },
     /// Execute a custom action on a resource
     Action {
@@ -240,6 +252,7 @@ async fn run() -> tb_prod::error::Result<()> {
             sort,
             page,
             include,
+            format,
         } => {
             let resource = resolve_resource_or_exit(&resource_type);
             let filter_value = match &filter {
@@ -253,6 +266,7 @@ async fn run() -> tb_prod::error::Result<()> {
                 sort.as_deref(),
                 Some(page),
                 include.as_deref(),
+                &format,
             )
             .await;
         }
@@ -267,19 +281,21 @@ async fn run() -> tb_prod::error::Result<()> {
         Commands::Create {
             resource_type,
             data,
+            format,
         } => {
             let resource = resolve_resource_or_exit(&resource_type);
             let json_data = input::require_json_input(data.as_deref(), "create");
-            commands::resource::create::run(&client, resource, &json_data).await;
+            commands::resource::create::run(&client, resource, &json_data, &format).await;
         }
         Commands::Update {
             resource_type,
             id,
             data,
+            format,
         } => {
             let resource = resolve_resource_or_exit(&resource_type);
             let json_data = input::require_json_input(data.as_deref(), "update");
-            commands::resource::update::run(&client, resource, &id, &json_data).await;
+            commands::resource::update::run(&client, resource, &id, &json_data, &format).await;
         }
         Commands::Delete {
             resource_type,
@@ -292,9 +308,10 @@ async fn run() -> tb_prod::error::Result<()> {
         Commands::Search {
             resource_type,
             query,
+            format,
         } => {
             let resource = resolve_resource_or_exit(&resource_type);
-            commands::resource::search::run(&client, resource, &query).await;
+            commands::resource::search::run(&client, resource, &query, &format).await;
         }
         Commands::Action {
             resource_type,

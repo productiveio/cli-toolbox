@@ -2,11 +2,18 @@ use serde_json::Value;
 
 use crate::api::ProductiveClient;
 use crate::body;
+use crate::commands::resource::query;
 use crate::json_error;
 use crate::schema::ResourceDef;
 use crate::validate;
 
-pub async fn run(client: &ProductiveClient, resource: &ResourceDef, id: &str, data: &Value) {
+pub async fn run(
+    client: &ProductiveClient,
+    resource: &ResourceDef,
+    id: &str,
+    data: &Value,
+    format: &str,
+) {
     if !resource.supports_action("update") {
         json_error::exit_with_error(
             "operation_not_supported",
@@ -41,8 +48,17 @@ pub async fn run(client: &ProductiveClient, resource: &ResourceDef, id: &str, da
     let path = format!("{}/{}", resource.api_path(), id);
     match client.update(&path, &payload).await {
         Ok(resp) => {
-            let output = serde_json::json!({"data": resp.data});
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            if format == "json" {
+                let output = serde_json::json!({"data": resp.data});
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            } else {
+                let name = query::extract_display_name(&resp.data);
+                if name.is_empty() {
+                    println!("Updated {} {}", resource.item_name, id);
+                } else {
+                    println!("Updated {} {} — {}", resource.item_name, id, name);
+                }
+            }
         }
         Err(e) => json_error::exit_with_tb_error(&e),
     }

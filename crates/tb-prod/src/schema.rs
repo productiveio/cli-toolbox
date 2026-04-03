@@ -87,6 +87,8 @@ pub struct ResourceDef {
     pub aliases: Option<Vec<String>>,
     pub endpoint: Option<String>,
     pub query_hints: Option<String>,
+    #[serde(default)]
+    pub default_filters: Option<serde_json::Map<String, serde_json::Value>>,
     pub default_sort: Option<String>,
     pub search_filter_param: Option<String>,
     #[serde(default)]
@@ -100,6 +102,8 @@ pub struct ResourceDef {
     #[serde(default)]
     pub collections: HashMap<String, CollectionDef>,
     pub cache: Option<CacheConfig>,
+    #[serde(default)]
+    pub display_columns: Option<Vec<DisplayColumn>>,
 }
 
 impl ResourceDef {
@@ -236,6 +240,22 @@ pub struct CustomAction {
     pub endpoint: String,
     pub method: String,
     pub enabled_when: Option<EnableCondition>,
+}
+
+// --- Display columns ---
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayColumn {
+    /// Column header label
+    pub label: String,
+    /// "attribute" or "relationship"
+    pub source: String,
+    /// For attributes: the JSON attribute key (e.g. "title", "due_date")
+    /// For relationships: the relationship name (e.g. "project", "assignee")
+    pub key: String,
+    /// For relationships: the target resource type (e.g. "projects", "people")
+    pub target: Option<String>,
 }
 
 // --- Cache config ---
