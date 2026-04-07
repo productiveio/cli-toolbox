@@ -4478,8 +4478,23 @@
           "format": "YYYY-MM-DD",
           "param": "date",
           "required": true,
-          "filter": "date",
           "attribute": "date"
+        },
+        "after": {
+          "key": "after",
+          "type": "date",
+          "typeCategory": "primitive",
+          "format": "YYYY-MM-DD",
+          "filter": "after",
+          "description": "Filter holidays that occur on or after this date (date >= value)"
+        },
+        "before": {
+          "key": "before",
+          "type": "date",
+          "typeCategory": "primitive",
+          "format": "YYYY-MM-DD",
+          "filter": "before",
+          "description": "Filter holidays that occur on or before this date (date <= value)"
         },
         "holidayCalendar": {
           "key": "holidayCalendar",
