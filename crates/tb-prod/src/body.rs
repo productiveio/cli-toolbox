@@ -129,9 +129,9 @@ mod tests {
         let tasks = s.resolve_resource("tasks").unwrap();
         let input = json!({
             "title": "Test task",
-            "project_id": "100",
-            "task_list_id": "200",
-            "assignee_id": "300"
+            "project": "100",
+            "task_list": "200",
+            "assignee": "300"
         });
         let body = build_jsonapi_body(tasks, &input, None).unwrap();
         let data = body.get("data").unwrap();

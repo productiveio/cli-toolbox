@@ -352,8 +352,8 @@ mod tests {
         let s = schema();
         let tasks = s.resolve_resource("tasks").unwrap();
         let field = tasks
-            .field_by_param("assignee_id")
-            .expect("assignee_id param should exist");
+            .field_by_param("assignee")
+            .expect("assignee param should exist");
         assert_eq!(field.type_category, TypeCategory::Resource);
         assert_eq!(field.field_type, "people");
     }
