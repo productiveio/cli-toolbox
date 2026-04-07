@@ -171,12 +171,12 @@ mod tests {
     fn validate_create_missing_required() {
         let s = schema();
         let tasks = s.resolve_resource("tasks").unwrap();
-        // tasks requires title, project_id, task_list_id
+        // tasks requires title, project, task_list
         let input = json!({"title": "Test"});
         let errors = validate_create(tasks, &input, s);
         assert!(!errors.is_empty());
         let all = errors.join(" ");
-        assert!(all.contains("project_id") || all.contains("task_list_id"));
+        assert!(all.contains("project") || all.contains("task_list"));
     }
 
     #[test]
@@ -186,8 +186,8 @@ mod tests {
         // "id" is readonly with param "id"
         let input = json!({
             "title": "Test",
-            "project_id": "1",
-            "task_list_id": "2",
+            "project": "1",
+            "task_list": "2",
             "id": "123"
         });
         let errors = validate_create(tasks, &input, s);
@@ -227,8 +227,8 @@ mod tests {
         let tasks = s.resolve_resource("tasks").unwrap();
         let input = json!({
             "title": "Test task",
-            "project_id": "100",
-            "task_list_id": "200"
+            "project": "100",
+            "task_list": "200"
         });
         let errors = validate_create(tasks, &input, s);
         // May still have errors for other required fields, but not for the ones we provided
@@ -238,8 +238,8 @@ mod tests {
                 e.contains("Unknown")
                     || e.contains("readonly")
                     || e.contains("title")
-                    || e.contains("project_id")
-                    || e.contains("task_list_id")
+                    || e.contains("project")
+                    || e.contains("task_list")
             })
             .collect();
         assert!(
