@@ -52,6 +52,28 @@ tb-session resume "auth refactor"
 - **Resume accepts names** — `resume "auth refactor"` searches summary/first prompt and resumes the most recent match. UUID prefixes of any length also work.
 - **URLs work as search queries** — special characters are sanitized automatically.
 
+## Workflow
+
+When handling a session-related request:
+
+1. **Always use `--json`** on search and list commands — structured output is easier to parse and present accurately.
+2. **Pick the right command**:
+   - User describes content → `tb-session search "<query>" --json`
+   - User mentions a PR → `tb-session search --pr <N> --json`
+   - User asks "what have we been working on" → `tb-session list --json`
+   - User says "resume" → search first, then `tb-session resume <id>`
+3. **Always present results with structured fields** — for each session shown, include:
+   - Session ID (prefix is fine)
+   - Branch name
+   - Summary or first prompt
+   - Last-active timestamp
+   - Even when matches are weak, show the top 1–2 results so the user can judge relevance.
+4. **After presenting results**, offer a concrete next step:
+   - `tb-session show <id>` to see conversation detail
+   - `tb-session resume <id>` to continue the session in a new tab
+5. **When the user says "resume"**, you MUST call `tb-session resume <id>` after finding the session. Do not just describe it — execute the resume.
+6. **Stay efficient** — aim for 1–3 tool calls. One search + one action is usually enough. Only retry with different keywords if the first search returned no relevant results.
+
 ## Getting started
 
 Run `tb-session prime` for available commands and index status.

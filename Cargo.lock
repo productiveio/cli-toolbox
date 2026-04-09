@@ -2113,7 +2113,7 @@ dependencies = [
 
 [[package]]
 name = "tb-session"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "assert_cmd",
  "chrono",
