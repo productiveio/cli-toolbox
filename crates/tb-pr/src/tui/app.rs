@@ -62,7 +62,7 @@ impl App {
             selected: [0; 5],
             scroll: [0; 5],
             help_open: false,
-            full_titles: false,
+            full_titles: true,
             is_fetching: false,
             last_error: None,
             tick_count: 0,
@@ -504,12 +504,12 @@ mod tests {
     fn w_toggles_full_titles_and_resets_scroll() {
         let mut a = app();
         a.scroll = [3, 2, 1, 4, 0];
-        assert!(!a.full_titles);
+        assert!(a.full_titles); // default on
         a.handle_key(key(KeyCode::Char('w')));
-        assert!(a.full_titles);
+        assert!(!a.full_titles);
         assert_eq!(a.scroll, [0; 5]);
         a.handle_key(key(KeyCode::Char('w')));
-        assert!(!a.full_titles);
+        assert!(a.full_titles);
     }
 
     #[test]
