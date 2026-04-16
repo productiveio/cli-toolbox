@@ -37,11 +37,13 @@ pub enum Intent {
     Refresh,
     OpenUrl(String),
     CopyUrl(String),
-    /// Resolve the comment URL → open → mark the thread as read.
-    /// `fallback_pr_url` is used when the comment URL resolve fails.
+    /// Resolve the latest comment on a PR → open → mark the thread as read.
+    /// `fallback_pr_url` is used when neither comment feed has anything.
     OpenNotification {
         thread_id: String,
-        comment_api_url: Option<String>,
+        owner: String,
+        repo: String,
+        pr_number: u64,
         fallback_pr_url: String,
     },
     /// Server-side mark-all-as-read + clear the local list.
@@ -271,7 +273,9 @@ impl App {
                 if let Some(n) = self.selected_notification() {
                     return Intent::OpenNotification {
                         thread_id: n.thread_id.clone(),
-                        comment_api_url: n.latest_comment_api_url.clone(),
+                        owner: n.owner.clone(),
+                        repo: n.repo.clone(),
+                        pr_number: n.pr_number,
                         fallback_pr_url: n.pr_url.clone(),
                     };
                 }
@@ -428,10 +432,19 @@ async fn event_loop(
                 },
                 Intent::OpenNotification {
                     thread_id,
-                    comment_api_url,
+                    owner,
+                    repo,
+                    pr_number,
                     fallback_pr_url,
                 } => {
-                    spawn_open_notification(&tx, thread_id, comment_api_url, fallback_pr_url);
+                    spawn_open_notification(
+                        &tx,
+                        thread_id,
+                        owner,
+                        repo,
+                        pr_number,
+                        fallback_pr_url,
+                    );
                 }
                 Intent::MarkAllNotificationsRead => {
                     spawn_mark_all_read(&tx);
@@ -471,26 +484,27 @@ async fn event_loop(
 
 /// Open a notification in the browser and mark its thread as read.
 /// Three steps, each independently fallible:
-///   1. resolve comment api_url → html_url (optional, falls back to PR URL)
+///   1. resolve the PR's latest comment → `html_url` (falls back to PR URL)
 ///   2. open that URL in the browser
 ///   3. PATCH the thread as read
 fn spawn_open_notification(
     tx: &UnboundedSender<UiEvent>,
     thread_id: String,
-    comment_api_url: Option<String>,
+    owner: String,
+    repo: String,
+    pr_number: u64,
     fallback_pr_url: String,
 ) {
     let tx = tx.clone();
     tokio::spawn(async move {
         let result: std::result::Result<String, String> = async {
             let client = GhClient::new().map_err(|e| e.to_string())?;
-            let url = match comment_api_url.as_deref() {
-                Some(api) => client
-                    .resolve_comment_html_url(api)
-                    .await
-                    .unwrap_or_else(|_| fallback_pr_url.clone()),
-                None => fallback_pr_url.clone(),
-            };
+            let url = client
+                .latest_comment_html_url(&owner, &repo, pr_number)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| fallback_pr_url.clone());
             open_url(&url).map_err(|e| e.to_string())?;
             client
                 .mark_thread_read(&thread_id)
@@ -628,13 +642,11 @@ mod tests {
         Notification {
             thread_id: format!("thread-{pr_number}"),
             reason: NotificationReason::Mention,
+            owner: "productiveio".to_string(),
             repo: repo.to_string(),
             pr_number,
             pr_title: title.to_string(),
             pr_url: format!("https://github.com/productiveio/{repo}/pull/{pr_number}"),
-            latest_comment_api_url: Some(format!(
-                "https://api.github.com/repos/productiveio/{repo}/issues/comments/9"
-            )),
             updated_at: Utc::now(),
             age_days: 0.5,
         }
@@ -740,11 +752,15 @@ mod tests {
         match a.handle_key(key(KeyCode::Enter)) {
             Intent::OpenNotification {
                 thread_id,
-                comment_api_url,
+                owner,
+                repo,
+                pr_number,
                 fallback_pr_url,
             } => {
                 assert_eq!(thread_id, "thread-3");
-                assert!(comment_api_url.is_some());
+                assert_eq!(owner, "productiveio");
+                assert_eq!(repo, "frontend");
+                assert_eq!(pr_number, 3);
                 assert!(fallback_pr_url.contains("frontend/pull/3"));
             }
             other => panic!("expected OpenNotification, got {other:?}"),

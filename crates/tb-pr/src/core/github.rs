@@ -202,15 +202,51 @@ impl GhClient {
         Ok(out)
     }
 
-    /// Resolve a `latest_comment_url` (API) to its `html_url` (web). Used at
-    /// open-time so clicking a notification jumps to the specific comment.
-    pub async fn resolve_comment_html_url(&self, api_url: &str) -> Result<String> {
+    /// Resolve the most recent comment on a PR to its web URL, covering
+    /// both issue comments (`#issuecomment-X`) and inline review comments
+    /// (`#discussion_rX`). Used when a user opens a notification so the
+    /// browser scrolls directly to the latest activity.
+    ///
+    /// Returns `None` when neither feed has anything to link to — callers
+    /// should fall back to the PR URL. GitHub's own `latest_comment_url` on
+    /// notifications is unreliable here: it's often `null`, or points at
+    /// the PR root instead of a specific comment, so we ignore it.
+    pub async fn latest_comment_html_url(
+        &self,
+        owner: &str,
+        repo: &str,
+        number: u64,
+    ) -> Result<Option<String>> {
         #[derive(Deserialize)]
         struct CommentStub {
             html_url: String,
+            updated_at: DateTime<Utc>,
         }
-        let c: CommentStub = self.get(api_url).await?;
-        Ok(c.html_url)
+
+        let issue_url =
+            format!("{API_BASE}/repos/{owner}/{repo}/issues/{number}/comments?per_page=100");
+        let review_url =
+            format!("{API_BASE}/repos/{owner}/{repo}/pulls/{number}/comments?per_page=100");
+
+        let (issue_res, review_res) = tokio::join!(
+            self.get::<Vec<CommentStub>>(&issue_url),
+            self.get::<Vec<CommentStub>>(&review_url),
+        );
+
+        // A 404 or transient error on one feed shouldn't nuke the other —
+        // PRs with only inline review comments still need to resolve.
+        let mut all: Vec<CommentStub> = Vec::new();
+        if let Ok(v) = issue_res {
+            all.extend(v);
+        }
+        if let Ok(v) = review_res {
+            all.extend(v);
+        }
+
+        Ok(all
+            .into_iter()
+            .max_by_key(|c| c.updated_at)
+            .map(|c| c.html_url))
     }
 
     /// Mark a single notification thread as read.
@@ -275,7 +311,6 @@ struct ApiNotification {
 struct ApiSubject {
     title: String,
     url: Option<String>,
-    latest_comment_url: Option<String>,
     #[serde(rename = "type")]
     kind: String,
 }
@@ -316,19 +351,17 @@ fn into_pr_notification(item: ApiNotification, org: &str) -> Option<Notification
         .next()
         .and_then(|s| s.parse::<u64>().ok())?;
     let repo = item.repository.name;
-    let pr_url = format!(
-        "https://github.com/{}/{repo}/pull/{pr_number}",
-        item.repository.owner.login
-    );
+    let owner = item.repository.owner.login;
+    let pr_url = format!("https://github.com/{owner}/{repo}/pull/{pr_number}");
     let age_days = (Utc::now() - item.updated_at).num_seconds() as f64 / 86400.0;
     Some(Notification {
         thread_id: item.id,
         reason: NotificationReason::from_api(&item.reason),
+        owner,
         repo,
         pr_number,
         pr_title: item.subject.title,
         pr_url,
-        latest_comment_api_url: item.subject.latest_comment_url,
         updated_at: item.updated_at,
         age_days,
     })

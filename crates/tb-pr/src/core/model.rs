@@ -177,16 +177,12 @@ pub struct Notification {
     /// Stable thread id used for mark-as-read (PATCH /notifications/threads/:id).
     pub thread_id: String,
     pub reason: NotificationReason,
+    pub owner: String,
     pub repo: String,
     pub pr_number: u64,
     pub pr_title: String,
     /// Web URL to the PR (synthesized, not fetched).
     pub pr_url: String,
-    /// API URL for the latest comment on this thread. Resolved to a
-    /// `html_url` lazily when the user opens the notification — not during
-    /// fetch — to avoid N extra API calls on cold start.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub latest_comment_api_url: Option<String>,
     pub updated_at: DateTime<Utc>,
     pub age_days: f64,
 }
