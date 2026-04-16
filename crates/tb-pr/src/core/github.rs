@@ -212,7 +212,10 @@ pub async fn fetch_board_state(
 
     let q_draft = format!("is:pr is:open draft:true author:@me org:{org}");
     let q_author_mine = format!("is:pr is:open draft:false author:@me org:{org}");
-    let q_wait_me = format!("is:pr is:open review-requested:@me org:{org}");
+    // user-review-requested (not review-requested) — the former is
+    // direct-only; the latter also matches PRs where a team I'm on was
+    // requested as codeowner, which I don't want on the board.
+    let q_wait_me = format!("is:pr is:open user-review-requested:@me org:{org}");
     let q_wait_author = format!("is:pr is:open reviewed-by:@me -author:@me org:{org}");
 
     let (r_draft, r_review_mine_raw, r_wait_me, r_wait_author_raw) = tokio::try_join!(
