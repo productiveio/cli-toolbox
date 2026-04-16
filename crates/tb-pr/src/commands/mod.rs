@@ -6,3 +6,4 @@ pub mod prime;
 pub mod refresh;
 pub mod show;
 pub mod tui;
+pub mod util;

@@ -114,6 +114,18 @@ struct SearchResponse {
 #[derive(Debug, Deserialize)]
 pub struct PullDetail {
     #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub user: Option<SearchUser>,
+    #[serde(default)]
+    pub draft: bool,
+    #[serde(default)]
+    pub comments: u64,
+    #[serde(default)]
+    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default)]
     pub additions: u64,
     #[serde(default)]
     pub deletions: u64,
