@@ -180,14 +180,34 @@ enum Commands {
     },
     /// Show daily metrics
     #[command(
-        after_help = "Examples:\n  tb-lf metrics --days 14\n  tb-lf metrics --env production --from 30d\n  tb-lf metrics --json | jq '.[] | .date'"
+        alias = "metrics",
+        after_help = "Examples:\n  tb-lf daily-metrics --days 14\n  tb-lf daily-metrics --env production --from 30d\n  tb-lf daily-metrics --json | jq '.[] | .date'"
     )]
-    Metrics {
+    DailyMetrics {
         /// Number of days back
         #[arg(long)]
         days: Option<u32>,
         #[arg(long)]
         env: Option<String>,
+        #[command(flatten)]
+        time: TimeRange,
+    },
+    /// Trace-level scoring metrics (aggregated or per-trace)
+    #[command(
+        after_help = "Examples:\n  tb-lf trace-metrics\n  tb-lf trace-metrics --group-by day --from 7d\n  tb-lf trace-metrics --group-by outcome\n  tb-lf trace-metrics --group-by agent_type --env production\n  tb-lf trace-metrics --group-by flag:my_flag --from 14d\n  tb-lf trace-metrics abc123def456"
+    )]
+    TraceMetrics {
+        /// Trace Langfuse ID — show per-trace detail instead of aggregates
+        #[arg()]
+        trace_id: Option<String>,
+        /// Grouping: day, outcome, agent_type, flag:<name>
+        #[arg(long, default_value = "day")]
+        group_by: String,
+        #[arg(long)]
+        env: Option<String>,
+        /// Filter by outcome: successful, error, context_overflow, etc.
+        #[arg(long)]
+        outcome: Option<String>,
         #[command(flatten)]
         time: TimeRange,
     },
@@ -1112,10 +1132,13 @@ async fn run() -> tb_lf::error::Result<()> {
                 "\n  {}",
                 "Run `tb-lf traces` to drill into individual traces.".dimmed()
             );
-            println!("  {}", "Run `tb-lf metrics` for daily trends.".dimmed());
+            println!(
+                "  {}",
+                "Run `tb-lf daily-metrics` for daily trends.".dimmed()
+            );
         }
 
-        Commands::Metrics { days, env, time } => {
+        Commands::DailyMetrics { days, env, time } => {
             let effective_time = if let Some(d) = days {
                 TimeRange {
                     from: Some(format!("{}d", d)),
@@ -1168,6 +1191,227 @@ async fn run() -> tb_lf::error::Result<()> {
                         .unwrap_or_default(),
                     m.error_count.unwrap_or(0),
                 );
+            }
+        }
+
+        Commands::TraceMetrics {
+            trace_id,
+            group_by,
+            env,
+            outcome,
+            time,
+        } => {
+            if let Some(tid) = trace_id {
+                // Per-trace detail
+                let path = DevPortalClient::build_path(
+                    &format!("/trace_metrics/{}", tid),
+                    &[("project_id", pid)],
+                );
+                let detail: TraceMetricDetail = client.get(&path, CacheTtl::Short).await?;
+
+                if cli.json {
+                    println!("{}", output::render_json(&detail));
+                    return Ok(());
+                }
+
+                // Trace info
+                if let Some(t) = &detail.trace {
+                    println!("{}\n", "Trace".bold());
+                    if let Some(id) = &t.langfuse_id {
+                        println!("  {:<16} {}", "ID".dimmed(), id);
+                    }
+                    if let Some(ts) = &t.timestamp {
+                        println!("  {:<16} {}", "Timestamp".dimmed(), ts);
+                    }
+                    if let Some(env) = &t.environment {
+                        println!("  {:<16} {}", "Environment".dimmed(), env);
+                    }
+                    if let Some(cost) = t.cost_usd {
+                        println!("  {:<16} {}", "Cost".dimmed(), output::fmt_cost(cost));
+                    }
+                    if let Some(lat) = t.latency_ms {
+                        println!("  {:<16} {:.0}ms", "Latency".dimmed(), lat);
+                    }
+                    if let Some(q) = &t.user_query {
+                        println!("  {:<16} {}", "Query".dimmed(), output::truncate(q, 120));
+                    }
+                }
+
+                // Metrics
+                if let Some(m) = &detail.metrics {
+                    println!("\n{}\n", "Metrics".bold());
+                    println!("  {:<24} {}", "Turns".dimmed(), m.turn_count.unwrap_or(0));
+                    println!(
+                        "  {:<24} {}",
+                        "Tool calls".dimmed(),
+                        m.tool_call_count.unwrap_or(0)
+                    );
+                    println!(
+                        "  {:<24} {}",
+                        "Tool errors".dimmed(),
+                        m.tool_error_count.unwrap_or(0)
+                    );
+                    println!(
+                        "  {:<24} {}",
+                        "Unique tools".dimmed(),
+                        m.unique_tool_count.unwrap_or(0)
+                    );
+                    println!(
+                        "  {:<24} {}",
+                        "Input tokens".dimmed(),
+                        m.total_input_tokens.unwrap_or(0)
+                    );
+                    println!(
+                        "  {:<24} {}",
+                        "Output tokens".dimmed(),
+                        m.total_output_tokens.unwrap_or(0)
+                    );
+                    if let Some(dr) = m.describe_resource_calls {
+                        println!(
+                            "  {:<24} {} ({} tokens)",
+                            "describe_resource".dimmed(),
+                            dr,
+                            m.describe_resource_tokens.unwrap_or(0)
+                        );
+                    }
+                    if let Some(true) = m.has_retry_pattern {
+                        println!("  {:<24} {}", "Retry pattern".dimmed(), "yes".yellow());
+                    }
+                    if let Some(true) = m.has_errors {
+                        println!("  {:<24} {}", "Has errors".dimmed(), "yes".red());
+                    }
+                    if let Some(agent) = &m.agent_type {
+                        println!("  {:<24} {}", "Agent type".dimmed(), agent);
+                    }
+                    if let Some(out) = &m.outcome {
+                        println!("  {:<24} {}", "Outcome".dimmed(), out);
+                    }
+
+                    // Tool breakdown
+                    if let Some(tb) = &m.tool_breakdown
+                        && let Some(obj) = tb.as_object()
+                        && !obj.is_empty()
+                    {
+                        println!("\n  {}", "Tool breakdown:".dimmed());
+                        let mut tools: Vec<_> = obj.iter().collect();
+                        tools.sort_by(|a, b| {
+                            b.1.as_u64().unwrap_or(0).cmp(&a.1.as_u64().unwrap_or(0))
+                        });
+                        for (name, count) in tools {
+                            println!("    {:<28} {:>4}", name, count);
+                        }
+                    }
+                } else {
+                    println!("\n{}", "No metrics computed for this trace yet.".dimmed());
+                }
+
+                // Flags
+                if let Some(flags) = &detail.flags
+                    && !flags.is_empty()
+                {
+                    println!("\n{}\n", "Flags".bold());
+                    for (k, v) in flags {
+                        println!("  {:<28} {}", k.dimmed(), v);
+                    }
+                }
+
+                // Triage
+                if let Some(triage) = &detail.triage {
+                    println!("\n{}\n", "Triage".bold());
+                    if let Some(cat) = &triage.category {
+                        println!("  {:<16} {}", "Category".dimmed(), cat);
+                    }
+                    if let Some(conf) = &triage.confidence {
+                        println!("  {:<16} {}", "Confidence".dimmed(), conf);
+                    }
+                }
+            } else {
+                // Aggregated metrics
+                let effective_time = if !time.has_from() {
+                    TimeRange {
+                        from: Some("7d".into()),
+                        ..Default::default()
+                    }
+                } else {
+                    time
+                };
+
+                let mut params: Vec<(&str, Option<String>)> = vec![
+                    ("project_id", pid),
+                    ("environment", env),
+                    ("group_by", Some(group_by.clone())),
+                    ("outcome", outcome),
+                ];
+                effective_time.push_date_params_inclusive_or_exit(&mut params);
+                let path = DevPortalClient::build_path("/trace_metrics", &params);
+                let resp: TraceMetricAggregateResponse = client.get(&path, CacheTtl::Short).await?;
+
+                if cli.json {
+                    println!("{}", output::render_json(&resp));
+                    return Ok(());
+                }
+
+                if resp.data.is_empty() {
+                    println!(
+                        "{}",
+                        output::empty_hint(
+                            "trace-metrics",
+                            "Try a wider date range or check that the metrics job has run."
+                        )
+                    );
+                    return Ok(());
+                }
+
+                println!(
+                    "{} {}\n",
+                    "Trace Metrics".bold(),
+                    format!("(group_by: {})", group_by).dimmed()
+                );
+                println!(
+                    "  {:<16} {:>7} {:>6} {:>6} {:>7} {:>7} {:>9} {:>9} {:>8}",
+                    "Group",
+                    "Traces",
+                    "Turns",
+                    "Tools",
+                    "Err%",
+                    "Retry%",
+                    "Cost",
+                    "Latency",
+                    "Success%"
+                );
+                println!("  {}", "─".repeat(90));
+                for row in &resp.data {
+                    let err_pct = row
+                        .error_rate
+                        .map(|r| format!("{:.1}%", r * 100.0))
+                        .unwrap_or_default();
+                    let retry_pct = row
+                        .retry_pattern_rate
+                        .map(|r| format!("{:.1}%", r * 100.0))
+                        .unwrap_or_default();
+                    let success_pct = row
+                        .success_rate
+                        .map(|r| format!("{:.1}%", r * 100.0))
+                        .unwrap_or_default();
+                    println!(
+                        "  {:<16} {:>7} {:>6} {:>6} {:>7} {:>7} {:>9} {:>9} {:>8}",
+                        output::truncate(&row.group, 16),
+                        row.trace_count.unwrap_or(0),
+                        row.avg_turn_count
+                            .map(|v| format!("{:.1}", v))
+                            .unwrap_or_default(),
+                        row.avg_tool_calls
+                            .map(|v| format!("{:.1}", v))
+                            .unwrap_or_default(),
+                        err_pct,
+                        retry_pct,
+                        row.avg_cost_usd.map(output::fmt_cost).unwrap_or_default(),
+                        row.avg_latency_ms
+                            .map(|l| format!("{:.0}ms", l))
+                            .unwrap_or_default(),
+                        success_pct,
+                    );
+                }
             }
         }
 
@@ -2324,7 +2568,9 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("  tb-lf dashboard                    Overview KPIs");
             println!("  tb-lf traces --from 1d            Today's traces");
             println!("  tb-lf traces --triage flagged      Flagged traces");
-            println!("  tb-lf metrics --days 7             Weekly trends");
+            println!("  tb-lf daily-metrics --days 7       Weekly trends");
+            println!("  tb-lf trace-metrics --from 7d      Trace scoring aggregates");
+            println!("  tb-lf trace-metrics <id>           Per-trace scoring detail");
             println!();
             println!("{}", "Investigating Traces".bold().underline());
             println!("  tb-lf traces --name <agent>        Filter by name");
