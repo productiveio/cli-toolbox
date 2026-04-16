@@ -75,6 +75,16 @@ impl ReviewSummary {
     pub fn my_latest_review(&self, my_login: &str) -> Option<&Review> {
         self.latest_by_user.get(my_login)
     }
+
+    /// Iterate over the latest kept review per reviewer.
+    ///
+    /// Note: PENDING-submitted and explicitly DISMISSED reviews are already
+    /// filtered out by `from_reviews`, so this hides reviews that no longer
+    /// apply. Callers that want to render the full raw history should iterate
+    /// over the original `&[Review]` instead.
+    pub fn iter_latest(&self) -> impl Iterator<Item = &Review> {
+        self.latest_by_user.values()
+    }
 }
 
 #[cfg(test)]

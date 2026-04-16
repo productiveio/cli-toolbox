@@ -165,18 +165,10 @@ pub async fn run(pr_ref: &str, json: bool) -> Result<()> {
 
     println!();
     println!("{}", "Reviews:".bold());
-    if reviews.is_empty() {
+    let mut latest: Vec<&Review> = summary.iter_latest().collect();
+    if latest.is_empty() {
         println!("  {}", "(none yet)".dimmed());
     } else {
-        let mut by_user: std::collections::HashMap<String, &crate::core::reviews::Review> =
-            std::collections::HashMap::new();
-        for r in &reviews {
-            let entry = by_user.entry(r.user.login.clone()).or_insert(r);
-            if r.submitted_at > entry.submitted_at {
-                *entry = r;
-            }
-        }
-        let mut latest: Vec<_> = by_user.values().collect();
         latest.sort_by_key(|r| r.submitted_at);
         for r in latest {
             let when = r

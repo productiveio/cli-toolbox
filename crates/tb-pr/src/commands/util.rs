@@ -41,9 +41,10 @@ pub fn parse_pr_ref(input: &str, default_org: &str) -> Result<PrRef> {
 }
 
 fn parse_url(input: &str) -> Option<PrRef> {
-    let stripped = input
-        .strip_prefix("https://github.com/")
-        .or_else(|| input.strip_prefix("http://github.com/"))?;
+    // https only — http github.com redirects to https anyway, and accepting
+    // it here would let a typo (or a pasted URL from a stripped logfile)
+    // quietly pass through where we'd rather fail loudly.
+    let stripped = input.strip_prefix("https://github.com/")?;
     let mut parts = stripped.split('/');
     let owner = parts.next()?.to_string();
     let repo = parts.next()?.to_string();
@@ -102,7 +103,9 @@ fn resolve_from_git(number: u64, default_org: &str) -> Result<PrRef> {
     })
 }
 
-/// Parse an `origin` URL (ssh or https) into `(owner, repo)`.
+/// Parse an `origin` URL (ssh or https) into `(owner, repo)`. `git remote`
+/// URLs are locally configured, so http:// is left out — no ambient-trust
+/// concern, but no legitimate reason to accept it either.
 fn parse_git_remote(url: &str) -> Option<(String, String)> {
     // git@github.com:owner/repo.git
     if let Some(rest) = url.strip_prefix("git@github.com:") {
@@ -110,9 +113,6 @@ fn parse_git_remote(url: &str) -> Option<(String, String)> {
     }
     // https://github.com/owner/repo(.git)
     if let Some(rest) = url.strip_prefix("https://github.com/") {
-        return split_owner_repo(rest);
-    }
-    if let Some(rest) = url.strip_prefix("http://github.com/") {
         return split_owner_repo(rest);
     }
     None

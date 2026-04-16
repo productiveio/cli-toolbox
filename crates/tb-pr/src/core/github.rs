@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use tokio::sync::Semaphore;
 
 use crate::core::classifier;
 use crate::core::model::{BoardState, Column, ColumnsData, Pr, PrState};
@@ -16,6 +18,17 @@ const SEARCH_PER_PAGE: u32 = 100;
 /// Hard cap on search pagination. GitHub's search API refuses to return
 /// results beyond 1000 anyway, so 10 pages of 100 is the practical ceiling.
 const SEARCH_MAX_PAGES: u32 = 10;
+/// Upper bound on concurrent per-PR API calls (details, reviews, commit
+/// dates). GitHub's secondary rate limiter kicks in around ~100 simultaneous
+/// requests; 16 is comfortably below that while still parallel enough to
+/// keep `refresh` snappy.
+const MAX_CONCURRENT: usize = 16;
+
+/// Full key for a PR across the org: `(owner, repo, number)`. Using only
+/// `(repo, number)` was enough while we scope to `org:productiveio`, but
+/// consistently including `owner` keeps the code honest for any future case
+/// where the config points elsewhere or a mirror-forked repo shares a name.
+type PrKey = (String, String, u64);
 
 #[derive(Clone)]
 pub struct GhClient {
@@ -338,12 +351,8 @@ pub async fn fetch_board_state(
     let mut review_mine = Vec::new();
     let mut ready_to_merge_mine = Vec::new();
     for item in &r_review_mine_raw {
-        let (_, repo, number) = repo_key(item)?;
-        let lookup = (repo, number);
-        let summary = reviews
-            .get(&lookup)
-            .map(|r| ReviewSummary::from_reviews(r))
-            .unwrap_or_else(|| ReviewSummary::from_reviews(&[]));
+        let key = repo_key(item)?;
+        let summary = summarize(&reviews, &key);
         if summary.is_ready_to_merge() {
             let mut pr = build_pr(
                 item,
@@ -369,20 +378,15 @@ pub async fn fetch_board_state(
     // COMMENTED/CHANGES_REQUESTED; flag 🆕 when author pushed since.
     let mut waiting_on_author = Vec::new();
     for item in &r_wait_author_raw {
-        let (_, repo, number) = repo_key(item)?;
-        let lookup = (repo, number);
-        let summary = reviews
-            .get(&lookup)
-            .map(|r| ReviewSummary::from_reviews(r))
-            .unwrap_or_else(|| ReviewSummary::from_reviews(&[]));
+        let key = repo_key(item)?;
+        let summary = summarize(&reviews, &key);
         let Some(my_review) = summary.my_latest_review(&user) else {
             continue;
         };
-        let state_upper = my_review.state.to_ascii_uppercase();
-        if state_upper != "COMMENTED" && state_upper != "CHANGES_REQUESTED" {
+        if !is_wait_on_author_state(&my_review.state) {
             continue;
         }
-        let head_date = commit_dates.get(&lookup).copied();
+        let head_date = commit_dates.get(&key).copied();
         let has_new_commits = match (head_date, my_review.submitted_at) {
             (Some(h), Some(r)) => Some(h > r),
             _ => None,
@@ -414,14 +418,14 @@ pub async fn fetch_board_state(
 }
 
 /// `(owner, repo, number)` from a search item.
-fn repo_key(item: &SearchItem) -> Result<(String, String, u64)> {
+fn repo_key(item: &SearchItem) -> Result<PrKey> {
     let (owner, repo) = parse_repo_url(&item.repository_url).ok_or_else(|| {
         Error::Other(format!("malformed repository_url: {}", item.repository_url))
     })?;
     Ok((owner, repo, item.number))
 }
 
-fn collect_keys(lists: &[&Vec<SearchItem>]) -> Result<HashSet<(String, String, u64)>> {
+fn collect_keys(lists: &[&Vec<SearchItem>]) -> Result<HashSet<PrKey>> {
     let mut keys = HashSet::new();
     for list in lists {
         for item in *list {
@@ -433,28 +437,48 @@ fn collect_keys(lists: &[&Vec<SearchItem>]) -> Result<HashSet<(String, String, u
 
 fn collect_commit_keys(
     items: &[SearchItem],
-    details: &HashMap<(String, u64), PullDetail>,
-) -> Result<Vec<(String, String, u64, String)>> {
+    details: &HashMap<PrKey, PullDetail>,
+) -> Result<Vec<(PrKey, String)>> {
     let mut out = Vec::new();
     for item in items {
-        let (owner, repo, number) = repo_key(item)?;
-        if let Some(detail) = details.get(&(repo.clone(), number)) {
-            out.push((owner, repo, number, detail.head.sha.clone()));
+        let key = repo_key(item)?;
+        if let Some(detail) = details.get(&key) {
+            out.push((key, detail.head.sha.clone()));
         }
     }
     Ok(out)
 }
 
+/// Build a `ReviewSummary` for `key`, tolerating missing entries (no reviews).
+fn summarize(reviews: &HashMap<PrKey, Vec<Review>>, key: &PrKey) -> ReviewSummary {
+    reviews
+        .get(key)
+        .map(|r| ReviewSummary::from_reviews(r))
+        .unwrap_or_else(|| ReviewSummary::from_reviews(&[]))
+}
+
+/// Does this review state put the PR into the "waiting on author" column?
+/// Approved / dismissed reviews don't — the author has no re-review to
+/// wait for.
+pub(crate) fn is_wait_on_author_state(state: &str) -> bool {
+    let s = state.to_ascii_uppercase();
+    s == "COMMENTED" || s == "CHANGES_REQUESTED"
+}
+
 async fn fetch_all_reviews(
     client: &GhClient,
-    keys: HashSet<(String, String, u64)>,
-) -> Result<HashMap<(String, u64), Vec<Review>>> {
+    keys: HashSet<PrKey>,
+) -> Result<HashMap<PrKey, Vec<Review>>> {
+    let sem = Arc::new(Semaphore::new(MAX_CONCURRENT));
     let mut set = tokio::task::JoinSet::new();
-    for (owner, repo, number) in keys {
+    for key in keys {
         let c = client.clone();
+        let sem = sem.clone();
         set.spawn(async move {
-            let res = c.pull_reviews(&owner, &repo, number).await;
-            ((repo, number), res)
+            let _permit = sem.acquire_owned().await;
+            let (owner, repo, number) = &key;
+            let res = c.pull_reviews(owner, repo, *number).await;
+            (key, res)
         });
     }
     let mut out = HashMap::new();
@@ -467,14 +491,18 @@ async fn fetch_all_reviews(
 
 async fn fetch_all_commit_dates(
     client: &GhClient,
-    keys: Vec<(String, String, u64, String)>,
-) -> Result<HashMap<(String, u64), DateTime<Utc>>> {
+    keys: Vec<(PrKey, String)>,
+) -> Result<HashMap<PrKey, DateTime<Utc>>> {
+    let sem = Arc::new(Semaphore::new(MAX_CONCURRENT));
     let mut set = tokio::task::JoinSet::new();
-    for (owner, repo, number, sha) in keys {
+    for (key, sha) in keys {
         let c = client.clone();
+        let sem = sem.clone();
         set.spawn(async move {
-            let res = c.commit_date(&owner, &repo, &sha).await;
-            ((repo, number), res)
+            let _permit = sem.acquire_owned().await;
+            let (owner, repo, number) = &key;
+            let res = c.commit_date(owner, repo, &sha).await;
+            ((owner.clone(), repo.clone(), *number), res)
         });
     }
     let mut out = HashMap::new();
@@ -485,28 +513,29 @@ async fn fetch_all_commit_dates(
     Ok(out)
 }
 
-/// Dedupe across columns and fetch each PR's detail endpoint in parallel.
-/// Key is `(repo, number)` — all PRs are scoped to the same org.
+/// Dedupe across columns and fetch each PR's detail endpoint in parallel,
+/// bounded by a semaphore to respect GitHub's secondary rate limits.
 async fn fetch_all_details(
     client: &GhClient,
     lists: [&Vec<SearchItem>; 4],
-) -> Result<HashMap<(String, u64), PullDetail>> {
-    let mut keys: HashSet<(String, String, u64)> = HashSet::new();
+) -> Result<HashMap<PrKey, PullDetail>> {
+    let mut keys: HashSet<PrKey> = HashSet::new();
     for list in lists {
         for item in list {
-            let (owner, repo) = parse_repo_url(&item.repository_url).ok_or_else(|| {
-                Error::Other(format!("malformed repository_url: {}", item.repository_url))
-            })?;
-            keys.insert((owner, repo, item.number));
+            keys.insert(repo_key(item)?);
         }
     }
 
+    let sem = Arc::new(Semaphore::new(MAX_CONCURRENT));
     let mut set = tokio::task::JoinSet::new();
-    for (owner, repo, number) in keys {
+    for key in keys {
         let c = client.clone();
+        let sem = sem.clone();
         set.spawn(async move {
-            let res = c.pull_detail(&owner, &repo, number).await;
-            ((repo, number), res)
+            let _permit = sem.acquire_owned().await;
+            let (owner, repo, number) = &key;
+            let res = c.pull_detail(owner, repo, *number).await;
+            (key, res)
         });
     }
 
@@ -521,14 +550,12 @@ async fn fetch_all_details(
 fn build_pr(
     item: &SearchItem,
     col: Column,
-    details: &HashMap<(String, u64), PullDetail>,
+    details: &HashMap<PrKey, PullDetail>,
     productive_org_slug: &str,
     now: DateTime<Utc>,
 ) -> Pr {
-    let repo = parse_repo_url(&item.repository_url)
-        .map(|(_, r)| r)
-        .unwrap_or_default();
-    let detail = details.get(&(repo.clone(), item.number));
+    let (owner, repo) = parse_repo_url(&item.repository_url).unwrap_or_default();
+    let detail = details.get(&(owner, repo.clone(), item.number));
     let size = detail.map(|d| classifier::size_bucket(d.additions, d.deletions));
     let base_branch = detail.map(|d| d.base.branch.clone());
 
@@ -581,6 +608,17 @@ mod tests {
             parse_repo_url("https://api.github.com/repos/owner-only"),
             None
         );
+    }
+
+    #[test]
+    fn wait_on_author_state_only_matches_commented_or_changes_requested() {
+        assert!(is_wait_on_author_state("COMMENTED"));
+        assert!(is_wait_on_author_state("CHANGES_REQUESTED"));
+        assert!(is_wait_on_author_state("commented")); // case-insensitive
+        assert!(!is_wait_on_author_state("APPROVED"));
+        assert!(!is_wait_on_author_state("DISMISSED"));
+        assert!(!is_wait_on_author_state("PENDING"));
+        assert!(!is_wait_on_author_state(""));
     }
 
     #[test]

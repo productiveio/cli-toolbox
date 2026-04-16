@@ -260,13 +260,17 @@ enum UiEvent {
 }
 
 pub async fn run(state: BoardState, ctx: FetchCtx) -> Result<()> {
-    let mut terminal = setup_terminal()?;
+    // The guard's Drop impl restores the terminal on every exit path,
+    // including panics inside `event_loop`. Without it a crash left the
+    // user's shell in raw mode + alt-screen — unusable.
+    let _guard = RawModeGuard::enter()?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout())).map_err(Error::Io)?;
     let productive_slug = ctx.productive_org_slug.clone();
     let mut app = App::new(state, productive_slug);
     app.clamp_selections();
 
     let result = event_loop(&mut terminal, &mut app, ctx).await;
-    restore_terminal(&mut terminal)?;
+    let _ = terminal.show_cursor();
     result
 }
 
@@ -393,19 +397,27 @@ fn keyboard_pump(tx: UnboundedSender<UiEvent>) {
     }
 }
 
-fn setup_terminal() -> Result<Terminal<CrosstermBackend<io::Stdout>>> {
-    enable_raw_mode().map_err(Error::Io)?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen).map_err(Error::Io)?;
-    let backend = CrosstermBackend::new(stdout);
-    Terminal::new(backend).map_err(Error::Io)
+/// Enters raw mode + alternate screen on construction and leaves them on
+/// drop. Placing the teardown in Drop means any panic path still restores
+/// the terminal — crossterm's enable_raw_mode / EnterAlternateScreen leave
+/// the shell in a corrupted state otherwise.
+struct RawModeGuard;
+
+impl RawModeGuard {
+    fn enter() -> Result<Self> {
+        enable_raw_mode().map_err(Error::Io)?;
+        execute!(io::stdout(), EnterAlternateScreen).map_err(Error::Io)?;
+        Ok(Self)
+    }
 }
 
-fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
-    disable_raw_mode().map_err(Error::Io)?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(Error::Io)?;
-    terminal.show_cursor().map_err(Error::Io)?;
-    Ok(())
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        // Ignore errors on shutdown — there's nothing useful we can do, and
+        // Drop cannot return a Result.
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+    }
 }
 
 #[cfg(test)]
