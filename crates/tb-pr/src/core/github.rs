@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::core::classifier;
 use crate::core::model::{BoardState, Column, ColumnsData, Pr, PrState};
 use crate::core::productive::extract_task_id;
+use crate::core::reviews::{Review, ReviewSummary};
 use crate::error::{Error, Result};
 
 const API_BASE: &str = "https://api.github.com";
@@ -68,6 +69,20 @@ impl GhClient {
         self.get(&format!("{API_BASE}/repos/{owner}/{repo}/pulls/{number}"))
             .await
     }
+
+    pub async fn pull_reviews(&self, owner: &str, repo: &str, number: u64) -> Result<Vec<Review>> {
+        self.get(&format!(
+            "{API_BASE}/repos/{owner}/{repo}/pulls/{number}/reviews?per_page=100"
+        ))
+        .await
+    }
+
+    pub async fn commit_date(&self, owner: &str, repo: &str, sha: &str) -> Result<DateTime<Utc>> {
+        let commit: CommitResponse = self
+            .get(&format!("{API_BASE}/repos/{owner}/{repo}/commits/{sha}"))
+            .await?;
+        Ok(commit.commit.committer.date)
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -103,12 +118,33 @@ pub struct PullDetail {
     #[serde(default)]
     pub deletions: u64,
     pub base: BaseRef,
+    pub head: HeadRef,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct BaseRef {
     #[serde(rename = "ref")]
     pub branch: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HeadRef {
+    pub sha: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CommitResponse {
+    commit: CommitInner,
+}
+
+#[derive(Debug, Deserialize)]
+struct CommitInner {
+    committer: CommitActor,
+}
+
+#[derive(Debug, Deserialize)]
+struct CommitActor {
+    date: DateTime<Utc>,
 }
 
 fn gh_auth_token() -> Result<String> {
@@ -144,10 +180,13 @@ pub fn parse_repo_url(url: &str) -> Option<(String, String)> {
 }
 
 /// Fetch the full kanban state: 4 search queries in parallel, then per-PR
-/// details (additions, deletions, base branch) in parallel.
+/// details + reviews + head commit dates in parallel. Applies M3 filters:
 ///
-/// M2 does not yet split `review_mine` from `ready_to_merge_mine` — that
-/// requires the reviews API and lands in M3.
+/// - `review_mine` excludes PRs already fully approved (those become
+///   `ready_to_merge_mine`).
+/// - `waiting_on_author` keeps only PRs where the viewer's last review is
+///   COMMENTED or CHANGES_REQUESTED and flags PRs where the author has
+///   pushed new commits since that review.
 pub async fn fetch_board_state(
     client: &GhClient,
     org: &str,
@@ -164,7 +203,7 @@ pub async fn fetch_board_state(
     let q_wait_me = format!("is:pr is:open review-requested:@me org:{org}");
     let q_wait_author = format!("is:pr is:open reviewed-by:@me -author:@me org:{org}");
 
-    let (r_draft, r_review_mine, r_wait_me, r_wait_author) = tokio::try_join!(
+    let (r_draft, r_review_mine_raw, r_wait_me, r_wait_author_raw) = tokio::try_join!(
         client.search_issues(&q_draft),
         client.search_issues(&q_author_mine),
         client.search_issues(&q_wait_me),
@@ -173,24 +212,109 @@ pub async fn fetch_board_state(
 
     let details = fetch_all_details(
         client,
-        [&r_draft, &r_review_mine, &r_wait_me, &r_wait_author],
+        [&r_draft, &r_review_mine_raw, &r_wait_me, &r_wait_author_raw],
     )
     .await?;
 
+    // Reviews: we only need them for author-mine (to split ready-to-merge)
+    // and waiting-on-author (to filter + flag new commits).
+    let review_keys = collect_keys(&[&r_review_mine_raw, &r_wait_author_raw])?;
+    let reviews = fetch_all_reviews(client, review_keys).await?;
+
+    // Head commit dates: only needed for waiting-on-author.
+    let commit_keys = collect_commit_keys(&r_wait_author_raw, &details)?;
+    let commit_dates = fetch_all_commit_dates(client, commit_keys).await?;
+
     let now = Utc::now();
-    let build = |items: &[SearchItem], col: Column| -> Vec<Pr> {
-        items
-            .iter()
-            .map(|item| build_pr(item, col, &details, productive_org_slug, now))
-            .collect()
-    };
+
+    // Draft + waiting-on-me are straight pass-throughs.
+    let draft_mine: Vec<Pr> = r_draft
+        .iter()
+        .map(|item| build_pr(item, Column::DraftMine, &details, productive_org_slug, now))
+        .collect();
+    let waiting_on_me: Vec<Pr> = r_wait_me
+        .iter()
+        .map(|item| {
+            build_pr(
+                item,
+                Column::WaitingOnMe,
+                &details,
+                productive_org_slug,
+                now,
+            )
+        })
+        .collect();
+
+    // Split author-mine into ready_to_merge vs review_mine using reviews.
+    let mut review_mine = Vec::new();
+    let mut ready_to_merge_mine = Vec::new();
+    for item in &r_review_mine_raw {
+        let (_, repo, number) = repo_key(item)?;
+        let lookup = (repo, number);
+        let summary = reviews
+            .get(&lookup)
+            .map(|r| ReviewSummary::from_reviews(r))
+            .unwrap_or_else(|| ReviewSummary::from_reviews(&[]));
+        if summary.is_ready_to_merge() {
+            let mut pr = build_pr(
+                item,
+                Column::ReadyToMergeMine,
+                &details,
+                productive_org_slug,
+                now,
+            );
+            pr.state = PrState::Approved;
+            ready_to_merge_mine.push(pr);
+        } else {
+            review_mine.push(build_pr(
+                item,
+                Column::ReviewMine,
+                &details,
+                productive_org_slug,
+                now,
+            ));
+        }
+    }
+
+    // Filter waiting-on-author: keep only where my last review is
+    // COMMENTED/CHANGES_REQUESTED; flag 🆕 when author pushed since.
+    let mut waiting_on_author = Vec::new();
+    for item in &r_wait_author_raw {
+        let (_, repo, number) = repo_key(item)?;
+        let lookup = (repo, number);
+        let summary = reviews
+            .get(&lookup)
+            .map(|r| ReviewSummary::from_reviews(r))
+            .unwrap_or_else(|| ReviewSummary::from_reviews(&[]));
+        let Some(my_review) = summary.my_latest_review(&user) else {
+            continue;
+        };
+        let state_upper = my_review.state.to_ascii_uppercase();
+        if state_upper != "COMMENTED" && state_upper != "CHANGES_REQUESTED" {
+            continue;
+        }
+        let head_date = commit_dates.get(&lookup).copied();
+        let has_new_commits = match (head_date, my_review.submitted_at) {
+            (Some(h), Some(r)) => Some(h > r),
+            _ => None,
+        };
+        let mut pr = build_pr(
+            item,
+            Column::WaitingOnAuthor,
+            &details,
+            productive_org_slug,
+            now,
+        );
+        pr.has_new_commits_since_my_review = has_new_commits;
+        waiting_on_author.push(pr);
+    }
 
     let columns = ColumnsData {
-        draft_mine: build(&r_draft, Column::DraftMine),
-        review_mine: build(&r_review_mine, Column::ReviewMine),
-        ready_to_merge_mine: Vec::new(),
-        waiting_on_me: build(&r_wait_me, Column::WaitingOnMe),
-        waiting_on_author: build(&r_wait_author, Column::WaitingOnAuthor),
+        draft_mine,
+        review_mine,
+        ready_to_merge_mine,
+        waiting_on_me,
+        waiting_on_author,
     };
 
     Ok(BoardState {
@@ -198,6 +322,78 @@ pub async fn fetch_board_state(
         fetched_at: now,
         columns,
     })
+}
+
+/// `(owner, repo, number)` from a search item.
+fn repo_key(item: &SearchItem) -> Result<(String, String, u64)> {
+    let (owner, repo) = parse_repo_url(&item.repository_url).ok_or_else(|| {
+        Error::Other(format!("malformed repository_url: {}", item.repository_url))
+    })?;
+    Ok((owner, repo, item.number))
+}
+
+fn collect_keys(lists: &[&Vec<SearchItem>]) -> Result<HashSet<(String, String, u64)>> {
+    let mut keys = HashSet::new();
+    for list in lists {
+        for item in *list {
+            keys.insert(repo_key(item)?);
+        }
+    }
+    Ok(keys)
+}
+
+fn collect_commit_keys(
+    items: &[SearchItem],
+    details: &HashMap<(String, u64), PullDetail>,
+) -> Result<Vec<(String, String, u64, String)>> {
+    let mut out = Vec::new();
+    for item in items {
+        let (owner, repo, number) = repo_key(item)?;
+        if let Some(detail) = details.get(&(repo.clone(), number)) {
+            out.push((owner, repo, number, detail.head.sha.clone()));
+        }
+    }
+    Ok(out)
+}
+
+async fn fetch_all_reviews(
+    client: &GhClient,
+    keys: HashSet<(String, String, u64)>,
+) -> Result<HashMap<(String, u64), Vec<Review>>> {
+    let mut set = tokio::task::JoinSet::new();
+    for (owner, repo, number) in keys {
+        let c = client.clone();
+        set.spawn(async move {
+            let res = c.pull_reviews(&owner, &repo, number).await;
+            ((repo, number), res)
+        });
+    }
+    let mut out = HashMap::new();
+    while let Some(joined) = set.join_next().await {
+        let (key, res) = joined.map_err(|e| Error::Other(e.to_string()))?;
+        out.insert(key, res?);
+    }
+    Ok(out)
+}
+
+async fn fetch_all_commit_dates(
+    client: &GhClient,
+    keys: Vec<(String, String, u64, String)>,
+) -> Result<HashMap<(String, u64), DateTime<Utc>>> {
+    let mut set = tokio::task::JoinSet::new();
+    for (owner, repo, number, sha) in keys {
+        let c = client.clone();
+        set.spawn(async move {
+            let res = c.commit_date(&owner, &repo, &sha).await;
+            ((repo, number), res)
+        });
+    }
+    let mut out = HashMap::new();
+    while let Some(joined) = set.join_next().await {
+        let (key, res) = joined.map_err(|e| Error::Other(e.to_string()))?;
+        out.insert(key, res?);
+    }
+    Ok(out)
 }
 
 /// Dedupe across columns and fetch each PR's detail endpoint in parallel.
@@ -273,6 +469,7 @@ fn build_pr(
         productive_task_id,
         comments_count: item.comments,
         base_branch,
+        has_new_commits_since_my_review: None,
     }
 }
 
