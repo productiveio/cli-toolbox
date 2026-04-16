@@ -274,14 +274,23 @@ struct ApiOwner {
     login: String,
 }
 
+/// Reasons we surface in the Mentions inbox. Excludes `review_requested`
+/// (already its own "Waiting on me" column) and `state_change` /
+/// `subscribed` (too noisy — every PR close/merge event).
+const INBOX_REASONS: &[&str] = &["mention", "team_mention", "author", "comment"];
+
 /// Shape the raw `/notifications` payload into our `Notification` struct.
-/// Returns `None` when the thread is not a PR in the configured org, or when
-/// we can't parse a PR number out of it — those items are dropped silently.
+/// Returns `None` when the thread is not a PR in the configured org, when
+/// the reason isn't one we care about, or when we can't parse a PR number
+/// out of it — those items are dropped silently.
 fn into_pr_notification(item: ApiNotification, org: &str) -> Option<Notification> {
     if item.subject.kind != "PullRequest" {
         return None;
     }
     if !item.repository.owner.login.eq_ignore_ascii_case(org) {
+        return None;
+    }
+    if !INBOX_REASONS.iter().any(|r| *r == item.reason) {
         return None;
     }
     let api_url = item.subject.url.as_deref()?;
