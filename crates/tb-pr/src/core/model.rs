@@ -10,6 +10,10 @@ pub enum Column {
     ReadyToMergeMine,
     WaitingOnMe,
     WaitingOnAuthor,
+    /// Unread GitHub notifications on PRs in the configured org — mentions,
+    /// comments, review threads. Not strictly a PR column, but rendered
+    /// alongside for the email-replacement workflow.
+    Mentions,
 }
 
 impl Column {
@@ -20,6 +24,7 @@ impl Column {
             Column::ReadyToMergeMine => "ready_to_merge_mine",
             Column::WaitingOnMe => "waiting_on_me",
             Column::WaitingOnAuthor => "waiting_on_author",
+            Column::Mentions => "mentions",
         }
     }
 
@@ -34,6 +39,7 @@ impl Column {
             }
             "waiting_on_me" => Some(Column::WaitingOnMe),
             "waiting_on_author" => Some(Column::WaitingOnAuthor),
+            "mentions" | "inbox" | "notifications" => Some(Column::Mentions),
             _ => None,
         }
     }
@@ -98,6 +104,75 @@ pub struct ColumnsData {
     pub ready_to_merge_mine: Vec<Pr>,
     pub waiting_on_me: Vec<Pr>,
     pub waiting_on_author: Vec<Pr>,
+    /// Unread notifications filtered to `subject.type == PullRequest` in the
+    /// configured org. Populated only when the notifications fetch succeeds;
+    /// a failure there must not tank the rest of the board.
+    #[serde(default)]
+    pub notifications: Vec<Notification>,
+}
+
+/// Why a notification landed in the user's inbox. Mirrors GitHub's `reason`
+/// strings; unknown values fall through as `Other(raw)` so we don't lose info
+/// when GitHub adds new reasons.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationReason {
+    Mention,
+    TeamMention,
+    Comment,
+    ReviewRequested,
+    Author,
+    StateChange,
+    Subscribed,
+    Other(String),
+}
+
+impl NotificationReason {
+    pub fn from_api(raw: &str) -> Self {
+        match raw {
+            "mention" => Self::Mention,
+            "team_mention" => Self::TeamMention,
+            "comment" => Self::Comment,
+            "review_requested" => Self::ReviewRequested,
+            "author" => Self::Author,
+            "state_change" => Self::StateChange,
+            "subscribed" => Self::Subscribed,
+            other => Self::Other(other.to_string()),
+        }
+    }
+
+    pub fn short_label(&self) -> &str {
+        match self {
+            Self::Mention => "@mention",
+            Self::TeamMention => "@team",
+            Self::Comment => "comment",
+            Self::ReviewRequested => "review-req",
+            Self::Author => "author",
+            Self::StateChange => "state",
+            Self::Subscribed => "subscribed",
+            Self::Other(s) => s,
+        }
+    }
+}
+
+/// A single unread GitHub notification pointing at a PR.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Notification {
+    /// Stable thread id used for mark-as-read (PATCH /notifications/threads/:id).
+    pub thread_id: String,
+    pub reason: NotificationReason,
+    pub repo: String,
+    pub pr_number: u64,
+    pub pr_title: String,
+    /// Web URL to the PR (synthesized, not fetched).
+    pub pr_url: String,
+    /// API URL for the latest comment on this thread. Resolved to a
+    /// `html_url` lazily when the user opens the notification — not during
+    /// fetch — to avoid N extra API calls on cold start.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_comment_api_url: Option<String>,
+    pub updated_at: DateTime<Utc>,
+    pub age_days: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

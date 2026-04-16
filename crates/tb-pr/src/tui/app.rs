@@ -13,18 +13,21 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::commands::util::{copy_to_clipboard, open_url};
 use crate::core::github::{GhClient, fetch_board_state};
-use crate::core::model::{BoardState, Column, Pr};
+use crate::core::model::{BoardState, Column, Notification, Pr};
 use crate::error::{Error, Result};
 use crate::tui::columns;
 
-/// Five columns in left-to-right kanban order.
-const ORDER: [Column; 5] = [
+/// Six columns in left-to-right kanban order. Mentions lives on the right —
+/// it's email-replacement inbox, not a PR status column.
+const ORDER: [Column; 6] = [
     Column::DraftMine,
     Column::ReviewMine,
     Column::ReadyToMergeMine,
     Column::WaitingOnMe,
     Column::WaitingOnAuthor,
+    Column::Mentions,
 ];
+const COLUMNS_LEN: usize = ORDER.len();
 
 /// What the app wants the event loop to do after handling a key.
 #[derive(Debug, PartialEq, Eq)]
@@ -34,6 +37,15 @@ pub enum Intent {
     Refresh,
     OpenUrl(String),
     CopyUrl(String),
+    /// Resolve the comment URL → open → mark the thread as read.
+    /// `fallback_pr_url` is used when the comment URL resolve fails.
+    OpenNotification {
+        thread_id: String,
+        comment_api_url: Option<String>,
+        fallback_pr_url: String,
+    },
+    /// Server-side mark-all-as-read + clear the local list.
+    MarkAllNotificationsRead,
 }
 
 pub struct App {
@@ -41,9 +53,9 @@ pub struct App {
     /// Index into `ORDER` — which column is focused.
     pub focused: usize,
     /// Selected card index per column.
-    pub selected: [usize; 5],
+    pub selected: [usize; COLUMNS_LEN],
     /// First visible card index per column (for scrolling).
-    pub scroll: [usize; 5],
+    pub scroll: [usize; COLUMNS_LEN],
     pub help_open: bool,
     pub full_titles: bool,
     pub is_fetching: bool,
@@ -60,8 +72,8 @@ impl App {
         Self {
             state,
             focused: 0,
-            selected: [0; 5],
-            scroll: [0; 5],
+            selected: [0; COLUMNS_LEN],
+            scroll: [0; COLUMNS_LEN],
             help_open: false,
             full_titles: true,
             is_fetching: false,
@@ -91,6 +103,23 @@ impl App {
             Column::ReadyToMergeMine => &self.state.columns.ready_to_merge_mine,
             Column::WaitingOnMe => &self.state.columns.waiting_on_me,
             Column::WaitingOnAuthor => &self.state.columns.waiting_on_author,
+            // Notifications aren't Prs — callers hitting Mentions should
+            // use column_notifications() instead. Returning empty here lets
+            // shared navigation code stay generic over item count.
+            Column::Mentions => &[],
+        }
+    }
+
+    pub fn column_notifications(&self) -> &[Notification] {
+        &self.state.columns.notifications
+    }
+
+    /// Length of whichever list backs the column — PRs for the five
+    /// canonical columns, notifications for Mentions.
+    fn column_len(&self, col: Column) -> usize {
+        match col {
+            Column::Mentions => self.column_notifications().len(),
+            _ => self.column_prs(col).len(),
         }
     }
 
@@ -111,7 +140,7 @@ impl App {
 
     fn move_down(&mut self) {
         let col = ORDER[self.focused];
-        let len = self.column_prs(col).len();
+        let len = self.column_len(col);
         if len == 0 {
             return;
         }
@@ -123,7 +152,7 @@ impl App {
 
     pub fn clamp_selections(&mut self) {
         for (i, col) in ORDER.iter().enumerate() {
-            let len = self.column_prs(*col).len();
+            let len = self.column_len(*col);
             if len == 0 {
                 self.selected[i] = 0;
                 self.scroll[i] = 0;
@@ -135,7 +164,40 @@ impl App {
 
     fn selected_pr(&self) -> Option<&Pr> {
         let col = self.focused_column();
+        if col == Column::Mentions {
+            return None;
+        }
         self.column_prs(col).get(self.selected[self.focused])
+    }
+
+    fn selected_notification(&self) -> Option<&Notification> {
+        if self.focused_column() != Column::Mentions {
+            return None;
+        }
+        self.column_notifications().get(self.selected[self.focused])
+    }
+
+    /// A URL to copy / open for whichever kind of card is focused — a PR's
+    /// URL, a notification's PR URL, or `None` if the focused column is empty.
+    fn selected_url(&self) -> Option<String> {
+        self.selected_pr()
+            .map(|pr| pr.url.clone())
+            .or_else(|| self.selected_notification().map(|n| n.pr_url.clone()))
+    }
+
+    /// Remove a notification (after the user opens + the server confirms the
+    /// thread is read). Called from the event loop on FetchDone-style events.
+    pub fn remove_notification(&mut self, thread_id: &str) {
+        self.state
+            .columns
+            .notifications
+            .retain(|n| n.thread_id != thread_id);
+        self.clamp_selections();
+    }
+
+    pub fn clear_notifications(&mut self) {
+        self.state.columns.notifications.clear();
+        self.clamp_selections();
     }
 
     fn task_url(&self, pr: &Pr) -> Option<String> {
@@ -205,10 +267,18 @@ impl App {
                 self.move_down();
                 Intent::None
             }
-            KeyCode::Enter | KeyCode::Char('d') => self
-                .selected_pr()
-                .map(|pr| Intent::OpenUrl(pr.url.clone()))
-                .unwrap_or(Intent::None),
+            KeyCode::Enter | KeyCode::Char('d') => {
+                if let Some(n) = self.selected_notification() {
+                    return Intent::OpenNotification {
+                        thread_id: n.thread_id.clone(),
+                        comment_api_url: n.latest_comment_api_url.clone(),
+                        fallback_pr_url: n.pr_url.clone(),
+                    };
+                }
+                self.selected_pr()
+                    .map(|pr| Intent::OpenUrl(pr.url.clone()))
+                    .unwrap_or(Intent::None)
+            }
             KeyCode::Char('t') => {
                 if let Some(pr) = self.selected_pr() {
                     if let Some(url) = self.task_url(pr) {
@@ -219,8 +289,8 @@ impl App {
                 Intent::None
             }
             KeyCode::Char('c') => self
-                .selected_pr()
-                .map(|pr| Intent::CopyUrl(pr.url.clone()))
+                .selected_url()
+                .map(Intent::CopyUrl)
                 .unwrap_or(Intent::None),
             KeyCode::Char('r') => {
                 if !self.is_fetching {
@@ -229,11 +299,18 @@ impl App {
                     Intent::None
                 }
             }
+            KeyCode::Char('m') => {
+                if self.column_notifications().is_empty() {
+                    Intent::None
+                } else {
+                    Intent::MarkAllNotificationsRead
+                }
+            }
             KeyCode::Char('w') => {
                 self.full_titles = !self.full_titles;
                 // Scroll offsets may now be wrong for the new card heights;
                 // reset so the selected card re-anchors on next render.
-                self.scroll = [0; 5];
+                self.scroll = [0; COLUMNS_LEN];
                 Intent::None
             }
             _ => Intent::None,
@@ -257,6 +334,11 @@ enum UiEvent {
     RefreshTick,
     FetchDone(std::result::Result<BoardState, String>),
     AnimTick,
+    /// Background task finished opening + marking a single notification.
+    /// `Ok(thread_id)` → remove it; `Err(msg)` → surface the error and keep it.
+    NotificationOpened(std::result::Result<String, String>),
+    /// Server accepted PUT /notifications — drop all local notifications.
+    NotificationsAllRead(std::result::Result<(), String>),
 }
 
 pub async fn run(state: BoardState, ctx: FetchCtx) -> Result<()> {
@@ -332,6 +414,17 @@ async fn event_loop(
                     Ok(()) => app.set_status(format!("copied {url}")),
                     Err(e) => app.mark_error(format!("copy failed: {e}")),
                 },
+                Intent::OpenNotification {
+                    thread_id,
+                    comment_api_url,
+                    fallback_pr_url,
+                } => {
+                    spawn_open_notification(&tx, thread_id, comment_api_url, fallback_pr_url);
+                }
+                Intent::MarkAllNotificationsRead => {
+                    spawn_mark_all_read(&tx);
+                    app.set_status("marking all notifications read…".to_string());
+                }
                 Intent::None => {}
             },
             UiEvent::RefreshTick => {
@@ -341,6 +434,18 @@ async fn event_loop(
             }
             UiEvent::FetchDone(Ok(state)) => app.replace_state(state),
             UiEvent::FetchDone(Err(msg)) => app.mark_error(msg),
+            UiEvent::NotificationOpened(Ok(thread_id)) => {
+                app.remove_notification(&thread_id);
+                app.set_status("marked read".to_string());
+            }
+            UiEvent::NotificationOpened(Err(msg)) => app.mark_error(msg),
+            UiEvent::NotificationsAllRead(Ok(())) => {
+                app.clear_notifications();
+                app.set_status("all notifications marked read".to_string());
+            }
+            UiEvent::NotificationsAllRead(Err(msg)) => {
+                app.mark_error(format!("mark-all-read failed: {msg}"));
+            }
             UiEvent::AnimTick => {
                 app.tick_count = app.tick_count.wrapping_add(1);
             }
@@ -350,6 +455,55 @@ async fn event_loop(
             .map_err(Error::Io)?;
     }
     Ok(())
+}
+
+/// Open a notification in the browser and mark its thread as read.
+/// Three steps, each independently fallible:
+///   1. resolve comment api_url → html_url (optional, falls back to PR URL)
+///   2. open that URL in the browser
+///   3. PATCH the thread as read
+fn spawn_open_notification(
+    tx: &UnboundedSender<UiEvent>,
+    thread_id: String,
+    comment_api_url: Option<String>,
+    fallback_pr_url: String,
+) {
+    let tx = tx.clone();
+    tokio::spawn(async move {
+        let result: std::result::Result<String, String> = async {
+            let client = GhClient::new().map_err(|e| e.to_string())?;
+            let url = match comment_api_url.as_deref() {
+                Some(api) => client
+                    .resolve_comment_html_url(api)
+                    .await
+                    .unwrap_or_else(|_| fallback_pr_url.clone()),
+                None => fallback_pr_url.clone(),
+            };
+            open_url(&url).map_err(|e| e.to_string())?;
+            client
+                .mark_thread_read(&thread_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(thread_id)
+        }
+        .await;
+        let _ = tx.send(UiEvent::NotificationOpened(result));
+    });
+}
+
+fn spawn_mark_all_read(tx: &UnboundedSender<UiEvent>) {
+    let tx = tx.clone();
+    tokio::spawn(async move {
+        let result = async {
+            let client = GhClient::new().map_err(|e| e.to_string())?;
+            client
+                .mark_all_notifications_read()
+                .await
+                .map_err(|e| e.to_string())
+        }
+        .await;
+        let _ = tx.send(UiEvent::NotificationsAllRead(result));
+    });
 }
 
 fn spawn_fetch(tx: &UnboundedSender<UiEvent>, ctx: &Arc<FetchCtx>, app: &mut App) {
@@ -423,7 +577,9 @@ impl Drop for RawModeGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::model::{BoardState, ColumnsData, Pr, PrState, RottingBucket, SizeBucket};
+    use crate::core::model::{
+        BoardState, ColumnsData, NotificationReason, Pr, PrState, RottingBucket, SizeBucket,
+    };
     use chrono::Utc;
 
     fn sample_pr(repo: &str, number: u64, title: &str) -> Pr {
@@ -445,6 +601,22 @@ mod tests {
         }
     }
 
+    fn sample_notification(repo: &str, pr_number: u64, title: &str) -> Notification {
+        Notification {
+            thread_id: format!("thread-{pr_number}"),
+            reason: NotificationReason::Mention,
+            repo: repo.to_string(),
+            pr_number,
+            pr_title: title.to_string(),
+            pr_url: format!("https://github.com/productiveio/{repo}/pull/{pr_number}"),
+            latest_comment_api_url: Some(format!(
+                "https://api.github.com/repos/productiveio/{repo}/issues/comments/9"
+            )),
+            updated_at: Utc::now(),
+            age_days: 0.5,
+        }
+    }
+
     fn sample_state() -> BoardState {
         BoardState {
             user: "ilucin".to_string(),
@@ -455,6 +627,7 @@ mod tests {
                 ready_to_merge_mine: vec![],
                 waiting_on_me: vec![sample_pr("frontend", 3, "Please review")],
                 waiting_on_author: vec![],
+                notifications: vec![sample_notification("frontend", 3, "Please review")],
             },
         }
     }
@@ -473,7 +646,7 @@ mod tests {
     fn navigation_wraps_and_clamps() {
         let mut a = app();
         assert_eq!(a.handle_key(key(KeyCode::Left)), Intent::None);
-        assert_eq!(a.focused, 4);
+        assert_eq!(a.focused, COLUMNS_LEN - 1);
         assert_eq!(a.handle_key(key(KeyCode::Right)), Intent::None);
         assert_eq!(a.focused, 0);
 
@@ -528,13 +701,53 @@ mod tests {
     #[test]
     fn w_toggles_full_titles_and_resets_scroll() {
         let mut a = app();
-        a.scroll = [3, 2, 1, 4, 0];
+        a.scroll = [3, 2, 1, 4, 0, 0];
         assert!(a.full_titles); // default on
         a.handle_key(key(KeyCode::Char('w')));
         assert!(!a.full_titles);
-        assert_eq!(a.scroll, [0; 5]);
+        assert_eq!(a.scroll, [0; COLUMNS_LEN]);
         a.handle_key(key(KeyCode::Char('w')));
         assert!(a.full_titles);
+    }
+
+    #[test]
+    fn enter_on_mentions_returns_open_notification_intent() {
+        let mut a = app();
+        a.focused = ORDER.iter().position(|c| *c == Column::Mentions).unwrap();
+        match a.handle_key(key(KeyCode::Enter)) {
+            Intent::OpenNotification {
+                thread_id,
+                comment_api_url,
+                fallback_pr_url,
+            } => {
+                assert_eq!(thread_id, "thread-3");
+                assert!(comment_api_url.is_some());
+                assert!(fallback_pr_url.contains("frontend/pull/3"));
+            }
+            other => panic!("expected OpenNotification, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn m_marks_all_read_only_when_inbox_nonempty() {
+        let mut a = app();
+        assert_eq!(
+            a.handle_key(key(KeyCode::Char('m'))),
+            Intent::MarkAllNotificationsRead
+        );
+        a.clear_notifications();
+        assert_eq!(a.handle_key(key(KeyCode::Char('m'))), Intent::None);
+    }
+
+    #[test]
+    fn remove_notification_clamps_selection() {
+        let mut a = app();
+        let mentions_idx = ORDER.iter().position(|c| *c == Column::Mentions).unwrap();
+        a.focused = mentions_idx;
+        a.selected[mentions_idx] = 0;
+        a.remove_notification("thread-3");
+        assert!(a.column_notifications().is_empty());
+        assert_eq!(a.selected[mentions_idx], 0);
     }
 
     #[test]

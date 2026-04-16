@@ -5,7 +5,9 @@ use crate::commands::util::humanize_age_hours;
 use crate::config::Config;
 use crate::core::cache::BoardCache;
 use crate::core::github::{GhClient, fetch_board_state};
-use crate::core::model::{BoardState, Column, ColumnsData, Pr, RottingBucket, SizeBucket};
+use crate::core::model::{
+    BoardState, Column, ColumnsData, Notification, Pr, RottingBucket, SizeBucket,
+};
 use crate::error::{Error, Result};
 use toolbox_core::cache::CacheTtl;
 use toolbox_core::output::truncate;
@@ -15,7 +17,7 @@ pub async fn run(column: Option<String>, stale_days: Option<u32>, json: bool) ->
         Some(s) => Some(Column::parse(s).ok_or_else(|| {
             Error::Other(format!(
                 "unknown column `{s}` — expected one of: draft-mine, review-mine, \
-                 ready-to-merge-mine, waiting-on-me, waiting-on-author"
+                 ready-to-merge-mine, waiting-on-me, waiting-on-author, mentions"
             ))
         })?),
         None => None,
@@ -40,6 +42,13 @@ pub async fn run(column: Option<String>, stale_days: Option<u32>, json: bool) ->
 
     if json {
         println!("{}", serde_json::to_string_pretty(&state)?);
+        return Ok(());
+    }
+
+    // Dedicated mentions view — notifications aren't PRs, don't mix them
+    // into the flattened table.
+    if filter_col == Some(Column::Mentions) {
+        render_mentions(&state);
         return Ok(());
     }
 
@@ -84,6 +93,9 @@ fn blank_other_columns(columns: &mut ColumnsData, keep: Column) {
     }
     if keep != Column::WaitingOnAuthor {
         columns.waiting_on_author.clear();
+    }
+    if keep != Column::Mentions {
+        columns.notifications.clear();
     }
 }
 
@@ -135,6 +147,9 @@ fn column_tag(c: Column) -> ColoredString {
         Column::ReadyToMergeMine => "ready".green(),
         Column::WaitingOnMe => "wait-me".cyan().bold(),
         Column::WaitingOnAuthor => "wait-au".normal(),
+        // Mentions doesn't appear in the flattened PR table — notifications
+        // are rendered separately by list_mentions(). Kept for exhaustiveness.
+        Column::Mentions => "mention".cyan(),
     }
 }
 
@@ -157,6 +172,40 @@ fn age_tag(pr: &Pr) -> ColoredString {
         RottingBucket::Stale => text.yellow(),
         RottingBucket::Rotting => text.truecolor(255, 165, 0),
         RottingBucket::Critical => text.red().bold(),
+    }
+}
+
+fn render_mentions(state: &BoardState) {
+    let notifications: &[Notification] = &state.columns.notifications;
+    if notifications.is_empty() {
+        println!("{}", "No unread PR notifications.".dimmed());
+        return;
+    }
+    println!(
+        "{}",
+        format!(
+            "{:<11} {:<24} {:<6} {}",
+            "REASON", "REPO#NUM", "AGE", "TITLE"
+        )
+        .bold()
+    );
+    let mut sorted: Vec<&Notification> = notifications.iter().collect();
+    sorted.sort_by(|a, b| {
+        b.age_days
+            .partial_cmp(&a.age_days)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for n in sorted {
+        let repo_num = format!("{}#{}", n.repo, n.pr_number);
+        let age = humanize_age_hours(n.age_days * 24.0);
+        let title = truncate(&n.pr_title, 80);
+        println!(
+            "{:<11} {:<24} {:<6} {}",
+            n.reason.short_label().cyan(),
+            repo_num,
+            age,
+            title,
+        );
     }
 }
 
@@ -202,6 +251,7 @@ fn render_table(state: &crate::core::model::BoardState) {
         ("ready", state.columns.ready_to_merge_mine.len()),
         ("wait-me", state.columns.waiting_on_me.len()),
         ("wait-au", state.columns.waiting_on_author.len()),
+        ("mentions", state.columns.notifications.len()),
     ];
     let summary: String = counts
         .iter()

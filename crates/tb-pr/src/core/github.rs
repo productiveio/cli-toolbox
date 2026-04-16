@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
 
 use crate::core::classifier;
-use crate::core::model::{BoardState, Column, ColumnsData, Pr, PrState};
+use crate::core::model::{
+    BoardState, Column, ColumnsData, Notification, NotificationReason, Pr, PrState,
+};
 use crate::core::productive::extract_task_id;
 use crate::core::reviews::{Review, ReviewSummary};
 use crate::error::{Error, Result};
@@ -153,6 +155,157 @@ impl GhClient {
             .await?;
         Ok(commit.commit.committer.date)
     }
+
+    /// Fetch unread notifications, filtered to PRs in the given org. Paginates
+    /// via `Link: rel="next"` up to the same 10-page cap used for searches.
+    pub async fn list_notifications(&self, org: &str) -> Result<Vec<Notification>> {
+        let mut first = reqwest::Url::parse(&format!("{API_BASE}/notifications")).unwrap();
+        first
+            .query_pairs_mut()
+            .append_pair("per_page", "50")
+            .append_pair("all", "false"); // unread only
+
+        let mut next_url: Option<String> = Some(first.to_string());
+        let mut out: Vec<Notification> = Vec::new();
+        let mut pages = 0u32;
+        while let Some(url) = next_url.take() {
+            pages += 1;
+            if pages > SEARCH_MAX_PAGES {
+                break;
+            }
+            let resp = self.send_get(&url).await?;
+            next_url = parse_link_next(resp.headers());
+            let page: Vec<ApiNotification> = resp.json().await?;
+            for item in page {
+                if let Some(n) = into_pr_notification(item, org) {
+                    out.push(n);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Resolve a `latest_comment_url` (API) to its `html_url` (web). Used at
+    /// open-time so clicking a notification jumps to the specific comment.
+    pub async fn resolve_comment_html_url(&self, api_url: &str) -> Result<String> {
+        #[derive(Deserialize)]
+        struct CommentStub {
+            html_url: String,
+        }
+        let c: CommentStub = self.get(api_url).await?;
+        Ok(c.html_url)
+    }
+
+    /// Mark a single notification thread as read.
+    pub async fn mark_thread_read(&self, thread_id: &str) -> Result<()> {
+        let url = format!("{API_BASE}/notifications/threads/{thread_id}");
+        let resp = self
+            .client
+            .patch(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(Error::Api {
+                status: status.as_u16(),
+                message: body,
+            });
+        }
+        Ok(())
+    }
+
+    /// Mark *all* notifications as read at the server. GitHub accepts an
+    /// optional `last_read_at`; we send `now` so earlier items are cleared
+    /// but a brand-new notification arriving mid-request is still surfaced.
+    pub async fn mark_all_notifications_read(&self) -> Result<()> {
+        let url = format!("{API_BASE}/notifications");
+        let body = serde_json::json!({ "last_read_at": Utc::now().to_rfc3339() });
+        let resp = self
+            .client
+            .put(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .json(&body)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(Error::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiNotification {
+    id: String,
+    reason: String,
+    updated_at: DateTime<Utc>,
+    subject: ApiSubject,
+    repository: ApiRepository,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiSubject {
+    title: String,
+    url: Option<String>,
+    latest_comment_url: Option<String>,
+    #[serde(rename = "type")]
+    kind: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiRepository {
+    name: String,
+    owner: ApiOwner,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiOwner {
+    login: String,
+}
+
+/// Shape the raw `/notifications` payload into our `Notification` struct.
+/// Returns `None` when the thread is not a PR in the configured org, or when
+/// we can't parse a PR number out of it — those items are dropped silently.
+fn into_pr_notification(item: ApiNotification, org: &str) -> Option<Notification> {
+    if item.subject.kind != "PullRequest" {
+        return None;
+    }
+    if !item.repository.owner.login.eq_ignore_ascii_case(org) {
+        return None;
+    }
+    let api_url = item.subject.url.as_deref()?;
+    let pr_number = api_url
+        .rsplit('/')
+        .next()
+        .and_then(|s| s.parse::<u64>().ok())?;
+    let repo = item.repository.name;
+    let pr_url = format!(
+        "https://github.com/{}/{repo}/pull/{pr_number}",
+        item.repository.owner.login
+    );
+    let age_days = (Utc::now() - item.updated_at).num_seconds() as f64 / 86400.0;
+    Some(Notification {
+        thread_id: item.id,
+        reason: NotificationReason::from_api(&item.reason),
+        repo,
+        pr_number,
+        pr_title: item.subject.title,
+        pr_url,
+        latest_comment_api_url: item.subject.latest_comment_url,
+        updated_at: item.updated_at,
+        age_days,
+    })
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -305,12 +458,26 @@ pub async fn fetch_board_state(
     let q_wait_me = format!("is:pr is:open user-review-requested:@me org:{org}");
     let q_wait_author = format!("is:pr is:open reviewed-by:@me -author:@me org:{org}");
 
-    let (r_draft, r_review_mine_raw, r_wait_me, r_wait_author_raw) = tokio::try_join!(
+    let (r_draft, r_review_mine_raw, r_wait_me, r_wait_author_raw, r_notifications) = tokio::join!(
         client.search_issues(&q_draft),
         client.search_issues(&q_author_mine),
         client.search_issues(&q_wait_me),
         client.search_issues(&q_wait_author),
-    )?;
+        client.list_notifications(org),
+    );
+    let r_draft = r_draft?;
+    let r_review_mine_raw = r_review_mine_raw?;
+    let r_wait_me = r_wait_me?;
+    let r_wait_author_raw = r_wait_author_raw?;
+    // Notifications are nice-to-have — a 403 on /notifications (e.g. token
+    // missing `notifications` scope) must not block the main board.
+    let notifications = match r_notifications {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("warning: failed to fetch notifications: {e}");
+            Vec::new()
+        }
+    };
 
     let details = fetch_all_details(
         client,
@@ -408,6 +575,7 @@ pub async fn fetch_board_state(
         ready_to_merge_mine,
         waiting_on_me,
         waiting_on_author,
+        notifications,
     };
 
     Ok(BoardState {

@@ -23,6 +23,9 @@ fn thresholds_hours(column: Column) -> [u32; 4] {
         Column::ReviewMine | Column::ReadyToMergeMine => [24, 3 * 24, 7 * 24, 14 * 24],
         Column::WaitingOnMe => [4, 24, 2 * 24, 4 * 24],
         Column::WaitingOnAuthor => [2 * 24, 5 * 24, 10 * 24, 14 * 24],
+        // Mentions use the same aggressive thresholds as Waiting-on-me —
+        // somebody is blocked on me responding.
+        Column::Mentions => [4, 24, 2 * 24, 4 * 24],
     }
 }
 

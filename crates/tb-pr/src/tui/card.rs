@@ -5,7 +5,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
 use crate::commands::util::humanize_age_hours;
-use crate::core::model::{Pr, RottingBucket, SizeBucket};
+use crate::core::classifier;
+use crate::core::model::{Column, Notification, NotificationReason, Pr, RottingBucket, SizeBucket};
 
 /// Minimum card height (2 borders + 1 title + 2 meta rows).
 pub const MIN_CARD_HEIGHT: u16 = 5;
@@ -102,6 +103,111 @@ pub fn render(frame: &mut Frame, area: Rect, pr: &Pr, selected: bool, full_title
         row3_spans.push(Span::raw(format!("💬 {}", pr.comments_count)));
     }
     frame.render_widget(Paragraph::new(Line::from(row3_spans)), row3_area);
+}
+
+/// Minimum rows a notification card occupies (2 border + 1 title + 1 meta).
+pub const NOTIFICATION_MIN_HEIGHT: u16 = 4;
+
+pub fn notification_card_height(
+    notification: &Notification,
+    full_titles: bool,
+    column_width: u16,
+) -> u16 {
+    let inner_width = column_width.saturating_sub(2);
+    let title_width = inner_width.max(1) as usize;
+    let title_len = display_title(&notification.pr_title).chars().count();
+    let title_lines = if full_titles {
+        title_len.div_ceil(title_width).max(1) as u16
+    } else {
+        1
+    };
+    (2 + title_lines + 1).max(NOTIFICATION_MIN_HEIGHT)
+}
+
+pub fn render_notification(
+    frame: &mut Frame,
+    area: Rect,
+    notification: &Notification,
+    selected: bool,
+    full_titles: bool,
+) {
+    let bucket = classifier::rotting_bucket(Column::Mentions, notification.age_days * 24.0);
+    let border_color = rotting_color(bucket);
+    let border_style = if selected {
+        Style::default()
+            .fg(border_color)
+            .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+    } else {
+        Style::default().fg(border_color)
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(border_style);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Title on top N rows, single meta row on the bottom.
+    let title_rows = inner.height.saturating_sub(1);
+    let title_area = Rect::new(inner.x, inner.y, inner.width, title_rows);
+    let meta_area = Rect::new(inner.x, inner.y + title_rows, inner.width, 1);
+
+    let display = display_title(&notification.pr_title);
+    let title_body = if full_titles {
+        display.to_string()
+    } else {
+        truncate(display, inner.width as usize)
+    };
+    let title_line = Line::from(Span::styled(
+        title_body,
+        Style::default().add_modifier(Modifier::BOLD),
+    ));
+    let mut title_paragraph = Paragraph::new(title_line);
+    if full_titles {
+        title_paragraph = title_paragraph.wrap(Wrap { trim: false });
+    }
+    frame.render_widget(title_paragraph, title_area);
+
+    let meta_spans = vec![
+        Span::styled(
+            reason_badge(&notification.reason).to_string(),
+            Style::default().fg(reason_color(&notification.reason)),
+        ),
+        Span::raw("  "),
+        Span::styled(
+            format!("{}#{}", notification.repo, notification.pr_number),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
+        Span::raw("  "),
+        Span::styled(
+            humanize_age_hours(notification.age_days * 24.0),
+            Style::default().fg(border_color),
+        ),
+    ];
+    frame.render_widget(Paragraph::new(Line::from(meta_spans)), meta_area);
+}
+
+fn reason_badge(r: &NotificationReason) -> &str {
+    match r {
+        NotificationReason::Mention => "@me",
+        NotificationReason::TeamMention => "@team",
+        NotificationReason::Comment => "💬",
+        NotificationReason::ReviewRequested => "👀",
+        NotificationReason::Author => "author",
+        NotificationReason::StateChange => "state",
+        NotificationReason::Subscribed => "sub",
+        NotificationReason::Other(_) => "?",
+    }
+}
+
+fn reason_color(r: &NotificationReason) -> Color {
+    match r {
+        NotificationReason::Mention => Color::Cyan,
+        NotificationReason::TeamMention => Color::Magenta,
+        NotificationReason::Comment => Color::Yellow,
+        NotificationReason::ReviewRequested => Color::Green,
+        _ => Color::Gray,
+    }
 }
 
 pub fn rotting_color(b: RottingBucket) -> Color {

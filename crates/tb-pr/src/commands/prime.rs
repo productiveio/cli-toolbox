@@ -5,7 +5,7 @@ use crate::commands::util::humanize_age_hours;
 use crate::config::Config;
 use crate::core::cache::BoardCache;
 use crate::core::github::{GhClient, fetch_board_state};
-use crate::core::model::{BoardState, Pr, SizeBucket};
+use crate::core::model::{BoardState, Notification, Pr, SizeBucket};
 use crate::error::Result;
 
 pub async fn run() -> Result<()> {
@@ -58,6 +58,13 @@ fn render(state: &BoardState) -> String {
         c.waiting_on_author.len(),
         oldest_suffix(&c.waiting_on_author),
     ));
+    if !c.notifications.is_empty() {
+        out.push_str(&format!(
+            "- {} unread PR notifications{}\n",
+            c.notifications.len(),
+            oldest_notification_suffix(&c.notifications),
+        ));
+    }
     if !c.draft_mine.is_empty() {
         out.push_str(&format!("- {} of my drafts\n", c.draft_mine.len()));
     }
@@ -65,8 +72,43 @@ fn render(state: &BoardState) -> String {
     append_section(&mut out, "Waiting on me (urgent first)", &c.waiting_on_me);
     append_section(&mut out, "Ready to merge", &c.ready_to_merge_mine);
     append_section(&mut out, "Waiting on author", &c.waiting_on_author);
+    append_notifications(&mut out, &c.notifications);
 
     out
+}
+
+fn append_notifications(out: &mut String, notifications: &[Notification]) {
+    if notifications.is_empty() {
+        return;
+    }
+    out.push_str("\n## Mentions (urgent first)\n");
+    let mut sorted: Vec<&Notification> = notifications.iter().collect();
+    sorted.sort_by(|a, b| {
+        b.age_days
+            .partial_cmp(&a.age_days)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for n in sorted {
+        let age = humanize_age_hours(n.age_days * 24.0);
+        out.push_str(&format!(
+            "- {} {}#{} — {} ({age})\n",
+            n.reason.short_label(),
+            n.repo,
+            n.pr_number,
+            n.pr_title,
+        ));
+    }
+}
+
+fn oldest_notification_suffix(notifications: &[Notification]) -> String {
+    let max = notifications
+        .iter()
+        .map(|n| n.age_days)
+        .fold(0.0_f64, f64::max);
+    if max < 0.01 {
+        return String::new();
+    }
+    format!(" (oldest: {})", humanize_age_hours(max * 24.0))
 }
 
 /// Append a `## Title` section with a bulleted PR list. Sorted by age desc
@@ -160,6 +202,7 @@ mod tests {
                     pr("api", 567, "Add webhook endpoint", 2.0),
                 ],
                 waiting_on_author: vec![],
+                notifications: vec![],
             },
         };
         let s = render(&state);
@@ -186,6 +229,7 @@ mod tests {
                 ready_to_merge_mine: vec![],
                 waiting_on_me: vec![],
                 waiting_on_author: vec![],
+                notifications: vec![],
             },
         };
         let s = render(&state);
