@@ -141,6 +141,38 @@ pub fn humanize_age_hours(hours: f64) -> String {
     }
 }
 
+/// Copy text to the system clipboard. Uses `pbcopy` on macOS and
+/// `xclip -selection clipboard` elsewhere.
+pub fn copy_to_clipboard(text: &str) -> Result<()> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut cmd = if cfg!(target_os = "macos") {
+        Command::new("pbcopy")
+    } else {
+        let mut c = Command::new("xclip");
+        c.args(["-selection", "clipboard"]);
+        c
+    };
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|e| Error::Other(format!("failed to spawn clipboard helper: {e}")))?;
+    child
+        .stdin
+        .as_mut()
+        .ok_or_else(|| Error::Other("clipboard helper closed stdin".to_string()))?
+        .write_all(text.as_bytes())
+        .map_err(|e| Error::Other(format!("failed to write to clipboard helper: {e}")))?;
+    let status = child
+        .wait()
+        .map_err(|e| Error::Other(format!("clipboard helper wait failed: {e}")))?;
+    if !status.success() {
+        return Err(Error::Other("clipboard helper exited non-zero".to_string()));
+    }
+    Ok(())
+}
+
 /// Open a URL in the system browser. Uses `open` on macOS and
 /// `xdg-open` elsewhere.
 pub fn open_url(url: &str) -> Result<()> {

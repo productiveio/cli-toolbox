@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::core::cache::BoardCache;
 use crate::core::github::{GhClient, fetch_board_state};
 use crate::error::Result;
-use crate::tui::app;
+use crate::tui::app::{self, FetchCtx};
 
 pub async fn run() -> Result<()> {
     let config = Config::load()?;
@@ -24,5 +24,10 @@ pub async fn run() -> Result<()> {
             fresh
         }
     };
-    app::run(state)
+    let ctx = FetchCtx {
+        org: config.github.org,
+        productive_org_slug: config.productive.org_slug,
+        username_override: config.github.username_override,
+    };
+    app::run(state, ctx).await
 }
