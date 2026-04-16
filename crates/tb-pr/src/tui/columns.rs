@@ -8,7 +8,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use crate::commands::util::humanize_age_hours;
 use crate::core::model::Column;
 use crate::tui::app::App;
-use crate::tui::card::{self, CARD_HEIGHT};
+use crate::tui::card;
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
@@ -66,7 +66,7 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     let help = if app.help_open {
         "?=close"
     } else {
-        "←/→ column   ↑/↓ nav   ⏎=open  t=task  r=refresh  c=copy  ?=help  q=quit"
+        "←/→ column   ↑/↓ nav   ⏎=open  t=task  r=refresh  c=copy  w=wrap  ?=help  q=quit"
     };
     frame.render_widget(
         Paragraph::new(Span::styled(
@@ -120,32 +120,39 @@ fn render_column(frame: &mut Frame, area: Rect, app: &mut App, idx: usize, col: 
         return;
     }
 
-    // Compute scroll offset so the selected card is visible.
-    let visible = (inner.height / CARD_HEIGHT).max(1) as usize;
-    let mut scroll_start = app.scroll[idx];
-    if selected < scroll_start {
-        scroll_start = selected;
-    } else if selected >= scroll_start + visible {
-        scroll_start = selected + 1 - visible;
+    // Adjust scroll offset so the selected card is fully visible.
+    let full_titles = app.full_titles;
+    let heights: Vec<u16> = app
+        .column_prs(col)
+        .iter()
+        .map(|pr| card::card_height(pr, full_titles, inner.width))
+        .collect();
+    let mut scroll_start = app.scroll[idx].min(selected);
+    while !range_fits(&heights, scroll_start, selected, inner.height) {
+        scroll_start += 1;
     }
     app.scroll[idx] = scroll_start;
 
     let mut y = inner.y;
     let end = inner.y + inner.height;
+    // Reserve the last row for the "+N more" overflow hint so we never
+    // push it past the column bounds.
+    let card_end = end.saturating_sub(1);
     let prs = app.column_prs(col);
+    let mut last_drawn = scroll_start;
     for (i, pr) in prs.iter().enumerate().skip(scroll_start) {
-        if y + CARD_HEIGHT > end {
+        let h = heights[i];
+        if y + h > card_end && i != scroll_start {
             break;
         }
-        let card_area = Rect::new(inner.x, y, inner.width, CARD_HEIGHT);
+        let card_area = Rect::new(inner.x, y, inner.width, h);
         let selected_here = is_focused && i == selected;
-        card::render(frame, card_area, pr, selected_here);
-        y += CARD_HEIGHT;
+        card::render(frame, card_area, pr, selected_here, full_titles);
+        y += h;
+        last_drawn = i;
     }
 
-    // Show a subtle "+N more" hint if we clipped.
-    let shown = visible.min(count - scroll_start);
-    let remaining = count.saturating_sub(scroll_start + shown);
+    let remaining = count.saturating_sub(last_drawn + 1);
     if remaining > 0 && y < end {
         let hint = Paragraph::new(Span::styled(
             format!("+{remaining} more ↓"),
@@ -153,6 +160,22 @@ fn render_column(frame: &mut Frame, area: Rect, app: &mut App, idx: usize, col: 
         ));
         frame.render_widget(hint, Rect::new(inner.x, y, inner.width, 1));
     }
+}
+
+/// Do cards `[start..=target]` (inclusive) all fit within `max_height`?
+/// The selected card must land fully inside the column, otherwise we scroll.
+fn range_fits(heights: &[u16], start: usize, target: usize, max_height: u16) -> bool {
+    if start > target {
+        return true;
+    }
+    let mut total: u16 = 0;
+    for h in &heights[start..=target] {
+        total = total.saturating_add(*h);
+        if total > max_height {
+            return false;
+        }
+    }
+    true
 }
 
 fn column_title(col: Column) -> &'static str {
@@ -171,7 +194,7 @@ fn spinner_frame(tick: u64) -> &'static str {
 }
 
 fn render_help(frame: &mut Frame) {
-    let area = centered_rect(60, 16, frame.area());
+    let area = centered_rect(60, 18, frame.area());
     frame.render_widget(Clear, area);
     let block = Block::default().borders(Borders::ALL).title(" Keybinds ");
     let lines: Vec<Line> = [
@@ -181,6 +204,7 @@ fn render_help(frame: &mut Frame) {
         ("t       ", "open Productive task"),
         ("r       ", "refresh now"),
         ("c       ", "copy PR URL"),
+        ("w       ", "wrap — show full titles"),
         ("?       ", "toggle this help"),
         ("q  Esc  ", "quit"),
     ]

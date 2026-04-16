@@ -47,6 +47,7 @@ pub struct App {
     /// First visible card index per column (for scrolling).
     pub scroll: [usize; 5],
     pub help_open: bool,
+    pub full_titles: bool,
     pub is_fetching: bool,
     pub last_error: Option<String>,
     pub tick_count: u64,
@@ -61,6 +62,7 @@ impl App {
             selected: [0; 5],
             scroll: [0; 5],
             help_open: false,
+            full_titles: false,
             is_fetching: false,
             last_error: None,
             tick_count: 0,
@@ -217,6 +219,13 @@ impl App {
                 } else {
                     Intent::None
                 }
+            }
+            KeyCode::Char('w') => {
+                self.full_titles = !self.full_titles;
+                // Scroll offsets may now be wrong for the new card heights;
+                // reset so the selected card re-anchors on next render.
+                self.scroll = [0; 5];
+                Intent::None
             }
             _ => Intent::None,
         }
@@ -489,6 +498,18 @@ mod tests {
         // ? closes it again.
         a.handle_key(key(KeyCode::Char('?')));
         assert!(!a.help_open);
+    }
+
+    #[test]
+    fn w_toggles_full_titles_and_resets_scroll() {
+        let mut a = app();
+        a.scroll = [3, 2, 1, 4, 0];
+        assert!(!a.full_titles);
+        a.handle_key(key(KeyCode::Char('w')));
+        assert!(a.full_titles);
+        assert_eq!(a.scroll, [0; 5]);
+        a.handle_key(key(KeyCode::Char('w')));
+        assert!(!a.full_titles);
     }
 
     #[test]
