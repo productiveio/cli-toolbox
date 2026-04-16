@@ -98,7 +98,7 @@ async fn run() -> tb_pr::error::Result<()> {
         Commands::Refresh => tb_pr::commands::refresh::run().await,
         Commands::Open { pr_ref } => tb_pr::commands::open::run(&pr_ref),
         Commands::Prime => {
-            tb_pr::commands::prime::run()?;
+            tb_pr::commands::prime::run().await?;
             toolbox_core::version_check::print_update_hint("tb-pr", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
