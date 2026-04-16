@@ -2070,14 +2070,18 @@ name = "tb-pr"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
+ "chrono",
  "clap",
  "colored",
  "dirs",
  "predicates",
+ "regex",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
+ "tokio",
  "toml",
  "toolbox-core",
 ]

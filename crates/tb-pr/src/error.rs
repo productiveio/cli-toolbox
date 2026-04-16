@@ -3,6 +3,12 @@ pub enum Error {
     #[error("config error: {0}")]
     Config(String),
 
+    #[error("GitHub API error ({status}): {message}")]
+    Api { status: u16, message: String },
+
+    #[error("http error: {0}")]
+    Http(#[from] reqwest::Error),
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 

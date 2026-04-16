@@ -77,15 +77,9 @@ enum ConfigAction {
     Show,
 }
 
-fn main() {
-    if let Err(e) = run() {
-        use colored::Colorize;
-        eprintln!("{} {e}", "Error:".red().bold());
-        std::process::exit(1);
-    }
-}
+toolbox_core::run_main!(run());
 
-fn run() -> tb_pr::error::Result<()> {
+async fn run() -> tb_pr::error::Result<()> {
     let cli = Cli::parse();
 
     if cli.version {
@@ -98,7 +92,7 @@ fn run() -> tb_pr::error::Result<()> {
     match command {
         Commands::Tui => tb_pr::commands::tui::run(),
         Commands::List { column, stale_days } => {
-            tb_pr::commands::list::run(column, stale_days, cli.json)
+            tb_pr::commands::list::run(column, stale_days, cli.json).await
         }
         Commands::Show { pr_ref } => tb_pr::commands::show::run(&pr_ref, cli.json),
         Commands::Refresh => tb_pr::commands::refresh::run(),
