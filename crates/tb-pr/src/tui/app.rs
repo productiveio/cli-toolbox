@@ -535,6 +535,16 @@ fn spawn_fetch(tx: &UnboundedSender<UiEvent>, ctx: &Arc<FetchCtx>, app: &mut App
             .map_err(|e| e.to_string()),
             Err(e) => Err(e.to_string()),
         };
+        // Persist the successful fetch to the cache before handing off to the
+        // UI. Without this, relaunching the app would show the stale count
+        // again and re-fetch on every open. Cache write errors are swallowed
+        // — stale cache is a UX nuisance, not a correctness issue worth
+        // crashing the session over.
+        if let Ok(state) = &result
+            && let Ok(cache) = crate::core::cache::BoardCache::new()
+        {
+            let _ = cache.save_board(state);
+        }
         let _ = tx.send(UiEvent::FetchDone(result));
     });
 }
