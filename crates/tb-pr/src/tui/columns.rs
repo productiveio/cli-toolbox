@@ -31,19 +31,26 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     let state = app.board();
-    let age_hours = (Utc::now() - state.fetched_at).num_seconds() as f64 / 3600.0;
-    let age = humanize_age_hours(age_hours);
 
-    let mut spans = vec![
-        Span::styled("tb-pr", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw("  "),
-        Span::raw(format!("{}@productiveio", state.user)),
-        Span::raw("  "),
-        Span::styled(
+    let mut spans = vec![Span::styled(
+        "tb-pr",
+        Style::default().add_modifier(Modifier::BOLD),
+    )];
+
+    // First-run placeholder state has an empty user + epoch fetched_at —
+    // skip the "refreshed N years ago" embarrassment. The spinner below
+    // already communicates that work is in progress.
+    if !state.user.is_empty() {
+        let age_hours = (Utc::now() - state.fetched_at).num_seconds() as f64 / 3600.0;
+        let age = humanize_age_hours(age_hours);
+        spans.push(Span::raw("  "));
+        spans.push(Span::raw(format!("{}@productiveio", state.user)));
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
             format!("refreshed {age} ago"),
             Style::default().add_modifier(Modifier::DIM),
-        ),
-    ];
+        ));
+    }
 
     if app.is_fetching {
         spans.push(Span::raw("  "));

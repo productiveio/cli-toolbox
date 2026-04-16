@@ -341,7 +341,7 @@ enum UiEvent {
     NotificationsAllRead(std::result::Result<(), String>),
 }
 
-pub async fn run(state: BoardState, ctx: FetchCtx) -> Result<()> {
+pub async fn run(state: BoardState, ctx: FetchCtx, needs_refresh: bool) -> Result<()> {
     // The guard's Drop impl restores the terminal on every exit path,
     // including panics inside `event_loop`. Without it a crash left the
     // user's shell in raw mode + alt-screen — unusable.
@@ -351,7 +351,7 @@ pub async fn run(state: BoardState, ctx: FetchCtx) -> Result<()> {
     let mut app = App::new(state, productive_slug);
     app.clamp_selections();
 
-    let result = event_loop(&mut terminal, &mut app, ctx).await;
+    let result = event_loop(&mut terminal, &mut app, ctx, needs_refresh).await;
     let _ = terminal.show_cursor();
     result
 }
@@ -360,6 +360,7 @@ async fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
     ctx: FetchCtx,
+    needs_refresh: bool,
 ) -> Result<()> {
     let (tx, mut rx) = unbounded_channel::<UiEvent>();
     let ctx = Arc::new(ctx);
@@ -395,10 +396,21 @@ async fn event_loop(
         }
     });
 
-    // Draw once up front.
+    // Draw once up front so the user sees *something* immediately — even if
+    // the cache was empty, the empty columns + header spinner appear instantly
+    // instead of the process looking hung for 5 seconds.
     terminal
         .draw(|frame| columns::render(frame, app))
         .map_err(Error::Io)?;
+
+    // Kick off the initial fetch if the cache was missing or stale. Runs on
+    // a tokio task; UI stays responsive. Spinner in the header shows progress.
+    if needs_refresh {
+        spawn_fetch(&tx, &ctx, app);
+        terminal
+            .draw(|frame| columns::render(frame, app))
+            .map_err(Error::Io)?;
+    }
 
     while let Some(event) = rx.recv().await {
         match event {
