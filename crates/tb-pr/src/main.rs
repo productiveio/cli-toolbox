@@ -90,7 +90,7 @@ async fn run() -> tb_pr::error::Result<()> {
     let command = cli.command.unwrap_or(Commands::Tui);
 
     match command {
-        Commands::Tui => tb_pr::commands::tui::run(),
+        Commands::Tui => tb_pr::commands::tui::run().await,
         Commands::List { column, stale_days } => {
             tb_pr::commands::list::run(column, stale_days, cli.json).await
         }

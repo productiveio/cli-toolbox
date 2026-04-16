@@ -1,7 +1,28 @@
-use crate::error::{Error, Result};
+use toolbox_core::cache::CacheTtl;
 
-pub fn run() -> Result<()> {
-    Err(Error::Other(
-        "tui: not implemented yet — arrives in M6 (TUI basics)".to_string(),
-    ))
+use crate::config::Config;
+use crate::core::cache::BoardCache;
+use crate::core::github::{GhClient, fetch_board_state};
+use crate::error::Result;
+use crate::tui::app;
+
+pub async fn run() -> Result<()> {
+    let config = Config::load()?;
+    let cache = BoardCache::new()?;
+    let state = match cache.load_board(&CacheTtl::Medium) {
+        Some(cached) => cached,
+        None => {
+            let client = GhClient::new()?;
+            let fresh = fetch_board_state(
+                &client,
+                &config.github.org,
+                &config.productive.org_slug,
+                Some(config.github.username_override.as_str()),
+            )
+            .await?;
+            cache.save_board(&fresh)?;
+            fresh
+        }
+    };
+    app::run(state)
 }
