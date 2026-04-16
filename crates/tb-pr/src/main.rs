@@ -103,7 +103,7 @@ async fn run() -> tb_pr::error::Result<()> {
             Ok(())
         }
         Commands::Doctor => {
-            tb_pr::commands::doctor::run()?;
+            tb_pr::commands::doctor::run().await?;
             toolbox_core::version_check::print_update_hint("tb-pr", env!("CARGO_PKG_VERSION"));
             Ok(())
         }

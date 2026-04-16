@@ -38,13 +38,43 @@ impl GhClient {
             .await?;
         let status = resp.status();
         if !status.is_success() {
-            let message = resp.text().await.unwrap_or_default();
+            // Detect rate limiting: GitHub returns 403 with X-RateLimit-Remaining=0
+            // (and 429 with a Retry-After header). Surface a friendlier message so
+            // the TUI error banner and doctor output are actionable.
+            let remaining = resp
+                .headers()
+                .get("x-ratelimit-remaining")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok());
+            let reset = resp
+                .headers()
+                .get("x-ratelimit-reset")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|v| v.parse::<i64>().ok());
+            let raw = resp.text().await.unwrap_or_default();
+            let message = if status.as_u16() == 429 || remaining == Some(0) {
+                let when = reset
+                    .and_then(|ts| chrono::DateTime::<Utc>::from_timestamp(ts, 0))
+                    .map(|t| format!(" — resets at {}", t.format("%H:%M:%S UTC")))
+                    .unwrap_or_default();
+                format!("rate limited{when}. Run `tb-pr refresh` later or widen TTL.")
+            } else {
+                raw
+            };
             return Err(Error::Api {
                 status: status.as_u16(),
                 message,
             });
         }
         Ok(resp.json::<T>().await?)
+    }
+
+    /// Lightweight GET against `/orgs/{org}` — used by `doctor` to verify
+    /// that the token has org visibility.
+    pub async fn probe_org(&self, org: &str) -> Result<()> {
+        // We only care about success; parse into Value to avoid a throwaway struct.
+        let _: serde_json::Value = self.get(&format!("{API_BASE}/orgs/{org}")).await?;
+        Ok(())
     }
 
     pub async fn user_login(&self) -> Result<String> {

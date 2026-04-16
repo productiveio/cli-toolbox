@@ -1,8 +1,11 @@
 use std::process::Command;
 
 use colored::Colorize;
+use toolbox_core::cache::CacheTtl;
 
 use crate::config::Config;
+use crate::core::cache::BoardCache;
+use crate::core::github::GhClient;
 use crate::error::Result;
 
 fn check(ok: bool, label: &str) -> bool {
@@ -18,7 +21,7 @@ fn warn(label: &str) {
     println!("  {} {}", "⚠".yellow().bold(), label);
 }
 
-pub fn run() -> Result<()> {
+pub async fn run() -> Result<()> {
     let mut all_ok = true;
 
     println!("{}", "tb-pr doctor".bold());
@@ -67,14 +70,62 @@ pub fn run() -> Result<()> {
         ));
     }
 
-    // 4. Cache dir resolvable
+    // 4. Cache dir resolvable + readable
     match config.cache_dir() {
         Ok(dir) => {
             check(true, &format!("Cache dir writable ({})", dir.display()));
+            match BoardCache::new() {
+                Ok(cache) => {
+                    let status = match cache.load_board(&CacheTtl::Long) {
+                        Some(state) => {
+                            let total = state.columns.draft_mine.len()
+                                + state.columns.review_mine.len()
+                                + state.columns.ready_to_merge_mine.len()
+                                + state.columns.waiting_on_me.len()
+                                + state.columns.waiting_on_author.len();
+                            format!("Cache readable ({total} PRs cached)")
+                        }
+                        None => "Cache readable (empty — run: tb-pr refresh)".to_string(),
+                    };
+                    check(true, &status);
+                }
+                Err(e) => {
+                    check(false, &format!("Cache init failed: {e}"));
+                    all_ok = false;
+                }
+            }
         }
         Err(e) => {
             check(false, &format!("Cache dir not writable: {e}"));
             all_ok = false;
+        }
+    }
+
+    // 5. GitHub API reachable + org access
+    if gh_found.is_some() {
+        match GhClient::new() {
+            Ok(client) => match client.probe_org(&config.github.org).await {
+                Ok(()) => {
+                    check(
+                        true,
+                        &format!("GitHub API reachable; '{}' org visible", config.github.org),
+                    );
+                }
+                Err(e) => {
+                    check(
+                        false,
+                        &format!(
+                            "GitHub API or org access failed for '{}': {e}",
+                            config.github.org
+                        ),
+                    );
+                    all_ok = false;
+                }
+            },
+            Err(e) => {
+                check(false, &format!("GitHub client init failed: {e}"));
+                all_ok = false;
+            }
         }
     }
 
