@@ -95,7 +95,7 @@ async fn run() -> tb_pr::error::Result<()> {
             tb_pr::commands::list::run(column, stale_days, cli.json).await
         }
         Commands::Show { pr_ref } => tb_pr::commands::show::run(&pr_ref, cli.json).await,
-        Commands::Refresh => tb_pr::commands::refresh::run(),
+        Commands::Refresh => tb_pr::commands::refresh::run().await,
         Commands::Open { pr_ref } => tb_pr::commands::open::run(&pr_ref),
         Commands::Prime => {
             tb_pr::commands::prime::run()?;

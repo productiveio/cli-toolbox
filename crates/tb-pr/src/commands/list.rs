@@ -1,10 +1,13 @@
+use chrono::Utc;
 use colored::{ColoredString, Colorize};
 
 use crate::commands::util::humanize_age_hours;
 use crate::config::Config;
+use crate::core::cache::BoardCache;
 use crate::core::github::{GhClient, fetch_board_state};
-use crate::core::model::{Column, ColumnsData, Pr, RottingBucket, SizeBucket};
+use crate::core::model::{BoardState, Column, ColumnsData, Pr, RottingBucket, SizeBucket};
 use crate::error::{Error, Result};
+use toolbox_core::cache::CacheTtl;
 use toolbox_core::output::truncate;
 
 pub async fn run(column: Option<String>, stale_days: Option<u32>, json: bool) -> Result<()> {
@@ -19,14 +22,8 @@ pub async fn run(column: Option<String>, stale_days: Option<u32>, json: bool) ->
     };
 
     let config = Config::load()?;
-    let client = GhClient::new()?;
-    let mut state = fetch_board_state(
-        &client,
-        &config.github.org,
-        &config.productive.org_slug,
-        Some(config.github.username_override.as_str()),
-    )
-    .await?;
+    let cache = BoardCache::new()?;
+    let mut state = load_or_fetch(&config, &cache).await?;
 
     if let Some(min_days) = stale_days {
         let cutoff = min_days as f64;
@@ -48,6 +45,24 @@ pub async fn run(column: Option<String>, stale_days: Option<u32>, json: bool) ->
 
     render_table(&state);
     Ok(())
+}
+
+/// Read the board state from the cache when fresh (Medium TTL = 5 min);
+/// otherwise fetch from GitHub and persist the new result.
+async fn load_or_fetch(config: &Config, cache: &BoardCache) -> Result<BoardState> {
+    if let Some(cached) = cache.load_board(&CacheTtl::Medium) {
+        return Ok(cached);
+    }
+    let client = GhClient::new()?;
+    let state = fetch_board_state(
+        &client,
+        &config.github.org,
+        &config.productive.org_slug,
+        Some(config.github.username_override.as_str()),
+    )
+    .await?;
+    cache.save_board(&state)?;
+    Ok(state)
 }
 
 fn retain_stale(list: &mut Vec<Pr>, min_days: f64) {
@@ -195,13 +210,10 @@ fn render_table(state: &crate::core::model::BoardState) {
         .join("  ");
     println!();
     println!("{}", summary.dimmed());
+    let age_hours = (Utc::now() - state.fetched_at).num_seconds() as f64 / 3600.0;
+    let age = humanize_age_hours(age_hours);
     println!(
         "{}",
-        format!(
-            "user={}  fetched={}",
-            state.user,
-            state.fetched_at.format("%Y-%m-%dT%H:%M:%SZ")
-        )
-        .dimmed()
+        format!("user={}  refreshed {} ago", state.user, age).dimmed()
     );
 }

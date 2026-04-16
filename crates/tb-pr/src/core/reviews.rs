@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Review {
     pub user: ReviewUser,
     pub state: String,
@@ -11,7 +11,7 @@ pub struct Review {
     pub submitted_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ReviewUser {
     pub login: String,
 }

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::core::classifier;
 use crate::core::model::{BoardState, Column, ColumnsData, Pr, PrState};
@@ -85,7 +85,7 @@ impl GhClient {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SearchItem {
     pub number: u64,
     pub title: String,
@@ -101,7 +101,7 @@ pub struct SearchItem {
     pub repository_url: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SearchUser {
     pub login: String,
 }
@@ -111,7 +111,7 @@ struct SearchResponse {
     items: Vec<SearchItem>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PullDetail {
     #[serde(default)]
     pub title: String,
@@ -133,13 +133,13 @@ pub struct PullDetail {
     pub head: HeadRef,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct BaseRef {
     #[serde(rename = "ref")]
     pub branch: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct HeadRef {
     pub sha: String,
 }

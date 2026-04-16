@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod classifier;
 pub mod github;
 pub mod model;

@@ -1,38 +1,70 @@
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use colored::Colorize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::commands::util::{humanize_age_hours, parse_pr_ref};
 use crate::config::Config;
+use crate::core::cache::BoardCache;
 use crate::core::classifier;
-use crate::core::github::GhClient;
+use crate::core::github::{GhClient, PullDetail};
 use crate::core::model::{PrState, SizeBucket};
 use crate::core::productive::extract_task_id;
-use crate::core::reviews::ReviewSummary;
+use crate::core::reviews::{Review, ReviewSummary};
 use crate::error::Result;
+use toolbox_core::cache::CacheTtl;
+
+/// Cached payload for `tb-pr show` — the three API calls combined so we
+/// don't hit GitHub on repeated invocations within the TTL.
+#[derive(Serialize, Deserialize)]
+struct CachedShow {
+    detail: PullDetail,
+    reviews: Vec<Review>,
+    head_date: Option<DateTime<Utc>>,
+    me: String,
+}
 
 pub async fn run(pr_ref: &str, json: bool) -> Result<()> {
     let config = Config::load()?;
     let client = GhClient::new()?;
     let pr = parse_pr_ref(pr_ref, &config.github.org)?;
+    let cache = BoardCache::new()?;
+    let cache_key = pr.web_url();
 
-    let (detail, reviews, me) = tokio::try_join!(
-        client.pull_detail(&pr.owner, &pr.repo, pr.number),
-        client.pull_reviews(&pr.owner, &pr.repo, pr.number),
-        async {
-            if config.github.username_override.is_empty() {
-                client.user_login().await
-            } else {
-                Ok(config.github.username_override.clone())
-            }
+    let CachedShow {
+        detail,
+        reviews,
+        head_date,
+        me,
+    } = match cache.load_show::<CachedShow>(&cache_key, &CacheTtl::Medium) {
+        Some(c) => c,
+        None => {
+            let (detail, reviews, me) = tokio::try_join!(
+                client.pull_detail(&pr.owner, &pr.repo, pr.number),
+                client.pull_reviews(&pr.owner, &pr.repo, pr.number),
+                async {
+                    if config.github.username_override.is_empty() {
+                        client.user_login().await
+                    } else {
+                        Ok(config.github.username_override.clone())
+                    }
+                }
+            )?;
+            let head_date = client
+                .commit_date(&pr.owner, &pr.repo, &detail.head.sha)
+                .await
+                .ok();
+            let fresh = CachedShow {
+                detail,
+                reviews,
+                head_date,
+                me,
+            };
+            cache.save_show(&cache_key, &fresh)?;
+            fresh
         }
-    )?;
+    };
 
     let summary = ReviewSummary::from_reviews(&reviews);
-    let head_date = client
-        .commit_date(&pr.owner, &pr.repo, &detail.head.sha)
-        .await
-        .ok();
 
     let state = if detail.draft {
         PrState::Draft
