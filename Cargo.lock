@@ -2066,6 +2066,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "tb-pr"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "colored",
+ "dirs",
+ "predicates",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml",
+ "toolbox-core",
+]
+
+[[package]]
 name = "tb-prod"
 version = "1.1.0"
 dependencies = [
