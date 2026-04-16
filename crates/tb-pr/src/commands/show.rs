@@ -49,10 +49,23 @@ pub async fn run(pr_ref: &str, json: bool) -> Result<()> {
                     }
                 }
             )?;
-            let head_date = client
+            // The head-commit date powers the "🆕 author pushed after your
+            // review" indicator; it's a nice-to-have, so don't fail the whole
+            // `show` when it errors — but do warn to stderr instead of
+            // silently swallowing with `.ok()`.
+            let head_date = match client
                 .commit_date(&pr.owner, &pr.repo, &detail.head.sha)
                 .await
-                .ok();
+            {
+                Ok(d) => Some(d),
+                Err(e) => {
+                    eprintln!(
+                        "warning: could not fetch head commit date ({e}); \
+                         '🆕 new commits' indicator will be omitted"
+                    );
+                    None
+                }
+            };
             let fresh = CachedShow {
                 detail,
                 reviews,

@@ -57,6 +57,12 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
             format!("⚠ {err}"),
             Style::default().fg(Color::Red),
         ));
+    } else if let Some(msg) = &app.status {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            format!("✓ {msg}"),
+            Style::default().fg(Color::Green),
+        ));
     }
 
     frame.render_widget(Paragraph::new(Line::from(spans)), area);

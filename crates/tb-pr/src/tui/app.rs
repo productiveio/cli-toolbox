@@ -26,8 +26,6 @@ const ORDER: [Column; 5] = [
     Column::WaitingOnAuthor,
 ];
 
-const AUTO_REFRESH: Duration = Duration::from_secs(300);
-
 /// What the app wants the event loop to do after handling a key.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Intent {
@@ -50,6 +48,9 @@ pub struct App {
     pub full_titles: bool,
     pub is_fetching: bool,
     pub last_error: Option<String>,
+    /// Transient non-error message (e.g. "copied <url>"). Rendered separately
+    /// from `last_error` so success feedback doesn't show up as a red warning.
+    pub status: Option<String>,
     pub tick_count: u64,
     productive_org_slug: String,
 }
@@ -65,6 +66,7 @@ impl App {
             full_titles: true,
             is_fetching: false,
             last_error: None,
+            status: None,
             tick_count: 0,
             productive_org_slug,
         }
@@ -148,13 +150,20 @@ impl App {
     pub fn replace_state(&mut self, state: BoardState) {
         self.state = state;
         self.last_error = None;
+        self.status = None;
         self.is_fetching = false;
         self.clamp_selections();
     }
 
     pub fn mark_error(&mut self, err: String) {
         self.last_error = Some(err);
+        self.status = None;
         self.is_fetching = false;
+    }
+
+    pub fn set_status(&mut self, msg: String) {
+        self.status = Some(msg);
+        self.last_error = None;
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Intent {
@@ -232,12 +241,14 @@ impl App {
     }
 }
 
-/// Config passed in from the CLI — everything the background fetcher needs.
+/// Config passed in from the CLI — everything the background fetcher needs
+/// plus the auto-refresh cadence.
 #[derive(Clone)]
 pub struct FetchCtx {
     pub org: String,
     pub productive_org_slug: String,
     pub username_override: String,
+    pub refresh_interval: Duration,
 }
 
 #[derive(Debug)]
@@ -271,10 +282,12 @@ async fn event_loop(
     let tx_kb = tx.clone();
     std::thread::spawn(move || keyboard_pump(tx_kb));
 
-    // Auto-refresh timer.
+    // Auto-refresh timer. Interval comes from config (`refresh.interval_minutes`).
+    // Guard against misconfigured zero/very-small values that would hammer the API.
+    let refresh_interval = ctx.refresh_interval.max(Duration::from_secs(30));
     let tx_tick = tx.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(AUTO_REFRESH);
+        let mut interval = tokio::time::interval(refresh_interval);
         interval.tick().await; // consume the immediate tick
         loop {
             interval.tick().await;
@@ -312,7 +325,7 @@ async fn event_loop(
                     }
                 }
                 Intent::CopyUrl(url) => match copy_to_clipboard(&url) {
-                    Ok(()) => app.last_error = Some(format!("copied {url}")),
+                    Ok(()) => app.set_status(format!("copied {url}")),
                     Err(e) => app.mark_error(format!("copy failed: {e}")),
                 },
                 Intent::None => {}
@@ -551,8 +564,22 @@ mod tests {
         let mut a = app();
         a.is_fetching = true;
         a.last_error = Some("boom".to_string());
+        a.status = Some("copied …".to_string());
         a.replace_state(sample_state());
         assert!(!a.is_fetching);
         assert!(a.last_error.is_none());
+        assert!(a.status.is_none());
+    }
+
+    #[test]
+    fn status_and_error_are_mutually_exclusive() {
+        let mut a = app();
+        a.set_status("copied foo".into());
+        assert_eq!(a.status.as_deref(), Some("copied foo"));
+        assert!(a.last_error.is_none());
+
+        a.mark_error("boom".into());
+        assert_eq!(a.last_error.as_deref(), Some("boom"));
+        assert!(a.status.is_none());
     }
 }

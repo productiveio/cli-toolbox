@@ -13,6 +13,9 @@ use crate::error::{Error, Result};
 const API_BASE: &str = "https://api.github.com";
 const USER_AGENT: &str = concat!("tb-pr/", env!("CARGO_PKG_VERSION"));
 const SEARCH_PER_PAGE: u32 = 100;
+/// Hard cap on search pagination. GitHub's search API refuses to return
+/// results beyond 1000 anyway, so 10 pages of 100 is the practical ceiling.
+const SEARCH_MAX_PAGES: u32 = 10;
 
 #[derive(Clone)]
 pub struct GhClient {
@@ -27,7 +30,8 @@ impl GhClient {
         Ok(Self { client, token })
     }
 
-    async fn get<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
+    /// Issue a GET and return the raw response (status already checked).
+    async fn send_get(&self, url: &str) -> Result<reqwest::Response> {
         let resp = self
             .client
             .get(url)
@@ -66,6 +70,11 @@ impl GhClient {
                 message,
             });
         }
+        Ok(resp)
+    }
+
+    async fn get<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
+        let resp = self.send_get(url).await?;
         Ok(resp.json::<T>().await?)
     }
 
@@ -86,13 +95,31 @@ impl GhClient {
         Ok(u.login)
     }
 
+    /// Run a GitHub search, following `Link: rel="next"` until all pages are
+    /// exhausted or `SEARCH_MAX_PAGES` is reached. Without this loop the
+    /// board silently truncates at 100 items per column — a real problem for
+    /// `reviewed-by:@me` across an active org.
     pub async fn search_issues(&self, query: &str) -> Result<Vec<SearchItem>> {
-        let mut url = reqwest::Url::parse(&format!("{API_BASE}/search/issues")).unwrap();
-        url.query_pairs_mut()
+        let mut first = reqwest::Url::parse(&format!("{API_BASE}/search/issues")).unwrap();
+        first
+            .query_pairs_mut()
             .append_pair("q", query)
             .append_pair("per_page", &SEARCH_PER_PAGE.to_string());
-        let resp: SearchResponse = self.get(url.as_str()).await?;
-        Ok(resp.items)
+
+        let mut next_url: Option<String> = Some(first.to_string());
+        let mut items: Vec<SearchItem> = Vec::new();
+        let mut pages = 0u32;
+        while let Some(url) = next_url.take() {
+            pages += 1;
+            if pages > SEARCH_MAX_PAGES {
+                break;
+            }
+            let resp = self.send_get(&url).await?;
+            next_url = parse_link_next(resp.headers());
+            let page: SearchResponse = resp.json().await?;
+            items.extend(page.items);
+        }
+        Ok(items)
     }
 
     pub async fn pull_detail(&self, owner: &str, repo: &str, number: u64) -> Result<PullDetail> {
@@ -206,6 +233,23 @@ fn gh_auth_token() -> Result<String> {
         ));
     }
     Ok(token)
+}
+
+/// Extract the `rel="next"` URL from a GitHub `Link` header, if present.
+/// Header shape: `<https://…&page=2>; rel="next", <https://…&page=10>; rel="last"`.
+fn parse_link_next(headers: &reqwest::header::HeaderMap) -> Option<String> {
+    let link = headers.get("link")?.to_str().ok()?;
+    for entry in link.split(',') {
+        let (url_part, rel_part) = entry.split_once(';')?;
+        if rel_part.contains("rel=\"next\"") {
+            let trimmed = url_part.trim();
+            let url = trimmed
+                .strip_prefix('<')
+                .and_then(|s| s.strip_suffix('>'))?;
+            return Some(url.to_string());
+        }
+    }
+    None
 }
 
 /// Parse a repository_url like `https://api.github.com/repos/productiveio/ai-agent`
@@ -537,5 +581,36 @@ mod tests {
             parse_repo_url("https://api.github.com/repos/owner-only"),
             None
         );
+    }
+
+    #[test]
+    fn parse_link_next_extracts_next_url() {
+        use reqwest::header::{HeaderMap, HeaderValue};
+        let mut h = HeaderMap::new();
+        h.insert(
+            "link",
+            HeaderValue::from_static(
+                "<https://api.github.com/search/issues?page=2>; rel=\"next\", \
+                 <https://api.github.com/search/issues?page=5>; rel=\"last\"",
+            ),
+        );
+        assert_eq!(
+            parse_link_next(&h).as_deref(),
+            Some("https://api.github.com/search/issues?page=2")
+        );
+
+        // On the last page GitHub omits `next`.
+        let mut h2 = HeaderMap::new();
+        h2.insert(
+            "link",
+            HeaderValue::from_static(
+                "<https://api.github.com/search/issues?page=1>; rel=\"first\", \
+                 <https://api.github.com/search/issues?page=4>; rel=\"prev\"",
+            ),
+        );
+        assert_eq!(parse_link_next(&h2), None);
+
+        // No Link header at all.
+        assert_eq!(parse_link_next(&HeaderMap::new()), None);
     }
 }

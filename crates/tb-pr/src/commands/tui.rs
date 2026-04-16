@@ -24,10 +24,12 @@ pub async fn run() -> Result<()> {
             fresh
         }
     };
+    let refresh_interval = config.refresh_interval();
     let ctx = FetchCtx {
         org: config.github.org,
         productive_org_slug: config.productive.org_slug,
         username_override: config.github.username_override,
+        refresh_interval,
     };
     app::run(state, ctx).await
 }
