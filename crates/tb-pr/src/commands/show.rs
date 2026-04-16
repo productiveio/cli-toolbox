@@ -7,20 +7,22 @@ use crate::config::Config;
 use crate::core::cache::BoardCache;
 use crate::core::classifier;
 use crate::core::github::{GhClient, PullDetail};
-use crate::core::model::{PrState, SizeBucket};
+use crate::core::model::{CheckState, PrState, SizeBucket};
 use crate::core::productive::extract_task_id;
 use crate::core::reviews::{Review, ReviewSummary};
 use crate::error::Result;
 use toolbox_core::cache::CacheTtl;
 
-/// Cached payload for `tb-pr show` — the three API calls combined so we
-/// don't hit GitHub on repeated invocations within the TTL.
+/// Cached payload for `tb-pr show` — the API calls combined so we don't
+/// hit GitHub on repeated invocations within the TTL.
 #[derive(Serialize, Deserialize)]
 struct CachedShow {
     detail: PullDetail,
     reviews: Vec<Review>,
     head_date: Option<DateTime<Utc>>,
     me: String,
+    #[serde(default)]
+    check_state: Option<CheckState>,
 }
 
 pub async fn run(pr_ref: &str, json: bool) -> Result<()> {
@@ -35,6 +37,7 @@ pub async fn run(pr_ref: &str, json: bool) -> Result<()> {
         reviews,
         head_date,
         me,
+        check_state,
     } = match cache.load_show::<CachedShow>(&cache_key, &CacheTtl::Medium) {
         Some(c) => c,
         None => {
@@ -66,11 +69,19 @@ pub async fn run(pr_ref: &str, json: bool) -> Result<()> {
                     None
                 }
             };
+            // CI rollup on the head SHA — shown as a "Checks" line. Failures
+            // are swallowed into `None` so a repo without Actions doesn't
+            // tank the whole show.
+            let check_state = client
+                .check_rollup(&pr.owner, &pr.repo, &detail.head.sha)
+                .await
+                .unwrap_or(None);
             let fresh = CachedShow {
                 detail,
                 reviews,
                 head_date,
                 me,
+                check_state,
             };
             cache.save_show(&cache_key, &fresh)?;
             fresh
@@ -109,6 +120,7 @@ pub async fn run(pr_ref: &str, json: bool) -> Result<()> {
             head_sha: detail.head.sha.clone(),
             comments_count: detail.comments,
             productive_task_id: task.clone(),
+            check_state,
             ready_to_merge: summary.is_ready_to_merge(),
             reviews: reviews
                 .iter()
@@ -154,6 +166,14 @@ pub async fn run(pr_ref: &str, json: bool) -> Result<()> {
     println!("{:<14}{}", "Base:".dimmed(), detail.base.branch);
     let head_short: String = detail.head.sha.chars().take(12).collect();
     println!("{:<14}{}", "Head:".dimmed(), head_short);
+    if let Some(cs) = check_state {
+        let (glyph, label) = match cs {
+            CheckState::Success => ("✓".green().bold(), "passing"),
+            CheckState::Failure => ("✗".red().bold(), "failing"),
+            CheckState::Pending => ("●".yellow(), "pending"),
+        };
+        println!("{:<14}{} {}", "Checks:".dimmed(), glyph, label);
+    }
 
     if let Some(t) = &task {
         let url = format!(
@@ -259,6 +279,8 @@ struct ShowPayload<'a> {
     comments_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     productive_task_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    check_state: Option<CheckState>,
     ready_to_merge: bool,
     reviews: Vec<ReviewPayload>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -185,6 +185,7 @@ mod tests {
             comments_count: 2,
             base_branch: None,
             has_new_commits_since_my_review: None,
+            check_state: None,
         }
     }
 

@@ -6,7 +6,7 @@ use crate::config::Config;
 use crate::core::cache::BoardCache;
 use crate::core::github::{GhClient, fetch_board_state};
 use crate::core::model::{
-    BoardState, Column, ColumnsData, Notification, Pr, RottingBucket, SizeBucket,
+    BoardState, CheckState, Column, ColumnsData, Notification, Pr, RottingBucket, SizeBucket,
 };
 use crate::error::{Error, Result};
 use toolbox_core::cache::CacheTtl;
@@ -164,6 +164,15 @@ fn size_tag(s: Option<SizeBucket>) -> String {
     }
 }
 
+fn ci_tag(state: Option<CheckState>) -> ColoredString {
+    match state {
+        Some(CheckState::Success) => "✓".green(),
+        Some(CheckState::Failure) => "✗".red().bold(),
+        Some(CheckState::Pending) => "●".yellow(),
+        None => " ".normal(),
+    }
+}
+
 fn age_tag(pr: &Pr) -> ColoredString {
     let text = humanize_age_hours(pr.age_days * 24.0);
     match pr.rotting {
@@ -220,8 +229,8 @@ fn render_table(state: &crate::core::model::BoardState) {
     println!(
         "{}",
         format!(
-            "{:<8} {:<24} {:<4} {:<6} {:<60} {}",
-            "COLUMN", "REPO#NUM", "SIZE", "AGE", "TITLE", "TASK"
+            "{:<8} {:<2} {:<24} {:<4} {:<6} {:<60} {}",
+            "COLUMN", "CI", "REPO#NUM", "SIZE", "AGE", "TITLE", "TASK"
         )
         .bold()
     );
@@ -234,8 +243,9 @@ fn render_table(state: &crate::core::model::BoardState) {
         }
         let task = pr.productive_task_id.as_deref().unwrap_or("");
         println!(
-            "{:<8} {:<24} {:<4} {:<6} {:<60} {}",
+            "{:<8} {:<2} {:<24} {:<4} {:<6} {:<60} {}",
             column_tag(*col),
+            ci_tag(pr.check_state),
             repo_num,
             size_tag(pr.size),
             age_tag(pr),

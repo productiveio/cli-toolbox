@@ -65,6 +65,16 @@ pub enum RottingBucket {
     Critical,
 }
 
+/// Rolled-up CI status for a PR's head commit. `None` on the `Pr` struct
+/// means "no CI configured" (or fetch failed) — render nothing, don't lie.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckState {
+    Success,
+    Failure,
+    Pending,
+}
+
 /// The PR state relevant to a card. For M2 this is derived from `draft`
 /// only; M3 refines `Ready` vs `Approved` using the reviews API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +105,12 @@ pub struct Pr {
     /// author has pushed commits since the viewer's last review.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub has_new_commits_since_my_review: Option<bool>,
+    /// Rolled-up CI status on the head commit. Populated only for my own
+    /// PRs (draft/review/ready-to-merge) — where CI failures are
+    /// actionable — and left `None` on everyone else's to keep fetch cost
+    /// bounded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_state: Option<CheckState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

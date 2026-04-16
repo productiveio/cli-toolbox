@@ -6,7 +6,9 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
 use crate::commands::util::humanize_age_hours;
 use crate::core::classifier;
-use crate::core::model::{Column, Notification, NotificationReason, Pr, RottingBucket, SizeBucket};
+use crate::core::model::{
+    CheckState, Column, Notification, NotificationReason, Pr, RottingBucket, SizeBucket,
+};
 
 /// Minimum card height (2 borders + 1 title + 2 meta rows).
 pub const MIN_CARD_HEIGHT: u16 = 5;
@@ -21,7 +23,9 @@ pub fn card_height(pr: &Pr, full_titles: bool, column_width: u16) -> u16 {
     } else {
         0
     };
-    let title_width = inner_width.saturating_sub(new_prefix).max(1) as usize;
+    // CI glyph is one visible cell + a trailing space.
+    let ci_prefix = if pr.check_state.is_some() { 2 } else { 0 };
+    let title_width = inner_width.saturating_sub(new_prefix + ci_prefix).max(1) as usize;
     let title_len = display_title(&pr.title).chars().count();
     let title_lines = if full_titles {
         title_len.div_ceil(title_width).max(1) as u16
@@ -30,6 +34,17 @@ pub fn card_height(pr: &Pr, full_titles: bool, column_width: u16) -> u16 {
     };
     // 2 borders + title_lines + 2 meta rows
     (2 + title_lines + 2).max(MIN_CARD_HEIGHT)
+}
+
+/// Symbol + color for a CI rollup state. `●` is intentionally distinct from
+/// the `👀` used in notification badges so it reads as "in-flight CI" at
+/// a glance instead of "needs review".
+fn check_glyph(state: CheckState) -> (&'static str, Color) {
+    match state {
+        CheckState::Success => ("✓", Color::Green),
+        CheckState::Failure => ("✗", Color::Red),
+        CheckState::Pending => ("●", Color::Yellow),
+    }
 }
 
 pub fn render(frame: &mut Frame, area: Rect, pr: &Pr, selected: bool, full_titles: bool) {
@@ -56,6 +71,13 @@ pub fn render(frame: &mut Frame, area: Rect, pr: &Pr, selected: bool, full_title
 
     let display = display_title(&pr.title);
     let mut title_spans = Vec::new();
+    if let Some(state) = pr.check_state {
+        let (glyph, color) = check_glyph(state);
+        title_spans.push(Span::styled(
+            format!("{glyph} "),
+            Style::default().fg(color),
+        ));
+    }
     if pr.has_new_commits_since_my_review == Some(true) {
         title_spans.push(Span::raw("🆕 "));
     }
@@ -335,6 +357,7 @@ mod tests {
             comments_count: 0,
             base_branch: None,
             has_new_commits_since_my_review: None,
+            check_state: None,
         };
         // Column width 30, inner width 28, title 120 chars → 5 wrapped lines.
         // Height = 2 border + 5 title + 2 meta = 9.

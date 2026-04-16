@@ -8,7 +8,7 @@ use tokio::sync::Semaphore;
 
 use crate::core::classifier;
 use crate::core::model::{
-    BoardState, Column, ColumnsData, Notification, NotificationReason, Pr, PrState,
+    BoardState, CheckState, Column, ColumnsData, Notification, NotificationReason, Pr, PrState,
 };
 use crate::core::productive::extract_task_id;
 use crate::core::reviews::{Review, ReviewSummary};
@@ -154,6 +154,23 @@ impl GhClient {
             .get(&format!("{API_BASE}/repos/{owner}/{repo}/commits/{sha}"))
             .await?;
         Ok(commit.commit.committer.date)
+    }
+
+    /// Fetch GitHub Actions check-runs for a commit SHA and roll them up.
+    /// Returns `None` when there are no runs (no CI configured) so callers
+    /// can skip rendering instead of showing an empty pending state.
+    pub async fn check_rollup(
+        &self,
+        owner: &str,
+        repo: &str,
+        sha: &str,
+    ) -> Result<Option<CheckState>> {
+        let resp: CheckRunsResponse = self
+            .get(&format!(
+                "{API_BASE}/repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100"
+            ))
+            .await?;
+        Ok(rollup_check_runs(&resp.check_runs))
     }
 
     /// Fetch unread notifications, filtered to PRs in the given org. Paginates
@@ -391,6 +408,57 @@ struct CommitActor {
     date: DateTime<Utc>,
 }
 
+#[derive(Debug, Deserialize)]
+struct CheckRunsResponse {
+    check_runs: Vec<CheckRun>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CheckRun {
+    /// One of: queued | in_progress | completed | pending | waiting
+    status: String,
+    /// Only set when status=completed. One of: success | failure | neutral |
+    /// cancelled | skipped | timed_out | action_required | stale
+    #[serde(default)]
+    conclusion: Option<String>,
+}
+
+/// Roll a list of check-runs into a single state: failure wins over pending
+/// wins over success. Missing / skipped / neutral runs count as success so a
+/// PR with only skipped checks renders as ✓ rather than ●.
+fn rollup_check_runs(runs: &[CheckRun]) -> Option<CheckState> {
+    if runs.is_empty() {
+        return None;
+    }
+    let mut has_pending = false;
+    let mut has_real_success = false;
+    for run in runs {
+        if run.status != "completed" {
+            has_pending = true;
+            continue;
+        }
+        match run.conclusion.as_deref() {
+            Some("failure") | Some("timed_out") | Some("cancelled") | Some("action_required") => {
+                return Some(CheckState::Failure);
+            }
+            Some("success") => has_real_success = true,
+            Some("skipped") | Some("neutral") | Some("stale") => {}
+            // Unknown or missing conclusion on a completed run — treat as
+            // still-settling rather than silently success.
+            _ => has_pending = true,
+        }
+    }
+    if has_pending {
+        return Some(CheckState::Pending);
+    }
+    if has_real_success {
+        Some(CheckState::Success)
+    } else {
+        // Only skipped / neutral checks — nothing meaningful to surface.
+        None
+    }
+}
+
 fn gh_auth_token() -> Result<String> {
     let output = Command::new("gh")
         .args(["auth", "token"])
@@ -503,12 +571,24 @@ pub async fn fetch_board_state(
     let commit_keys = collect_commit_keys(&r_wait_author_raw, &details)?;
     let commit_dates = fetch_all_commit_dates(client, commit_keys).await?;
 
+    // CI rollups: only fetch for MY PRs (drafts + author_mine, which splits
+    // into review_mine and ready_to_merge_mine). I care when my own CI is
+    // red; I don't care about the CI on PRs waiting on me or on the author.
+    let check_keys = collect_commit_keys_for(&[&r_draft, &r_review_mine_raw], &details)?;
+    let check_states = fetch_all_check_states(client, check_keys).await;
+
     let now = Utc::now();
 
     // Draft + waiting-on-me are straight pass-throughs.
     let draft_mine: Vec<Pr> = r_draft
         .iter()
-        .map(|item| build_pr(item, Column::DraftMine, &details, productive_org_slug, now))
+        .map(|item| {
+            let mut pr = build_pr(item, Column::DraftMine, &details, productive_org_slug, now);
+            if let Ok(key) = repo_key(item) {
+                pr.check_state = check_states.get(&key).copied().flatten();
+            }
+            pr
+        })
         .collect();
     let waiting_on_me: Vec<Pr> = r_wait_me
         .iter()
@@ -538,15 +618,12 @@ pub async fn fetch_board_state(
                 now,
             );
             pr.state = PrState::Approved;
+            pr.check_state = check_states.get(&key).copied().flatten();
             ready_to_merge_mine.push(pr);
         } else {
-            review_mine.push(build_pr(
-                item,
-                Column::ReviewMine,
-                &details,
-                productive_org_slug,
-                now,
-            ));
+            let mut pr = build_pr(item, Column::ReviewMine, &details, productive_org_slug, now);
+            pr.check_state = check_states.get(&key).copied().flatten();
+            review_mine.push(pr);
         }
     }
 
@@ -666,6 +743,59 @@ async fn fetch_all_reviews(
     Ok(out)
 }
 
+/// Like `collect_commit_keys` but deduplicates across multiple search result
+/// lists. Used by the CI rollup pass where we want draft+author-mine keys
+/// combined with their head SHAs from the already-fetched details map.
+fn collect_commit_keys_for(
+    lists: &[&Vec<SearchItem>],
+    details: &HashMap<PrKey, PullDetail>,
+) -> Result<Vec<(PrKey, String)>> {
+    let mut seen: HashSet<PrKey> = HashSet::new();
+    let mut out = Vec::new();
+    for list in lists {
+        for item in *list {
+            let key = repo_key(item)?;
+            if !seen.insert(key.clone()) {
+                continue;
+            }
+            if let Some(detail) = details.get(&key) {
+                out.push((key, detail.head.sha.clone()));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Fetch check-runs for each key and roll them up. Errors are swallowed into
+/// `None` per PR — a single repo without Actions configured (or a 404 on a
+/// SHA that's already force-pushed over) mustn't tank the whole refresh.
+/// Returns a `HashMap<PrKey, Option<CheckState>>` so callers can distinguish
+/// "no CI" from "CI not fetched".
+async fn fetch_all_check_states(
+    client: &GhClient,
+    keys: Vec<(PrKey, String)>,
+) -> HashMap<PrKey, Option<CheckState>> {
+    let sem = Arc::new(Semaphore::new(MAX_CONCURRENT));
+    let mut set = tokio::task::JoinSet::new();
+    for (key, sha) in keys {
+        let c = client.clone();
+        let sem = sem.clone();
+        set.spawn(async move {
+            let _permit = sem.acquire_owned().await;
+            let (owner, repo, _) = &key;
+            let res = c.check_rollup(owner, repo, &sha).await.unwrap_or(None);
+            (key, res)
+        });
+    }
+    let mut out = HashMap::new();
+    while let Some(joined) = set.join_next().await {
+        if let Ok((key, state)) = joined {
+            out.insert(key, state);
+        }
+    }
+    out
+}
+
 async fn fetch_all_commit_dates(
     client: &GhClient,
     keys: Vec<(PrKey, String)>,
@@ -763,12 +893,71 @@ fn build_pr(
         comments_count: item.comments,
         base_branch,
         has_new_commits_since_my_review: None,
+        check_state: None,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn run(status: &str, conclusion: Option<&str>) -> CheckRun {
+        CheckRun {
+            status: status.to_string(),
+            conclusion: conclusion.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn rollup_empty_returns_none() {
+        assert!(rollup_check_runs(&[]).is_none());
+    }
+
+    #[test]
+    fn rollup_failure_wins_over_everything() {
+        let runs = vec![
+            run("completed", Some("success")),
+            run("in_progress", None),
+            run("completed", Some("failure")),
+        ];
+        assert_eq!(rollup_check_runs(&runs), Some(CheckState::Failure));
+    }
+
+    #[test]
+    fn rollup_pending_when_any_in_progress() {
+        let runs = vec![run("completed", Some("success")), run("in_progress", None)];
+        assert_eq!(rollup_check_runs(&runs), Some(CheckState::Pending));
+    }
+
+    #[test]
+    fn rollup_success_when_all_green() {
+        let runs = vec![
+            run("completed", Some("success")),
+            run("completed", Some("success")),
+            run("completed", Some("skipped")),
+        ];
+        assert_eq!(rollup_check_runs(&runs), Some(CheckState::Success));
+    }
+
+    #[test]
+    fn rollup_all_skipped_is_none() {
+        // A PR whose only checks skip (e.g., doc-only paths filtered out)
+        // shouldn't show a false ✓ — there's nothing to report.
+        let runs = vec![
+            run("completed", Some("skipped")),
+            run("completed", Some("neutral")),
+        ];
+        assert!(rollup_check_runs(&runs).is_none());
+    }
+
+    #[test]
+    fn rollup_timed_out_counts_as_failure() {
+        let runs = vec![
+            run("completed", Some("timed_out")),
+            run("completed", Some("success")),
+        ];
+        assert_eq!(rollup_check_runs(&runs), Some(CheckState::Failure));
+    }
 
     #[test]
     fn parses_repo_url() {

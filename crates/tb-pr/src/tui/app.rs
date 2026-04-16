@@ -598,6 +598,7 @@ mod tests {
             comments_count: 3,
             base_branch: Some("main".to_string()),
             has_new_commits_since_my_review: None,
+            check_state: None,
         }
     }
 
