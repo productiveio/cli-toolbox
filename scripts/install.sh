@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="productiveio/cli-toolbox"
-ALL_TOOLS="tb-prod tb-sem tb-bug tb-lf tb-devctl tb-session"
+ALL_TOOLS="tb-prod tb-sem tb-bug tb-lf tb-devctl tb-session tb-pr"
 INSTALL_DIR="$HOME/.local/bin"
 
 # --- Flags ---

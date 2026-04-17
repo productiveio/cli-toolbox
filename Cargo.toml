@@ -29,6 +29,10 @@ chrono = { version = "0.4", features = ["serde"] }
 colored = "3.0"
 indicatif = "0.18"
 
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
 # Interactive prompts
 inquire = "0.7"
 
@@ -46,6 +50,7 @@ tb-prod = { path = "crates/tb-prod" }
 tb-bug = { path = "crates/tb-bug" }
 tb-devctl = { path = "crates/tb-devctl" }
 tb-session = { path = "crates/tb-session" }
+tb-pr = { path = "crates/tb-pr" }
 
 # Dev/test (also in workspace.dependencies so crates can inherit them)
 assert_cmd = "2"
