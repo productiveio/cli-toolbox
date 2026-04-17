@@ -432,6 +432,32 @@ enum Commands {
         #[command(flatten)]
         time: TimeRange,
     },
+    /// Stratified flag-cohort analysis — control for other flags
+    #[command(
+        name = "flag-cohort-stratified",
+        after_help = "Examples:\n  tb-lf flag-cohort-stratified aiAgentDiscoveryAgent --from 7d --to today\n  tb-lf flag-cohort-stratified aiAgentDiscoveryAgent --from 7d --to today --env default\n  tb-lf flag-cohort-stratified aiAgentDiscoveryAgent --from 7d --to today --max-cohorts 5\n  tb-lf flag-cohort-stratified aiAgentDiscoveryAgent --from 7d --to today --detail traces --json"
+    )]
+    FlagCohortStratified {
+        /// Flag name to analyze
+        flag_name: String,
+        /// Filter by environment (recommended)
+        #[arg(long)]
+        env: Option<String>,
+        /// Filter by trace name
+        #[arg(long)]
+        name: Option<String>,
+        /// Minimum traces per cohort (default: 10)
+        #[arg(long, default_value = "10")]
+        min_cohort_size: u32,
+        /// Max cohorts to display (default: 3)
+        #[arg(long, default_value = "3")]
+        max_cohorts: usize,
+        /// Response detail: metrics (default) or traces
+        #[arg(long, default_value = "metrics")]
+        detail: String,
+        #[command(flatten)]
+        time: TimeRange,
+    },
     /// Download trace summaries for a flag cohort as JSON
     #[command(
         name = "flag-traces",
@@ -561,6 +587,84 @@ enum ConfigAction {
         /// New value (optional for project — launches interactive selection)
         value: Option<String>,
     },
+}
+
+fn print_cohort(label: &str, s: &CohortStats) {
+    println!("  {} ({} traces)", label.bold(), s.trace_count);
+    if let Some(ref c) = s.cost {
+        println!(
+            "    Cost:    total {} | avg {} | p50 {} | p95 {}",
+            output::fmt_cost(c.total),
+            output::fmt_cost(c.avg),
+            output::fmt_cost(c.p_50),
+            output::fmt_cost(c.p_95)
+        );
+    }
+    if let Some(ref l) = s.latency_ms {
+        println!(
+            "    Latency: avg {:.0}ms | p50 {:.0}ms | p95 {:.0}ms",
+            l.avg, l.p_50, l.p_95
+        );
+    }
+    if let Some(errors) = s.errors {
+        println!("    Errors:  {}", errors);
+    }
+    if let Some(ref t) = s.tokens {
+        println!("    Tokens:  {} input | {} output", t.input, t.output);
+    }
+    if let Some(ref tools) = s.tool_calls
+        && let Some(map) = tools.as_object()
+        && !map.is_empty()
+    {
+        let tool_str: Vec<_> = map
+            .iter()
+            .map(|(k, v)| format!("{}:{}", k, v.as_u64().unwrap_or(0)))
+            .collect();
+        println!("    Tools:   {}", tool_str.join(", "));
+    }
+}
+
+fn print_cohort_diff(flags: &[String], all_flag_sets: &[&Vec<String>]) {
+    if all_flag_sets.len() < 2 {
+        return;
+    }
+    // Find flags unique to this cohort (present here, absent in at least one other)
+    let mut unique_on: Vec<&str> = Vec::new();
+    let mut unique_off: Vec<&str> = Vec::new();
+
+    // Collect all flag names across all cohorts
+    let all_names: std::collections::HashSet<&str> =
+        all_flag_sets.iter().flat_map(|fs| fs.iter().map(|s| s.as_str())).collect();
+    let my_flags: std::collections::HashSet<&str> =
+        flags.iter().map(|s| s.as_str()).collect();
+
+    for name in &all_names {
+        let in_mine = my_flags.contains(name);
+        let in_all_others = all_flag_sets.iter().all(|fs| fs.iter().any(|f| f == name));
+        if in_mine && !in_all_others {
+            unique_on.push(name);
+        } else if !in_mine && !in_all_others {
+            // Only show OFF flags if they're ON in at least one other cohort
+            let in_any_other = all_flag_sets.iter().any(|fs| fs.iter().any(|f| f == name));
+            if in_any_other {
+                unique_off.push(name);
+            }
+        }
+    }
+
+    unique_on.sort();
+    unique_off.sort();
+
+    if !unique_on.is_empty() || !unique_off.is_empty() {
+        let mut parts: Vec<String> = Vec::new();
+        for f in &unique_on {
+            parts.push(format!("+{}", f).green().to_string());
+        }
+        for f in &unique_off {
+            parts.push(format!("-{}", f).red().to_string());
+        }
+        println!("    Diff: {}", parts.join("  "));
+    }
 }
 
 toolbox_core::run_main!(run());
@@ -2798,43 +2902,6 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("  Period: {} → {}", resp.from, resp.to);
             println!();
 
-            fn print_cohort(label: &str, s: &CohortStats) {
-                println!("  {} ({} traces)", label.bold(), s.trace_count);
-                if let Some(ref c) = s.cost {
-                    println!(
-                        "    Cost:    total {} | avg {} | p50 {} | p95 {}",
-                        output::fmt_cost(c.total),
-                        output::fmt_cost(c.avg),
-                        output::fmt_cost(c.p_50),
-                        output::fmt_cost(c.p_95)
-                    );
-                }
-                if let Some(ref l) = s.latency_ms {
-                    println!(
-                        "    Latency: avg {:.0}ms | p50 {:.0}ms | p95 {:.0}ms",
-                        l.avg, l.p_50, l.p_95
-                    );
-                }
-                if let Some(errors) = s.errors {
-                    println!("    Errors:  {}", errors);
-                }
-                if let Some(ref t) = s.tokens {
-                    println!("    Tokens:  {} input | {} output", t.input, t.output);
-                }
-                if let Some(ref tools) = s.tool_calls
-                    && let Some(map) = tools.as_object()
-                    && !map.is_empty()
-                {
-                    let top: Vec<_> = map
-                        .iter()
-                        .map(|(k, v)| (k.as_str(), v.as_u64().unwrap_or(0)))
-                        .collect();
-                    let tool_str: Vec<_> =
-                        top.iter().map(|(k, v)| format!("{}:{}", k, v)).collect();
-                    println!("    Tools:   {}", tool_str.join(", "));
-                }
-            }
-
             print_cohort("ON ", &resp.on);
             println!();
             print_cohort("OFF", &resp.off);
@@ -2856,6 +2923,138 @@ async fn run() -> tb_lf::error::Result<()> {
                 }
             }
             println!();
+        }
+
+        Commands::FlagCohortStratified {
+            flag_name,
+            env,
+            name,
+            min_cohort_size,
+            max_cohorts,
+            detail,
+            time,
+        } => {
+            let mut params: Vec<(&str, Option<String>)> = vec![
+                ("project_id", pid),
+                ("flag_name", Some(flag_name.clone())),
+                ("environment", env.clone()),
+                ("name", name),
+                ("min_cohort_size", Some(min_cohort_size.to_string())),
+                ("detail", Some(detail.clone())),
+            ];
+            time.push_date_params_inclusive_or_exit(&mut params);
+            let path =
+                DevPortalClient::build_path("/traces/stratified_flag_stats", &params);
+            let resp: StratifiedFlagStatsResponse =
+                client.get(&path, CacheTtl::Short).await?;
+
+            if cli.json {
+                println!("{}", output::render_json(&resp));
+                return Ok(());
+            }
+
+            println!(
+                "{} {}\n",
+                "Stratified Flag Cohort:".bold(),
+                flag_name.cyan()
+            );
+            if let Some(ref from) = resp.from {
+                println!(
+                    "  Period: {} → {}",
+                    from,
+                    resp.to.as_deref().unwrap_or("now")
+                );
+            }
+            if let Some(ref e) = env {
+                println!("  Environment: {}", e);
+            }
+
+            if let Some(ref meta) = resp.meta {
+                println!(
+                    "  Cohorts: {} included, {} excluded, {} total traces\n",
+                    meta.included_cohorts, meta.excluded_cohorts, meta.total_traces
+                );
+            }
+
+            if resp.cohorts.is_empty() {
+                println!(
+                    "  {}",
+                    "No cohorts with contrast found. Try lowering --min-cohort-size or widening the date range."
+                        .yellow()
+                );
+                println!();
+                return Ok(());
+            }
+
+            // Collect all flag sets for diff computation
+            let all_flags: Vec<&Vec<String>> =
+                resp.cohorts.iter().map(|c| &c.fingerprint_flags).collect();
+
+            let cohorts_to_show = &resp.cohorts[..max_cohorts.min(resp.cohorts.len())];
+
+            if detail == "traces" {
+                for (i, cohort) in cohorts_to_show.iter().enumerate() {
+                    println!(
+                        "  {} ({})",
+                        format!("Cohort {}", i + 1).bold(),
+                        cohort.fingerprint_hash.dimmed()
+                    );
+                    print_cohort_diff(&cohort.fingerprint_flags, &all_flags);
+                    if let Some(ref ids) = cohort.on_trace_ids {
+                        println!("    ON traces:  {} IDs", ids.len());
+                    }
+                    if let Some(ref ids) = cohort.off_trace_ids {
+                        println!("    OFF traces: {} IDs", ids.len());
+                    }
+                    println!();
+                }
+            } else {
+                for (i, cohort) in cohorts_to_show.iter().enumerate() {
+                    println!(
+                        "  {} ({})",
+                        format!("Cohort {}", i + 1).bold(),
+                        cohort.fingerprint_hash.dimmed()
+                    );
+                    print_cohort_diff(&cohort.fingerprint_flags, &all_flags);
+                    println!();
+
+                    if let Some(ref on) = cohort.on {
+                        print_cohort("    ON ", on);
+                    }
+                    println!();
+                    if let Some(ref off) = cohort.off {
+                        print_cohort("    OFF", off);
+                    }
+
+                    // Delta summary
+                    if let (Some(on), Some(off)) = (&cohort.on, &cohort.off)
+                        && let (Some(oc), Some(fc)) = (&on.cost, &off.cost)
+                        && fc.avg > 0.0
+                    {
+                        let delta_pct =
+                            ((oc.avg - fc.avg) / fc.avg * 100.0).round();
+                        let sign = if delta_pct >= 0.0 { "+" } else { "" };
+                        println!(
+                            "\n    {} cost {}{}%  |  {} ON, {} OFF",
+                            "Delta:".dimmed(),
+                            sign,
+                            delta_pct,
+                            on.trace_count,
+                            off.trace_count
+                        );
+                    }
+                    println!();
+                }
+            }
+
+            if resp.cohorts.len() > max_cohorts {
+                println!(
+                    "  {} {} more cohorts not shown. Use --max-cohorts to see more.",
+                    "...".dimmed(),
+                    resp.cohorts.len() - max_cohorts
+                );
+                println!();
+            }
         }
 
         Commands::FlagTraces {

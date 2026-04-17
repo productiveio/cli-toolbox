@@ -557,6 +557,54 @@ pub struct FlagStatsResponse {
     pub off: CohortStats,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StratifiedFlagStatsResponse {
+    pub flag_name: String,
+    #[serde(default)]
+    pub from: Option<String>,
+    #[serde(default)]
+    pub to: Option<String>,
+    #[serde(default)]
+    pub environment: Option<String>,
+    #[serde(default)]
+    pub meta: Option<StratifiedMeta>,
+    #[serde(default)]
+    pub cohorts: Vec<StratifiedCohort>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StratifiedMeta {
+    #[serde(default)]
+    pub total_cohorts: u64,
+    #[serde(default)]
+    pub included_cohorts: u64,
+    #[serde(default)]
+    pub excluded_cohorts: u64,
+    #[serde(default)]
+    pub total_traces: u64,
+    #[serde(default)]
+    pub included_traces: u64,
+    #[serde(default)]
+    pub min_cohort_size: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StratifiedCohort {
+    pub fingerprint_hash: String,
+    #[serde(default)]
+    pub fingerprint_flags: Vec<String>,
+    // metrics mode
+    #[serde(default)]
+    pub on: Option<CohortStats>,
+    #[serde(default)]
+    pub off: Option<CohortStats>,
+    // traces mode
+    #[serde(default)]
+    pub on_trace_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub off_trace_ids: Option<Vec<String>>,
+}
+
 // --- Trace Metrics (scoring) ---
 
 #[derive(Debug, Deserialize, Serialize)]
