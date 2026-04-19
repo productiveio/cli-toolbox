@@ -633,10 +633,11 @@ fn print_cohort_diff(flags: &[String], all_flag_sets: &[&Vec<String>]) {
     let mut unique_off: Vec<&str> = Vec::new();
 
     // Collect all flag names across all cohorts
-    let all_names: std::collections::HashSet<&str> =
-        all_flag_sets.iter().flat_map(|fs| fs.iter().map(|s| s.as_str())).collect();
-    let my_flags: std::collections::HashSet<&str> =
-        flags.iter().map(|s| s.as_str()).collect();
+    let all_names: std::collections::HashSet<&str> = all_flag_sets
+        .iter()
+        .flat_map(|fs| fs.iter().map(|s| s.as_str()))
+        .collect();
+    let my_flags: std::collections::HashSet<&str> = flags.iter().map(|s| s.as_str()).collect();
 
     for name in &all_names {
         let in_mine = my_flags.contains(name);
@@ -2943,10 +2944,8 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("detail", Some(detail.clone())),
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
-            let path =
-                DevPortalClient::build_path("/traces/stratified_flag_stats", &params);
-            let resp: StratifiedFlagStatsResponse =
-                client.get(&path, CacheTtl::Short).await?;
+            let path = DevPortalClient::build_path("/traces/stratified_flag_stats", &params);
+            let resp: StratifiedFlagStatsResponse = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
                 println!("{}", output::render_json(&resp));
@@ -3031,8 +3030,7 @@ async fn run() -> tb_lf::error::Result<()> {
                         && let (Some(oc), Some(fc)) = (&on.cost, &off.cost)
                         && fc.avg > 0.0
                     {
-                        let delta_pct =
-                            ((oc.avg - fc.avg) / fc.avg * 100.0).round();
+                        let delta_pct = ((oc.avg - fc.avg) / fc.avg * 100.0).round();
                         let sign = if delta_pct >= 0.0 { "+" } else { "" };
                         println!(
                             "\n    {} cost {}{}%  |  {} ON, {} OFF",
