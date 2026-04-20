@@ -34,7 +34,7 @@ Use for: isolating the actual effect of a flag, validating whether a simple coho
 
 Key params:
 - `--env <env>` — filter by environment. When omitted, traces from all environments are included and the report header shows the breakdown so the user can judge whether mixing is appropriate.
-- `--min-cohort-size <n>` (default 10) — filter out tiny cohorts with unreliable stats
+- `--min-cohort-size <n>` (default 10) — minimum traces per side (ON and OFF each must meet this threshold)
 - `--max-cohorts <n>` (default 3) — how many cohorts to display (sorted by size, largest first)
 - `--detail traces` — returns trace IDs per cohort instead of aggregate metrics (for drill-down)
 

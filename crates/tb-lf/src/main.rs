@@ -446,7 +446,7 @@ enum Commands {
         /// Filter by trace name
         #[arg(long)]
         name: Option<String>,
-        /// Minimum traces per cohort (default: 10)
+        /// Minimum traces per side (ON and OFF each) (default: 10)
         #[arg(long, default_value = "10")]
         min_cohort_size: u32,
         /// Max cohorts to display (default: 3)
