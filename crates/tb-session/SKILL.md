@@ -51,6 +51,32 @@ tb-session resume "auth refactor"
 - **Worktree-aware by default** — `list` and `search` include sessions from all git worktrees of the same repo. Use `--all-projects` for everything.
 - **Resume accepts names** — `resume "auth refactor"` searches summary/first prompt and resumes the most recent match. UUID prefixes of any length also work.
 - **URLs work as search queries** — special characters are sanitized automatically.
+- **Resume vs. digest** — `resume` loads the entire past conversation (useful when full context matters). `show` + a fresh session is often preferable when the user wants to continue work without the noise of prior turns. Pick based on user intent (see Workflow step 5).
+
+## Workflow
+
+When handling a session-related request:
+
+1. **Always use `--json`** on search and list commands — structured output is easier to parse and present accurately.
+2. **Pick the right command**:
+   - User describes content → `tb-session search "<query>" --json`
+   - User mentions a PR → `tb-session search --pr <N> --json`
+   - User asks "what have we been working on" → `tb-session list --json`
+   - User wants to continue past work → see step 5 (two valid patterns)
+3. **Always present results with structured fields** — for each session shown, include:
+   - Session ID (prefix is fine)
+   - Branch name
+   - Summary or first prompt
+   - Last-active timestamp
+   - Even when matches are weak, show the top 1–2 results so the user can judge relevance.
+4. **After presenting results**, offer a concrete next step:
+   - `tb-session show <id>` to see conversation detail
+   - `tb-session resume <id>` to continue the session in a new tab
+5. **When continuing past work**, pick the pattern that matches the user's intent:
+   - **Explicit resume** ("resume session X", "resume where we left off") → call `tb-session resume <id>`. This reopens the full conversation in a new tab.
+   - **Digest-and-continue** ("what were we doing on X?", "let's continue on X", "pick up where we left off on X") → call `tb-session show <id>`, summarize the key context for the user, and continue in the *current* session. This avoids loading noise from the old conversation.
+   - **If unclear**, briefly offer both options and let the user pick. Do not default silently to either — the choice affects the working context.
+6. **Stay efficient** — aim for 1–3 tool calls. One search + one action is usually enough. Only retry with different keywords if the first search returned no relevant results.
 
 ## Getting started
 
