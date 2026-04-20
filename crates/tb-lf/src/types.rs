@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::ser::Serializer;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -586,6 +588,8 @@ pub struct StratifiedMeta {
     pub included_traces: u64,
     #[serde(default)]
     pub min_cohort_size: u64,
+    #[serde(default)]
+    pub environments: HashMap<String, u64>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

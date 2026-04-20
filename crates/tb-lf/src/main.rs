@@ -2964,11 +2964,23 @@ async fn run() -> tb_lf::error::Result<()> {
                     resp.to.as_deref().unwrap_or("now")
                 );
             }
-            if let Some(ref e) = env {
-                println!("  Environment: {}", e);
-            }
-
             if let Some(ref meta) = resp.meta {
+                if !meta.environments.is_empty() {
+                    if let Some(ref e) = env {
+                        let total: u64 = meta.environments.values().sum();
+                        println!("  Environment: {} ({} traces)", e, total);
+                    } else {
+                        let parts: Vec<String> = meta
+                            .environments
+                            .iter()
+                            .map(|(k, v)| format!("{} ({})", k, v))
+                            .collect();
+                        println!("  Environments: {}", parts.join(", "));
+                    }
+                } else if let Some(ref e) = env {
+                    println!("  Environment: {}", e);
+                }
+
                 println!(
                     "  Cohorts: {} included, {} excluded, {} total traces\n",
                     meta.included_cohorts, meta.excluded_cohorts, meta.total_traces
