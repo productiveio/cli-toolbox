@@ -33,7 +33,7 @@ Groups traces into **cohorts** where all non-target flags are identical. Within 
 Use for: isolating the actual effect of a flag, validating whether a simple cohort's signal is real or confounded.
 
 Key params:
-- `--env <env>` — **always recommended**. Different environments (default, production, latest, review slugs) have different code and flag values. Never mix them.
+- `--env <env>` — filter by environment. When omitted, traces from all environments are included and the report header shows the breakdown so the user can judge whether mixing is appropriate.
 - `--min-cohort-size <n>` (default 10) — filter out tiny cohorts with unreliable stats
 - `--max-cohorts <n>` (default 3) — how many cohorts to display (sorted by size, largest first)
 - `--detail traces` — returns trace IDs per cohort instead of aggregate metrics (for drill-down)
