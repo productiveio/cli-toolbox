@@ -11436,7 +11436,7 @@
           "key": "private",
           "type": "boolean",
           "typeCategory": "primitive",
-          "param": "is_private",
+          "param": "private",
           "required": true,
           "filter": "public_access",
           "description": "Private tasks are only visible to task subscribers. Default is false.",
@@ -11446,7 +11446,7 @@
           "key": "closed",
           "type": "boolean",
           "typeCategory": "primitive",
-          "param": "is_closed",
+          "param": "closed",
           "readonly": true,
           "description": "Is the task closed?",
           "attribute": "closed"
