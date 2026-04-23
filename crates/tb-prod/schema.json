@@ -11436,7 +11436,7 @@
           "key": "private",
           "type": "boolean",
           "typeCategory": "primitive",
-          "param": "is_private",
+          "param": "private",
           "required": true,
           "filter": "public_access",
           "description": "Private tasks are only visible to task subscribers. Default is false.",
@@ -11446,7 +11446,7 @@
           "key": "closed",
           "type": "boolean",
           "typeCategory": "primitive",
-          "param": "is_closed",
+          "param": "closed",
           "readonly": true,
           "description": "Is the task closed?",
           "attribute": "closed"
@@ -12303,7 +12303,7 @@
           "key": "closed",
           "type": "boolean",
           "typeCategory": "primitive",
-          "param": "is_closed",
+          "param": "closed",
           "required": true,
           "description": "Defines if the todo item is done",
           "attribute": "closed"
@@ -12336,6 +12336,48 @@
           "filter": "assignee_id",
           "description": "Person assigned to the todo item",
           "relationship": "assignee"
+        },
+        "closedAt": {
+          "key": "closedAt",
+          "type": "datetime",
+          "typeCategory": "primitive",
+          "param": "closed_at",
+          "readonly": true,
+          "description": "Timestamp of when the todo was completed. Null if the todo is still open.",
+          "attribute": "closed_at"
+        },
+        "createdAt": {
+          "key": "createdAt",
+          "type": "datetime",
+          "typeCategory": "primitive",
+          "param": "created_at",
+          "readonly": true,
+          "attribute": "created_at"
+        },
+        "todoableType": {
+          "key": "todoableType",
+          "type": "string",
+          "typeCategory": "primitive",
+          "param": "todoable_type",
+          "readonly": true,
+          "description": "Type of the parent item — either tasks or deals.",
+          "attribute": "todoable_type"
+        },
+        "dueDate": {
+          "key": "dueDate",
+          "type": "date",
+          "typeCategory": "primitive",
+          "param": "due_date",
+          "description": "Due date for the todo. Only applicable when the todo belongs to a deal.",
+          "attribute": "due_date"
+        },
+        "dueTime": {
+          "key": "dueTime",
+          "type": "string",
+          "typeCategory": "primitive",
+          "param": "due_time",
+          "description": "Due time for the todo in HH:MM format. Only applicable when the todo belongs to a deal. Requires due_date to be set.",
+          "attribute": "due_time"
         }
       },
       "collections": {},
