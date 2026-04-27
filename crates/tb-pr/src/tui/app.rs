@@ -12,7 +12,7 @@ use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::commands::util::{copy_to_clipboard, open_url};
-use crate::core::github::{GhClient, fetch_board_state};
+use crate::core::github::{GhClient, fetch_board_state, merge_with_previous};
 use crate::core::model::{BoardState, Column, Notification, Pr};
 use crate::error::{Error, Result};
 use crate::tui::columns;
@@ -535,10 +535,13 @@ fn spawn_mark_all_read(tx: &UnboundedSender<UiEvent>) {
 fn spawn_fetch(tx: &UnboundedSender<UiEvent>, ctx: &Arc<FetchCtx>, app: &mut App) {
     app.is_fetching = true;
     app.last_error = None;
+    // Snapshot the current in-memory state to use as fallback if any
+    // search column comes back empty (GitHub search-index degradation).
+    let prev = app.state.clone();
     let tx = tx.clone();
     let ctx = ctx.clone();
     tokio::spawn(async move {
-        let result = match GhClient::new() {
+        let fresh = match GhClient::new() {
             Ok(client) => fetch_board_state(
                 &client,
                 &ctx.org,
@@ -549,6 +552,7 @@ fn spawn_fetch(tx: &UnboundedSender<UiEvent>, ctx: &Arc<FetchCtx>, app: &mut App
             .map_err(|e| e.to_string()),
             Err(e) => Err(e.to_string()),
         };
+        let result = fresh.map(|state| merge_with_previous(state, Some(prev)));
         // Persist the successful fetch to the cache before handing off to the
         // UI. Without this, relaunching the app would show the stale count
         // again and re-fetch on every open. Cache write errors are swallowed
@@ -664,6 +668,7 @@ mod tests {
                 waiting_on_author: vec![],
                 notifications: vec![sample_notification("frontend", 3, "Please review")],
             },
+            column_issues: Vec::new(),
         }
     }
 

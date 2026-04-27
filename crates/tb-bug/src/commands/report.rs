@@ -131,7 +131,7 @@ pub async fn run_open(
     // Sort by impact: events * users
     errors
         .items
-        .sort_by(|a, b| (b.events * b.users).cmp(&(a.events * a.users)));
+        .sort_by_key(|e| std::cmp::Reverse(e.events * e.users));
     errors.items.truncate(limit);
 
     if json {

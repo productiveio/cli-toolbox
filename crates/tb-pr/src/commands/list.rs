@@ -4,7 +4,7 @@ use colored::{ColoredString, Colorize};
 use crate::commands::util::humanize_age_hours;
 use crate::config::Config;
 use crate::core::cache::BoardCache;
-use crate::core::github::{GhClient, fetch_board_state};
+use crate::core::github::{GhClient, fetch_board_state, merge_with_previous};
 use crate::core::model::{
     BoardState, CheckState, Column, ColumnsData, Notification, Pr, RottingBucket, SizeBucket,
 };
@@ -57,19 +57,23 @@ pub async fn run(column: Option<String>, stale_days: Option<u32>, json: bool) ->
 }
 
 /// Read the board state from the cache when fresh (Medium TTL = 5 min);
-/// otherwise fetch from GitHub and persist the new result.
+/// otherwise fetch from GitHub and persist the new result. Falls back to
+/// the prior cache (within Long TTL) for any column the search wipes —
+/// see `merge_with_previous`.
 async fn load_or_fetch(config: &Config, cache: &BoardCache) -> Result<BoardState> {
     if let Some(cached) = cache.load_board(&CacheTtl::Medium) {
         return Ok(cached);
     }
+    let prev = cache.load_board(&CacheTtl::Long);
     let client = GhClient::new()?;
-    let state = fetch_board_state(
+    let fresh = fetch_board_state(
         &client,
         &config.github.org,
         &config.productive.org_slug,
         Some(config.github.username_override.as_str()),
     )
     .await?;
+    let state = merge_with_previous(fresh, prev);
     cache.save_board(&state)?;
     Ok(state)
 }

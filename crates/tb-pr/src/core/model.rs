@@ -28,6 +28,19 @@ impl Column {
         }
     }
 
+    /// Compact label for header banners and CLI summaries — matches the
+    /// hyphenated names used in the `tb-pr refresh` output footer.
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Column::DraftMine => "draft",
+            Column::ReviewMine => "review",
+            Column::ReadyToMergeMine => "ready",
+            Column::WaitingOnMe => "wait-me",
+            Column::WaitingOnAuthor => "wait-au",
+            Column::Mentions => "mentions",
+        }
+    }
+
     /// Resolve a user-supplied column name (dashes, underscores, case-insensitive) to the enum.
     pub fn parse(s: &str) -> Option<Self> {
         let norm = s.to_ascii_lowercase().replace('-', "_");
@@ -187,9 +200,28 @@ pub struct Notification {
     pub age_days: f64,
 }
 
+/// Why a column is flagged in `BoardState.column_issues` — surfaced to the
+/// TUI banner / `refresh` stderr / `list --json` so the user can tell
+/// "GitHub broke" from "I genuinely have no PRs here".
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ColumnIssue {
+    pub column: Column,
+    /// Short label fit for a header banner, e.g. "rate limited",
+    /// "search returned empty", "server error 503".
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BoardState {
     pub user: String,
     pub fetched_at: DateTime<Utc>,
     pub columns: ColumnsData,
+    /// Per-column problems with the latest fetch — search calls that errored
+    /// (rate limit, 5xx, network), searches that returned 200 OK but with
+    /// zero results where prior cache had data (silent search-index
+    /// degradation), or notification fetch failures. Empty in the normal
+    /// happy path; serialization is skipped when empty so existing JSON
+    /// consumers stay backwards-compatible.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub column_issues: Vec<ColumnIssue>,
 }

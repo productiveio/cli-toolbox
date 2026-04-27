@@ -64,6 +64,17 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
             format!("⚠ {err}"),
             Style::default().fg(Color::Red),
         ));
+    } else if !state.column_issues.is_empty() {
+        let formatted: Vec<String> = state
+            .column_issues
+            .iter()
+            .map(|i| format!("{} ({})", i.column.short_label(), i.reason))
+            .collect();
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            format!("⚠ partial fetch — {}", formatted.join(", ")),
+            Style::default().fg(Color::Yellow),
+        ));
     } else if let Some(msg) = &app.status {
         spans.push(Span::raw("  "));
         spans.push(Span::styled(
