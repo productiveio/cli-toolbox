@@ -92,20 +92,28 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 fi
 
 # --- GitHub API helpers (using curl, no auth needed for public repo) ---
+# Reads tags rather than the /releases list. The latter has eventual-
+# consistency lag — a release published minutes ago can be missing for
+# hours, so a freshly-tagged version would silently install the previous
+# one. /tags reflects the ref the moment it's pushed.
 get_latest_release() {
   local tool="$1"
-  curl -fsSL "https://api.github.com/repos/$REPO/releases" \
+  curl -fsSL "https://api.github.com/repos/$REPO/tags?per_page=100" \
     | python3 -c "
-import sys, json
+import sys, json, re
 tool = '${tool}'
 prefix = tool + '-v'
-for r in json.load(sys.stdin):
-    if r.get('draft') or r.get('prerelease'):
+versions = []
+for t in json.load(sys.stdin):
+    name = t.get('name', '')
+    if not name.startswith(prefix):
         continue
-    tag = r.get('tag_name', '')
-    if tag.startswith(prefix):
-        print(tag[len(prefix):])
-        break
+    m = re.match(r'^(\d+)\.(\d+)\.(\d+)\$', name[len(prefix):])
+    if m:
+        versions.append((tuple(int(p) for p in m.groups()), name[len(prefix):]))
+if versions:
+    versions.sort(reverse=True)
+    print(versions[0][1])
 " 2>/dev/null
 }
 
