@@ -90,30 +90,41 @@ pub fn print_update_hint(tool_name: &str, current_version: &str) {
     }
 }
 
+/// Read tags rather than the `/releases` list. The latter has
+/// eventual-consistency lag — a release published minutes ago can be
+/// missing for hours, so a freshly-tagged version would silently report
+/// "(latest)" against an outdated reference. The `/tags` endpoint reflects
+/// the ref the moment it's pushed. We fetch all matching `<tool>-v*` tags
+/// and pick the highest semver, since GitHub's tag ordering isn't
+/// guaranteed to be by version.
 fn fetch_via_gh(tool_name: &str) -> Option<String> {
-    let jq_filter = format!(
-        "[.[] | select(.draft == false and .prerelease == false and (.tag_name | startswith(\"{}-v\")))][0].tag_name",
-        tool_name
-    );
-
+    let jq_filter = format!(".[] | select(.name | startswith(\"{tool_name}-v\")) | .name");
     let output = Command::new("gh")
         .args([
             "api",
-            &format!("repos/{}/releases", REPO),
+            "--paginate",
+            &format!("repos/{}/tags?per_page=100", REPO),
             "--jq",
             &jq_filter,
         ])
         .output()
         .ok()?;
-
     if !output.status.success() {
         return None;
     }
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    pick_highest_version(&stdout, tool_name)
+}
 
-    let tag = String::from_utf8(output.stdout).ok()?;
-    let tag = tag.trim();
-    let prefix = format!("{}-v", tool_name);
-    tag.strip_prefix(&prefix).map(|v| v.to_string())
+/// Given newline-separated tag names (as produced by `gh api ... --jq`),
+/// return the highest semver version for `<tool_name>-v*` tags.
+fn pick_highest_version(tags: &str, tool_name: &str) -> Option<String> {
+    let prefix = format!("{tool_name}-v");
+    tags.lines()
+        .filter_map(|tag| tag.trim().strip_prefix(&prefix).map(str::to_string))
+        .filter_map(|v| parse_semver(&v).map(|s| (s, v)))
+        .max_by_key(|(s, _)| *s)
+        .map(|(_, v)| v)
 }
 
 fn write_cache(tool_name: &str, version: &str) {
@@ -142,21 +153,23 @@ fn cache_path(tool_name: &str) -> PathBuf {
     dir.join("version-check.json")
 }
 
+/// Simple X.Y.Z parser; returns None for anything else (pre-release tags,
+/// build metadata, malformed). Tuple ordering matches numeric semver.
+fn parse_semver(v: &str) -> Option<(u32, u32, u32)> {
+    let parts: Vec<&str> = v.split('.').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    Some((
+        parts[0].parse().ok()?,
+        parts[1].parse().ok()?,
+        parts[2].parse().ok()?,
+    ))
+}
+
 /// Simple semver comparison: returns true if `latest` > `current`.
 fn is_newer(latest: &str, current: &str) -> bool {
-    let parse = |v: &str| -> Option<(u32, u32, u32)> {
-        let parts: Vec<&str> = v.split('.').collect();
-        if parts.len() != 3 {
-            return None;
-        }
-        Some((
-            parts[0].parse().ok()?,
-            parts[1].parse().ok()?,
-            parts[2].parse().ok()?,
-        ))
-    };
-
-    match (parse(latest), parse(current)) {
+    match (parse_semver(latest), parse_semver(current)) {
         (Some(l), Some(c)) => l > c,
         _ => false,
     }
@@ -188,6 +201,31 @@ mod tests {
     fn test_format_version_line_latest() {
         let line = format_version_line("tb-prod", "0.1.4", Some("0.1.4"));
         assert_eq!(line, "tb-prod 0.1.4 (latest)");
+    }
+
+    #[test]
+    fn test_pick_highest_picks_max_semver_ignoring_other_tools_and_order() {
+        // Mixed input: tool we care about (out of order), other tools, and
+        // a malformed tag — only the matching valid semvers should compete,
+        // and the highest must win regardless of position.
+        let tags = "\
+tb-pr-v0.1.0
+tb-prod-v9.9.9
+tb-pr-v0.1.1
+tb-pr-v0.2.0
+tb-pr-vbroken
+tb-pr-v0.1.10
+";
+        assert_eq!(
+            pick_highest_version(tags, "tb-pr"),
+            Some("0.2.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_pick_highest_returns_none_when_no_match() {
+        assert_eq!(pick_highest_version("tb-prod-v1.0.0\n", "tb-pr"), None);
+        assert_eq!(pick_highest_version("", "tb-pr"), None);
     }
 
     #[test]
