@@ -108,7 +108,7 @@ pub async fn run(
         })
         .collect();
 
-    flaky_tests.sort_by(|a, b| b.flaky_count.cmp(&a.flaky_count));
+    flaky_tests.sort_by_key(|t| std::cmp::Reverse(t.flaky_count));
 
     let result = FlakyOutput {
         project: project.to_string(),

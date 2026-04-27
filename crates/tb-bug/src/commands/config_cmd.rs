@@ -35,7 +35,7 @@ fn build_project_options(
             open_error_count: p.open_error_count,
         })
         .collect();
-    options.sort_by(|a, b| b.open_error_count.cmp(&a.open_error_count));
+    options.sort_by_key(|p| std::cmp::Reverse(p.open_error_count));
 
     let defaults: Vec<usize> = if let Some(cfg) = existing {
         options
