@@ -701,7 +701,65 @@ pub async fn fetch_board_state(
         user,
         fetched_at: now,
         columns,
+        degraded_columns: Vec::new(),
     })
+}
+
+/// When GitHub's search index is degraded (status.github.com incidents) the
+/// `/search/issues` endpoint returns 200 OK with zero results — silently
+/// wiping the kanban. This guards against that: for any of the five PR
+/// columns where the freshly-fetched list is empty but the previous cache
+/// had data, restore from the previous cache and record the column in
+/// `degraded_columns`. Notifications and `fetched_at` always come from
+/// `new` so the "refreshed N min ago" header reflects the actual attempt.
+pub fn merge_with_previous(mut new: BoardState, prev: Option<BoardState>) -> BoardState {
+    let Some(prev) = prev else {
+        return new;
+    };
+    let mut restore = |empty_now: bool, prev_list: &[Pr], col: Column| -> Option<Vec<Pr>> {
+        if empty_now && !prev_list.is_empty() {
+            new.degraded_columns.push(col);
+            Some(prev_list.to_vec())
+        } else {
+            None
+        }
+    };
+    if let Some(list) = restore(
+        new.columns.draft_mine.is_empty(),
+        &prev.columns.draft_mine,
+        Column::DraftMine,
+    ) {
+        new.columns.draft_mine = list;
+    }
+    if let Some(list) = restore(
+        new.columns.review_mine.is_empty(),
+        &prev.columns.review_mine,
+        Column::ReviewMine,
+    ) {
+        new.columns.review_mine = list;
+    }
+    if let Some(list) = restore(
+        new.columns.ready_to_merge_mine.is_empty(),
+        &prev.columns.ready_to_merge_mine,
+        Column::ReadyToMergeMine,
+    ) {
+        new.columns.ready_to_merge_mine = list;
+    }
+    if let Some(list) = restore(
+        new.columns.waiting_on_me.is_empty(),
+        &prev.columns.waiting_on_me,
+        Column::WaitingOnMe,
+    ) {
+        new.columns.waiting_on_me = list;
+    }
+    if let Some(list) = restore(
+        new.columns.waiting_on_author.is_empty(),
+        &prev.columns.waiting_on_author,
+        Column::WaitingOnAuthor,
+    ) {
+        new.columns.waiting_on_author = list;
+    }
+    new
 }
 
 /// `(owner, repo, number)` from a search item.
@@ -1018,6 +1076,108 @@ mod tests {
         assert!(!is_wait_on_author_state("DISMISSED"));
         assert!(!is_wait_on_author_state("PENDING"));
         assert!(!is_wait_on_author_state(""));
+    }
+
+    fn fallback_pr(repo: &str, number: u64) -> Pr {
+        use crate::core::model::{PrState, RottingBucket, SizeBucket};
+        Pr {
+            number,
+            repo: repo.to_string(),
+            title: "cached".to_string(),
+            url: format!("https://github.com/productiveio/{repo}/pull/{number}"),
+            author: "ilucin".to_string(),
+            state: PrState::Ready,
+            created_at: Utc::now(),
+            age_days: 1.0,
+            size: Some(SizeBucket::S),
+            rotting: RottingBucket::Fresh,
+            productive_task_id: None,
+            comments_count: 0,
+            base_branch: None,
+            has_new_commits_since_my_review: None,
+            check_state: None,
+        }
+    }
+
+    fn empty_state() -> BoardState {
+        BoardState {
+            user: "ilucin".into(),
+            fetched_at: Utc::now(),
+            columns: ColumnsData {
+                draft_mine: vec![],
+                review_mine: vec![],
+                ready_to_merge_mine: vec![],
+                waiting_on_me: vec![],
+                waiting_on_author: vec![],
+                notifications: vec![],
+            },
+            degraded_columns: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn merge_restores_empty_columns_from_prev_and_marks_degraded() {
+        let mut prev = empty_state();
+        prev.columns.draft_mine = vec![fallback_pr("ai-agent", 1)];
+        prev.columns.waiting_on_me = vec![fallback_pr("frontend", 2)];
+        // ready_to_merge_mine is empty in prev too — should NOT be marked
+        // degraded just because new is also empty.
+
+        let mut new = empty_state();
+        // review_mine populated in new — must be kept as-is, not flagged.
+        new.columns.review_mine = vec![fallback_pr("api", 3)];
+
+        let merged = merge_with_previous(new, Some(prev));
+        assert_eq!(merged.columns.draft_mine.len(), 1);
+        assert_eq!(merged.columns.draft_mine[0].number, 1);
+        assert_eq!(merged.columns.review_mine.len(), 1);
+        assert_eq!(merged.columns.review_mine[0].number, 3);
+        assert_eq!(merged.columns.waiting_on_me.len(), 1);
+        assert!(merged.columns.ready_to_merge_mine.is_empty());
+
+        let degraded: std::collections::HashSet<_> =
+            merged.degraded_columns.iter().copied().collect();
+        assert!(degraded.contains(&Column::DraftMine));
+        assert!(degraded.contains(&Column::WaitingOnMe));
+        assert!(!degraded.contains(&Column::ReviewMine));
+        assert!(!degraded.contains(&Column::ReadyToMergeMine));
+    }
+
+    #[test]
+    fn merge_no_prev_passes_through_unchanged() {
+        let mut new = empty_state();
+        new.columns.draft_mine = vec![fallback_pr("ai-agent", 7)];
+        let merged = merge_with_previous(new, None);
+        assert_eq!(merged.columns.draft_mine.len(), 1);
+        assert!(merged.degraded_columns.is_empty());
+    }
+
+    #[test]
+    fn merge_keeps_fresh_data_when_both_have_entries() {
+        let mut prev = empty_state();
+        prev.columns.draft_mine = vec![fallback_pr("ai-agent", 1)];
+        let mut new = empty_state();
+        new.columns.draft_mine = vec![fallback_pr("ai-agent", 999)];
+        let merged = merge_with_previous(new, Some(prev));
+        assert_eq!(merged.columns.draft_mine.len(), 1);
+        assert_eq!(merged.columns.draft_mine[0].number, 999);
+        assert!(merged.degraded_columns.is_empty());
+    }
+
+    #[test]
+    fn degraded_columns_skip_serialization_when_empty() {
+        let state = empty_state();
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(
+            !json.contains("degraded_columns"),
+            "degraded_columns should be omitted when empty: {json}"
+        );
+
+        let mut state_with = empty_state();
+        state_with.degraded_columns.push(Column::DraftMine);
+        let json2 = serde_json::to_string(&state_with).unwrap();
+        assert!(json2.contains("degraded_columns"));
+        assert!(json2.contains("draft_mine"));
     }
 
     #[test]

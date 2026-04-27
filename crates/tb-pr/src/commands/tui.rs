@@ -52,5 +52,6 @@ fn empty_state() -> BoardState {
             waiting_on_author: Vec::new(),
             notifications: Vec::new(),
         },
+        degraded_columns: Vec::new(),
     }
 }

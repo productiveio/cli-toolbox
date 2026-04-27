@@ -64,6 +64,17 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
             format!("⚠ {err}"),
             Style::default().fg(Color::Red),
         ));
+    } else if !state.degraded_columns.is_empty() {
+        let names: Vec<&str> = state
+            .degraded_columns
+            .iter()
+            .map(|c| c.short_label())
+            .collect();
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            format!("⚠ search degraded — using cache for: {}", names.join(", ")),
+            Style::default().fg(Color::Yellow),
+        ));
     } else if let Some(msg) = &app.status {
         spans.push(Span::raw("  "));
         spans.push(Span::styled(

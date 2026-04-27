@@ -28,6 +28,19 @@ impl Column {
         }
     }
 
+    /// Compact label for header banners and CLI summaries — matches the
+    /// hyphenated names used in the `tb-pr refresh` output footer.
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Column::DraftMine => "draft",
+            Column::ReviewMine => "review",
+            Column::ReadyToMergeMine => "ready",
+            Column::WaitingOnMe => "wait-me",
+            Column::WaitingOnAuthor => "wait-au",
+            Column::Mentions => "mentions",
+        }
+    }
+
     /// Resolve a user-supplied column name (dashes, underscores, case-insensitive) to the enum.
     pub fn parse(s: &str) -> Option<Self> {
         let norm = s.to_ascii_lowercase().replace('-', "_");
@@ -192,4 +205,11 @@ pub struct BoardState {
     pub user: String,
     pub fetched_at: DateTime<Utc>,
     pub columns: ColumnsData,
+    /// Columns whose data in this state came from the previous cache because
+    /// the latest GitHub search returned 0 results where prior cache had
+    /// data. Strong signal that GitHub's search index is degraded (the API
+    /// returns 200 OK with empty results during incidents — see
+    /// status.github.com). Empty in the normal happy path.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub degraded_columns: Vec<Column>,
 }

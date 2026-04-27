@@ -205,6 +205,7 @@ mod tests {
                 waiting_on_author: vec![],
                 notifications: vec![],
             },
+            degraded_columns: Vec::new(),
         };
         let s = render(&state);
         assert!(s.contains("2 waiting on me"));
@@ -232,6 +233,7 @@ mod tests {
                 waiting_on_author: vec![],
                 notifications: vec![],
             },
+            degraded_columns: Vec::new(),
         };
         let s = render(&state);
         assert!(s.contains("0 waiting on me"));
