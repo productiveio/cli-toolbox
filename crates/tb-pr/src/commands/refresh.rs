@@ -42,16 +42,16 @@ pub async fn run() -> Result<()> {
         c.waiting_on_me.len(),
         c.waiting_on_author.len(),
     );
-    if !state.degraded_columns.is_empty() {
-        let names: Vec<&str> = state
-            .degraded_columns
+    if !state.column_issues.is_empty() {
+        let formatted: Vec<String> = state
+            .column_issues
             .iter()
-            .map(|c| c.short_label())
+            .map(|i| format!("{} ({})", i.column.short_label(), i.reason))
             .collect();
         eprintln!(
-            "{} GitHub search degraded — using cached data for: {}",
+            "{} partial fetch — {}",
             "⚠".yellow().bold(),
-            names.join(", "),
+            formatted.join(", "),
         );
     }
     Ok(())

@@ -668,7 +668,7 @@ mod tests {
                 waiting_on_author: vec![],
                 notifications: vec![sample_notification("frontend", 3, "Please review")],
             },
-            degraded_columns: Vec::new(),
+            column_issues: Vec::new(),
         }
     }
 

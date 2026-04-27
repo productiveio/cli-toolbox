@@ -8,7 +8,8 @@ use tokio::sync::Semaphore;
 
 use crate::core::classifier;
 use crate::core::model::{
-    BoardState, CheckState, Column, ColumnsData, Notification, NotificationReason, Pr, PrState,
+    BoardState, CheckState, Column, ColumnIssue, ColumnsData, Notification, NotificationReason, Pr,
+    PrState,
 };
 use crate::core::productive::extract_task_id;
 use crate::core::reviews::{Review, ReviewSummary};
@@ -575,16 +576,34 @@ pub async fn fetch_board_state(
         client.search_issues(&q_wait_author),
         client.list_notifications(org),
     );
-    let r_draft = r_draft?;
-    let r_review_mine_raw = r_review_mine_raw?;
-    let r_wait_me = r_wait_me?;
-    let r_wait_author_raw = r_wait_author_raw?;
+    // Each search is independent — don't let one rate-limited query (or
+    // a transient 5xx) wipe the entire board. Convert hard errors into
+    // per-column issues, surfacing them via `column_issues` so the TUI /
+    // CLI / JSON consumers can tell *why* a column is empty.
+    let mut column_issues: Vec<ColumnIssue> = Vec::new();
+    let r_draft = unwrap_search_or_record(r_draft, &mut column_issues, &[Column::DraftMine]);
+    // q_author_mine populates both ReviewMine and ReadyToMergeMine after the
+    // approval-split, so a failure there flags both columns.
+    let r_review_mine_raw = unwrap_search_or_record(
+        r_review_mine_raw,
+        &mut column_issues,
+        &[Column::ReviewMine, Column::ReadyToMergeMine],
+    );
+    let r_wait_me = unwrap_search_or_record(r_wait_me, &mut column_issues, &[Column::WaitingOnMe]);
+    let r_wait_author_raw = unwrap_search_or_record(
+        r_wait_author_raw,
+        &mut column_issues,
+        &[Column::WaitingOnAuthor],
+    );
     // Notifications are nice-to-have — a 403 on /notifications (e.g. token
     // missing `notifications` scope) must not block the main board.
     let notifications = match r_notifications {
         Ok(n) => n,
         Err(e) => {
-            eprintln!("warning: failed to fetch notifications: {e}");
+            column_issues.push(ColumnIssue {
+                column: Column::Mentions,
+                reason: summarize_fetch_error(&e),
+            });
             Vec::new()
         }
     };
@@ -701,64 +720,107 @@ pub async fn fetch_board_state(
         user,
         fetched_at: now,
         columns,
-        degraded_columns: Vec::new(),
+        column_issues,
     })
+}
+
+fn unwrap_search_or_record(
+    result: Result<Vec<SearchItem>>,
+    issues: &mut Vec<ColumnIssue>,
+    columns: &[Column],
+) -> Vec<SearchItem> {
+    match result {
+        Ok(v) => v,
+        Err(e) => {
+            let reason = summarize_fetch_error(&e);
+            for col in columns {
+                issues.push(ColumnIssue {
+                    column: *col,
+                    reason: reason.clone(),
+                });
+            }
+            Vec::new()
+        }
+    }
+}
+
+/// Map a fetch failure to a short human label suitable for the TUI banner.
+/// Avoids dumping multi-line API error bodies into the header — the
+/// rate-limit message from `send_get` already crafts "rate limited — resets
+/// at HH:MM:SS UTC", which we strip down further here.
+fn summarize_fetch_error(e: &Error) -> String {
+    match e {
+        Error::Api { status, message } => {
+            if message.starts_with("rate limited") {
+                "rate limited".into()
+            } else if *status >= 500 {
+                format!("server error {status}")
+            } else {
+                format!("api error {status}")
+            }
+        }
+        Error::Http(_) => "network error".into(),
+        _ => "fetch failed".into(),
+    }
 }
 
 /// When GitHub's search index is degraded (status.github.com incidents) the
 /// `/search/issues` endpoint returns 200 OK with zero results — silently
 /// wiping the kanban. This guards against that: for any of the five PR
 /// columns where the freshly-fetched list is empty but the previous cache
-/// had data, restore from the previous cache and record the column in
-/// `degraded_columns`. Notifications and `fetched_at` always come from
-/// `new` so the "refreshed N min ago" header reflects the actual attempt.
+/// had data, restore from the previous cache. If the column is not already
+/// flagged in `column_issues` (e.g. by a hard error from
+/// `unwrap_search_or_record`), we add a "search returned empty" entry so
+/// the banner still surfaces the staleness. Notifications and `fetched_at`
+/// always come from `new` so the "refreshed N min ago" header reflects the
+/// actual attempt.
 pub fn merge_with_previous(mut new: BoardState, prev: Option<BoardState>) -> BoardState {
     let Some(prev) = prev else {
         return new;
     };
-    let mut restore = |empty_now: bool, prev_list: &[Pr], col: Column| -> Option<Vec<Pr>> {
-        if empty_now && !prev_list.is_empty() {
-            new.degraded_columns.push(col);
-            Some(prev_list.to_vec())
-        } else {
-            None
-        }
-    };
-    if let Some(list) = restore(
-        new.columns.draft_mine.is_empty(),
+    let restore =
+        |new_list: &mut Vec<Pr>, prev_list: &[Pr], issues: &mut Vec<ColumnIssue>, col: Column| {
+            if !new_list.is_empty() || prev_list.is_empty() {
+                return;
+            }
+            *new_list = prev_list.to_vec();
+            if !issues.iter().any(|i| i.column == col) {
+                issues.push(ColumnIssue {
+                    column: col,
+                    reason: "search returned empty".into(),
+                });
+            }
+        };
+    restore(
+        &mut new.columns.draft_mine,
         &prev.columns.draft_mine,
+        &mut new.column_issues,
         Column::DraftMine,
-    ) {
-        new.columns.draft_mine = list;
-    }
-    if let Some(list) = restore(
-        new.columns.review_mine.is_empty(),
+    );
+    restore(
+        &mut new.columns.review_mine,
         &prev.columns.review_mine,
+        &mut new.column_issues,
         Column::ReviewMine,
-    ) {
-        new.columns.review_mine = list;
-    }
-    if let Some(list) = restore(
-        new.columns.ready_to_merge_mine.is_empty(),
+    );
+    restore(
+        &mut new.columns.ready_to_merge_mine,
         &prev.columns.ready_to_merge_mine,
+        &mut new.column_issues,
         Column::ReadyToMergeMine,
-    ) {
-        new.columns.ready_to_merge_mine = list;
-    }
-    if let Some(list) = restore(
-        new.columns.waiting_on_me.is_empty(),
+    );
+    restore(
+        &mut new.columns.waiting_on_me,
         &prev.columns.waiting_on_me,
+        &mut new.column_issues,
         Column::WaitingOnMe,
-    ) {
-        new.columns.waiting_on_me = list;
-    }
-    if let Some(list) = restore(
-        new.columns.waiting_on_author.is_empty(),
+    );
+    restore(
+        &mut new.columns.waiting_on_author,
         &prev.columns.waiting_on_author,
+        &mut new.column_issues,
         Column::WaitingOnAuthor,
-    ) {
-        new.columns.waiting_on_author = list;
-    }
+    );
     new
 }
 
@@ -1111,8 +1173,12 @@ mod tests {
                 waiting_on_author: vec![],
                 notifications: vec![],
             },
-            degraded_columns: Vec::new(),
+            column_issues: Vec::new(),
         }
+    }
+
+    fn columns_with_issues(state: &BoardState) -> std::collections::HashSet<Column> {
+        state.column_issues.iter().map(|i| i.column).collect()
     }
 
     #[test]
@@ -1135,12 +1201,17 @@ mod tests {
         assert_eq!(merged.columns.waiting_on_me.len(), 1);
         assert!(merged.columns.ready_to_merge_mine.is_empty());
 
-        let degraded: std::collections::HashSet<_> =
-            merged.degraded_columns.iter().copied().collect();
-        assert!(degraded.contains(&Column::DraftMine));
-        assert!(degraded.contains(&Column::WaitingOnMe));
-        assert!(!degraded.contains(&Column::ReviewMine));
-        assert!(!degraded.contains(&Column::ReadyToMergeMine));
+        let flagged = columns_with_issues(&merged);
+        assert!(flagged.contains(&Column::DraftMine));
+        assert!(flagged.contains(&Column::WaitingOnMe));
+        assert!(!flagged.contains(&Column::ReviewMine));
+        assert!(!flagged.contains(&Column::ReadyToMergeMine));
+        assert!(
+            merged
+                .column_issues
+                .iter()
+                .all(|i| i.reason == "search returned empty")
+        );
     }
 
     #[test]
@@ -1149,7 +1220,7 @@ mod tests {
         new.columns.draft_mine = vec![fallback_pr("ai-agent", 7)];
         let merged = merge_with_previous(new, None);
         assert_eq!(merged.columns.draft_mine.len(), 1);
-        assert!(merged.degraded_columns.is_empty());
+        assert!(merged.column_issues.is_empty());
     }
 
     #[test]
@@ -1161,23 +1232,74 @@ mod tests {
         let merged = merge_with_previous(new, Some(prev));
         assert_eq!(merged.columns.draft_mine.len(), 1);
         assert_eq!(merged.columns.draft_mine[0].number, 999);
-        assert!(merged.degraded_columns.is_empty());
+        assert!(merged.column_issues.is_empty());
     }
 
     #[test]
-    fn degraded_columns_skip_serialization_when_empty() {
+    fn merge_keeps_explicit_error_reason_over_default_empty_reason() {
+        // q_draft errored (rate-limited); fetch_board_state already pushed
+        // a "rate limited" issue. Merge restores from prev but must not
+        // overwrite the more specific reason with "search returned empty".
+        let mut prev = empty_state();
+        prev.columns.draft_mine = vec![fallback_pr("ai-agent", 1)];
+        let mut new = empty_state();
+        new.column_issues.push(ColumnIssue {
+            column: Column::DraftMine,
+            reason: "rate limited".into(),
+        });
+        let merged = merge_with_previous(new, Some(prev));
+        assert_eq!(merged.columns.draft_mine.len(), 1);
+        assert_eq!(merged.column_issues.len(), 1);
+        assert_eq!(merged.column_issues[0].reason, "rate limited");
+    }
+
+    #[test]
+    fn column_issues_skip_serialization_when_empty() {
         let state = empty_state();
         let json = serde_json::to_string(&state).unwrap();
         assert!(
-            !json.contains("degraded_columns"),
-            "degraded_columns should be omitted when empty: {json}"
+            !json.contains("column_issues"),
+            "column_issues should be omitted when empty: {json}"
         );
 
         let mut state_with = empty_state();
-        state_with.degraded_columns.push(Column::DraftMine);
+        state_with.column_issues.push(ColumnIssue {
+            column: Column::DraftMine,
+            reason: "rate limited".into(),
+        });
         let json2 = serde_json::to_string(&state_with).unwrap();
-        assert!(json2.contains("degraded_columns"));
+        assert!(json2.contains("column_issues"));
         assert!(json2.contains("draft_mine"));
+        assert!(json2.contains("rate limited"));
+    }
+
+    #[test]
+    fn summarize_fetch_error_picks_short_labels() {
+        assert_eq!(
+            summarize_fetch_error(&Error::Api {
+                status: 429,
+                message: "rate limited — resets at 12:00:00 UTC".into()
+            }),
+            "rate limited"
+        );
+        assert_eq!(
+            summarize_fetch_error(&Error::Api {
+                status: 503,
+                message: "Service Unavailable".into()
+            }),
+            "server error 503"
+        );
+        assert_eq!(
+            summarize_fetch_error(&Error::Api {
+                status: 422,
+                message: "Validation Failed".into()
+            }),
+            "api error 422"
+        );
+        assert_eq!(
+            summarize_fetch_error(&Error::Other("boom".into())),
+            "fetch failed"
+        );
     }
 
     #[test]
