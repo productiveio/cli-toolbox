@@ -472,4 +472,56 @@ impl BugsnagClient {
         self.cache.clear()?;
         Ok(())
     }
+
+    /// PATCH a project's error(s). `body` is the raw JSON op payload.
+    /// Bugsnag accepts the same endpoint for single (`error_id`) and bulk (`error_ids`).
+    async fn patch_errors(&self, project_id: &str, body: serde_json::Value) -> Result<()> {
+        let url = format!("{}/projects/{}/errors", BASE_URL, project_id);
+        let resp = self
+            .client
+            .patch(&url)
+            .header("Authorization", format!("token {}", self.token))
+            .header("X-Version", "2")
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await?;
+        let status = resp.status().as_u16();
+        if !resp.status().is_success() {
+            let msg = resp.text().await.unwrap_or_default();
+            return Err(TbBugError::Api {
+                status,
+                message: msg,
+            });
+        }
+        // Mutations invalidate cached error lists; clear the whole cache (small + tool-scoped).
+        // Failure is best-effort — the mutation already succeeded, so swallow the error.
+        let _ = self.cache.clear();
+        Ok(())
+    }
+
+    /// Apply an operation (`fix`, `ignore`, `discard`, `snooze`, ...) to one or more errors.
+    /// `extra` lets callers pass additional fields like `snooze_rule` alongside `operation`.
+    pub async fn update_errors(
+        &self,
+        project_id: &str,
+        error_ids: &[String],
+        operation: &str,
+        extra: Option<serde_json::Value>,
+    ) -> Result<()> {
+        let mut body = serde_json::Map::new();
+        body.insert("operation".into(), serde_json::json!(operation));
+        if error_ids.len() == 1 {
+            body.insert("id".into(), serde_json::json!(error_ids[0]));
+        } else {
+            body.insert("error_ids".into(), serde_json::json!(error_ids));
+        }
+        if let Some(serde_json::Value::Object(extra_map)) = extra {
+            for (k, v) in extra_map {
+                body.insert(k, v);
+            }
+        }
+        self.patch_errors(project_id, serde_json::Value::Object(body))
+            .await
+    }
 }

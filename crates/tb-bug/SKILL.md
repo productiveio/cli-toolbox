@@ -10,6 +10,7 @@ CLI for querying Bugsnag error and stability data. Surfaces open errors, release
 ## Capabilities
 
 - **Errors** — list, filter, and search errors by status, severity, class, and time range
+- **Mutations** — fix, ignore, discard, or snooze errors (`tb-bug error fix|ignore|discard|snooze`)
 - **Releases** — track releases with error counts and session data
 - **Stability** — crash-free session rates over time
 - **Reports** — combined dashboard views and impact-sorted error lists

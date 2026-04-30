@@ -1,5 +1,6 @@
 pub mod config_cmd;
 pub mod doctor;
+pub mod error_action;
 pub mod errors;
 pub mod events;
 pub mod fetch;
