@@ -474,7 +474,7 @@ impl BugsnagClient {
     }
 
     /// PATCH a project's error(s). `body` is the raw JSON op payload.
-    /// Bugsnag accepts the same endpoint for single (`error_id`) and bulk (`error_ids`).
+    /// Bugsnag accepts the same endpoint for single (`id`) and bulk (`error_ids`).
     async fn patch_errors(&self, project_id: &str, body: serde_json::Value) -> Result<()> {
         let url = format!("{}/projects/{}/errors", BASE_URL, project_id);
         let resp = self
@@ -509,17 +509,21 @@ impl BugsnagClient {
         operation: &str,
         extra: Option<serde_json::Value>,
     ) -> Result<()> {
+        if error_ids.is_empty() {
+            return Err(TbBugError::Other("no error ids provided".into()));
+        }
         let mut body = serde_json::Map::new();
+        // Merge extra fields first so reserved keys below always win.
+        if let Some(serde_json::Value::Object(extra_map)) = extra {
+            for (k, v) in extra_map {
+                body.insert(k, v);
+            }
+        }
         body.insert("operation".into(), serde_json::json!(operation));
         if error_ids.len() == 1 {
             body.insert("id".into(), serde_json::json!(error_ids[0]));
         } else {
             body.insert("error_ids".into(), serde_json::json!(error_ids));
-        }
-        if let Some(serde_json::Value::Object(extra_map)) = extra {
-            for (k, v) in extra_map {
-                body.insert(k, v);
-            }
         }
         self.patch_errors(project_id, serde_json::Value::Object(body))
             .await

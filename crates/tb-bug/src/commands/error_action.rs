@@ -63,7 +63,9 @@ impl SnoozeRule {
                     format!("{}s", s)
                 }
             }
-            SnoozeRule::Events(n) => format!("{} more events", n),
+            SnoozeRule::Events(n) => {
+                format!("{} more {}", n, if *n == 1 { "event" } else { "events" })
+            }
         }
     }
 }
@@ -88,7 +90,8 @@ pub fn parse_duration(input: &str) -> std::result::Result<u64, String> {
         'd' | 'D' => 86_400,
         other => return Err(format!("unknown duration unit '{other}' in {input}")),
     };
-    Ok(n * mult)
+    n.checked_mul(mult)
+        .ok_or_else(|| format!("duration overflow: {input}"))
 }
 
 pub async fn run(
