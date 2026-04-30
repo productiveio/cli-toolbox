@@ -422,17 +422,27 @@ async fn run() -> tb_bug::error::Result<()> {
             commands::search::run(&client, &config, project, query, *limit, *json).await?;
         }
         Commands::Error { action } => {
-            use commands::error_action::{parse_duration, Op, SnoozeRule};
+            use commands::error_action::{Op, SnoozeRule, parse_duration};
             match action {
                 ErrorAction::Fix { project, error_ids } => {
                     commands::error_action::run(
-                        &client, &config, project, error_ids, Op::Fix, true,
+                        &client,
+                        &config,
+                        project,
+                        error_ids,
+                        Op::Fix,
+                        true,
                     )
                     .await?;
                 }
                 ErrorAction::Ignore { project, error_ids } => {
                     commands::error_action::run(
-                        &client, &config, project, error_ids, Op::Ignore, true,
+                        &client,
+                        &config,
+                        project,
+                        error_ids,
+                        Op::Ignore,
+                        true,
                     )
                     .await?;
                 }
@@ -442,7 +452,12 @@ async fn run() -> tb_bug::error::Result<()> {
                     yes,
                 } => {
                     commands::error_action::run(
-                        &client, &config, project, error_ids, Op::Discard, *yes,
+                        &client,
+                        &config,
+                        project,
+                        error_ids,
+                        Op::Discard,
+                        *yes,
                     )
                     .await?;
                 }
@@ -456,14 +471,11 @@ async fn run() -> tb_bug::error::Result<()> {
                         SnoozeRule::Events(*n)
                     } else {
                         let dur = r#for.as_deref().unwrap_or("7d");
-                        let secs = parse_duration(dur)
-                            .map_err(tb_bug::error::TbBugError::Other)?;
+                        let secs = parse_duration(dur).map_err(tb_bug::error::TbBugError::Other)?;
                         SnoozeRule::Seconds(secs)
                     };
-                    commands::error_action::run_snooze(
-                        &client, &config, project, error_ids, rule,
-                    )
-                    .await?;
+                    commands::error_action::run_snooze(&client, &config, project, error_ids, rule)
+                        .await?;
                 }
             }
         }
