@@ -137,6 +137,11 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Mutate an error's state (fix, ignore, discard, snooze)
+    Error {
+        #[command(subcommand)]
+        action: ErrorAction,
+    },
     /// Health check for CLI setup
     Doctor,
     /// Manage Claude Code skill file
@@ -181,6 +186,55 @@ enum ConfigAction {
         /// Remove a project by slug (only with key=project)
         #[arg(long)]
         remove: Option<String>,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum ErrorAction {
+    /// Mark errors as fixed
+    Fix {
+        /// Project name or ID
+        #[arg(long)]
+        project: String,
+        /// Error IDs (one or more)
+        #[arg(required = true)]
+        error_ids: Vec<String>,
+    },
+    /// Ignore errors
+    Ignore {
+        /// Project name or ID
+        #[arg(long)]
+        project: String,
+        /// Error IDs (one or more)
+        #[arg(required = true)]
+        error_ids: Vec<String>,
+    },
+    /// Discard errors (drops future events for this error class)
+    Discard {
+        /// Project name or ID
+        #[arg(long)]
+        project: String,
+        /// Error IDs (one or more)
+        #[arg(required = true)]
+        error_ids: Vec<String>,
+        /// Skip confirmation prompt
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Snooze errors for a duration or until N more events
+    Snooze {
+        /// Project name or ID
+        #[arg(long)]
+        project: String,
+        /// Error IDs (one or more)
+        #[arg(required = true)]
+        error_ids: Vec<String>,
+        /// Snooze for a duration like 7d, 24h, 30m (default: 7d)
+        #[arg(long, conflicts_with = "events")]
+        r#for: Option<String>,
+        /// Snooze until N more events occur
+        #[arg(long)]
+        events: Option<u64>,
     },
 }
 
@@ -366,6 +420,64 @@ async fn run() -> tb_bug::error::Result<()> {
             json,
         } => {
             commands::search::run(&client, &config, project, query, *limit, *json).await?;
+        }
+        Commands::Error { action } => {
+            use commands::error_action::{Op, SnoozeRule, parse_duration};
+            match action {
+                ErrorAction::Fix { project, error_ids } => {
+                    commands::error_action::run(
+                        &client,
+                        &config,
+                        project,
+                        error_ids,
+                        Op::Fix,
+                        true,
+                    )
+                    .await?;
+                }
+                ErrorAction::Ignore { project, error_ids } => {
+                    commands::error_action::run(
+                        &client,
+                        &config,
+                        project,
+                        error_ids,
+                        Op::Ignore,
+                        true,
+                    )
+                    .await?;
+                }
+                ErrorAction::Discard {
+                    project,
+                    error_ids,
+                    yes,
+                } => {
+                    commands::error_action::run(
+                        &client,
+                        &config,
+                        project,
+                        error_ids,
+                        Op::Discard,
+                        *yes,
+                    )
+                    .await?;
+                }
+                ErrorAction::Snooze {
+                    project,
+                    error_ids,
+                    r#for,
+                    events,
+                } => {
+                    let rule = if let Some(n) = events {
+                        SnoozeRule::Events(*n)
+                    } else {
+                        let dur = r#for.as_deref().unwrap_or("7d");
+                        let secs = parse_duration(dur).map_err(tb_bug::error::TbBugError::Other)?;
+                        SnoozeRule::Seconds(secs)
+                    };
+                    commands::error_action::run_snooze(&client, &config, project, error_ids, rule)
+                        .await?;
+                }
+            }
         }
         Commands::Doctor => {
             commands::doctor::run(&client, &config).await?;
