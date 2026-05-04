@@ -609,6 +609,40 @@ pub struct StratifiedCohort {
     pub off_trace_ids: Option<Vec<String>>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct EnvCohortResponse {
+    pub treatment_env: String,
+    #[serde(default)]
+    pub control_envs: Vec<String>,
+    #[serde(default)]
+    pub ignore_flags: Vec<String>,
+    #[serde(default)]
+    pub from: Option<String>,
+    #[serde(default)]
+    pub to: Option<String>,
+    #[serde(default)]
+    pub meta: Option<StratifiedMeta>,
+    #[serde(default)]
+    pub cohorts: Vec<EnvCohort>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct EnvCohort {
+    pub fingerprint_hash: String,
+    #[serde(default)]
+    pub fingerprint_flags: Vec<String>,
+    // metrics mode
+    #[serde(default)]
+    pub treatment: Option<CohortStats>,
+    #[serde(default)]
+    pub control: Option<CohortStats>,
+    // traces mode
+    #[serde(default)]
+    pub treatment_trace_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub control_trace_ids: Option<Vec<String>>,
+}
+
 // --- Trace Metrics (scoring) ---
 
 #[derive(Debug, Deserialize, Serialize)]
