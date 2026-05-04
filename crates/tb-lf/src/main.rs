@@ -458,6 +458,36 @@ enum Commands {
         #[command(flatten)]
         time: TimeRange,
     },
+    /// Cross-environment cohort analysis — pivot on env (treatment vs control) instead of flag-tag
+    #[command(
+        name = "env-cohort",
+        after_help = "Examples:\n  tb-lf env-cohort --treatment-env lazy-output-redesign --control-envs production,latest --from 14d --to today\n  tb-lf env-cohort --treatment-env lazy-output-redesign --control-envs production --ignore-flags aiAgentLazyOutput --from 14d --to today\n  tb-lf env-cohort --treatment-env lazy-output-redesign --control-envs production --ignore-flags aiAgentLazyOutput --from 14d --to today --detail traces --json\n\nUse this when the target flag is forced-ON in code in the treatment env (so the trace flag-tag is unreliable). control-envs are envs where the feature is OFF / not deployed. ignore-flags excludes flags from the fingerprint — typically the target flag itself."
+    )]
+    EnvCohort {
+        /// Environment where the feature is forced-ON in code (e.g. a review env)
+        #[arg(long)]
+        treatment_env: String,
+        /// Comma-separated control environments where the feature is OFF / not deployed
+        #[arg(long, value_delimiter = ',')]
+        control_envs: Vec<String>,
+        /// Comma-separated flags to exclude from fingerprint (e.g. the target flag with unreliable tag)
+        #[arg(long, value_delimiter = ',')]
+        ignore_flags: Vec<String>,
+        /// Filter by trace name
+        #[arg(long)]
+        name: Option<String>,
+        /// Minimum traces per side (treatment and control each) (default: 10)
+        #[arg(long, default_value = "10")]
+        min_cohort_size: u32,
+        /// Max cohorts to display (default: 3)
+        #[arg(long, default_value = "3")]
+        max_cohorts: usize,
+        /// Response detail: metrics (default) or traces
+        #[arg(long, default_value = "metrics")]
+        detail: String,
+        #[command(flatten)]
+        time: TimeRange,
+    },
     /// Download trace summaries for a flag cohort as JSON
     #[command(
         name = "flag-traces",
@@ -3051,6 +3081,149 @@ async fn run() -> tb_lf::error::Result<()> {
                             delta_pct,
                             on.trace_count,
                             off.trace_count
+                        );
+                    }
+                    println!();
+                }
+            }
+
+            if resp.cohorts.len() > max_cohorts {
+                println!(
+                    "  {} {} more cohorts not shown. Use --max-cohorts to see more.",
+                    "...".dimmed(),
+                    resp.cohorts.len() - max_cohorts
+                );
+                println!();
+            }
+        }
+
+        Commands::EnvCohort {
+            treatment_env,
+            control_envs,
+            ignore_flags,
+            name,
+            min_cohort_size,
+            max_cohorts,
+            detail,
+            time,
+        } => {
+            if control_envs.is_empty() {
+                eprintln!("error: --control-envs is required");
+                std::process::exit(2);
+            }
+            let mut params: Vec<(&str, Option<String>)> = vec![
+                ("project_id", pid),
+                ("treatment_env", Some(treatment_env.clone())),
+                ("control_envs", Some(control_envs.join(","))),
+                ("name", name),
+                ("min_cohort_size", Some(min_cohort_size.to_string())),
+                ("detail", Some(detail.clone())),
+            ];
+            if !ignore_flags.is_empty() {
+                params.push(("ignore_flags", Some(ignore_flags.join(","))));
+            }
+            time.push_date_params_inclusive_or_exit(&mut params);
+            let path = DevPortalClient::build_path("/traces/env_cohort", &params);
+            let resp: EnvCohortResponse = client.get(&path, CacheTtl::Short).await?;
+
+            if cli.json {
+                println!("{}", output::render_json(&resp));
+                return Ok(());
+            }
+
+            println!(
+                "{} {} → {}\n",
+                "Env Cohort:".bold(),
+                resp.treatment_env.cyan(),
+                resp.control_envs.join(", ").cyan()
+            );
+            if let Some(ref from) = resp.from {
+                println!(
+                    "  Period: {} → {}",
+                    from,
+                    resp.to.as_deref().unwrap_or("now")
+                );
+            }
+            if !resp.ignore_flags.is_empty() {
+                println!("  Ignored flags: {}", resp.ignore_flags.join(", ").dimmed());
+            }
+            if let Some(ref meta) = resp.meta {
+                if !meta.environments.is_empty() {
+                    let parts: Vec<String> = meta
+                        .environments
+                        .iter()
+                        .map(|(k, v)| format!("{} ({})", k, v))
+                        .collect();
+                    println!("  Environments: {}", parts.join(", "));
+                }
+                println!(
+                    "  Cohorts: {} included, {} excluded, {} total traces\n",
+                    meta.included_cohorts, meta.excluded_cohorts, meta.total_traces
+                );
+            }
+
+            if resp.cohorts.is_empty() {
+                println!(
+                    "  {}",
+                    "No cohorts with contrast found. Try lowering --min-cohort-size, widening the date range, or adding more control envs."
+                        .yellow()
+                );
+                println!();
+                return Ok(());
+            }
+
+            let all_flags: Vec<&Vec<String>> =
+                resp.cohorts.iter().map(|c| &c.fingerprint_flags).collect();
+
+            let cohorts_to_show = &resp.cohorts[..max_cohorts.min(resp.cohorts.len())];
+
+            if detail == "traces" {
+                for (i, cohort) in cohorts_to_show.iter().enumerate() {
+                    println!(
+                        "  {} ({})",
+                        format!("Cohort {}", i + 1).bold(),
+                        cohort.fingerprint_hash.dimmed()
+                    );
+                    print_cohort_diff(&cohort.fingerprint_flags, &all_flags);
+                    if let Some(ref ids) = cohort.treatment_trace_ids {
+                        println!("    TREATMENT traces: {} IDs", ids.len());
+                    }
+                    if let Some(ref ids) = cohort.control_trace_ids {
+                        println!("    CONTROL traces:   {} IDs", ids.len());
+                    }
+                    println!();
+                }
+            } else {
+                for (i, cohort) in cohorts_to_show.iter().enumerate() {
+                    println!(
+                        "  {} ({})",
+                        format!("Cohort {}", i + 1).bold(),
+                        cohort.fingerprint_hash.dimmed()
+                    );
+                    print_cohort_diff(&cohort.fingerprint_flags, &all_flags);
+                    println!();
+
+                    if let Some(ref t) = cohort.treatment {
+                        print_cohort("    TREATMENT", t);
+                    }
+                    println!();
+                    if let Some(ref c) = cohort.control {
+                        print_cohort("    CONTROL  ", c);
+                    }
+
+                    if let (Some(t), Some(c)) = (&cohort.treatment, &cohort.control)
+                        && let (Some(tc), Some(cc)) = (&t.cost, &c.cost)
+                        && cc.avg > 0.0
+                    {
+                        let delta_pct = ((tc.avg - cc.avg) / cc.avg * 100.0).round();
+                        let sign = if delta_pct >= 0.0 { "+" } else { "" };
+                        println!(
+                            "\n    {} cost {}{}%  |  {} TREATMENT, {} CONTROL",
+                            "Delta:".dimmed(),
+                            sign,
+                            delta_pct,
+                            t.trace_count,
+                            c.trace_count
                         );
                     }
                     println!();

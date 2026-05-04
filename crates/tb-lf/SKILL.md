@@ -18,7 +18,7 @@ CLI for querying Langfuse/DevPortal LLM observability data. Connects to a DevPor
 
 ## Flag cohort analysis
 
-Two commands for analyzing feature flag impact on agent behavior:
+Three commands for analyzing feature flag impact on agent behavior:
 
 ### Simple: `tb-lf flag-cohort <flag> --from <date>`
 
@@ -38,20 +38,34 @@ Key params:
 - `--max-cohorts <n>` (default 3) — how many cohorts to display (sorted by size, largest first)
 - `--detail traces` — returns trace IDs per cohort instead of aggregate metrics (for drill-down)
 
-### Interpreting stratified results
+### Cross-environment: `tb-lf env-cohort --treatment-env <env> --control-envs <env,env> --from <date> --to <date>`
+
+Pivots on **environment membership** instead of flag-tag value. Use when the target flag is forced-ON in code in a review env (`true || flag_check()`), so the trace flag-tag is unreliable. Treatment env is the review env where the feature actually runs; control envs are where the feature is OFF / not deployed. Cohorts pair traces by matching flag fingerprint across these envs.
+
+Use for: validating a feature pre-rollout when stratified can't pair traces (no real ON side in any single env). Larger control-side N (production has thousands of traces) gives more reliable comparison than the review env's small ON pool would alone.
+
+Key params:
+- `--treatment-env <env>` — review env where the feature is forced-ON
+- `--control-envs <env,env>` — comma-separated envs where the feature is OFF
+- `--ignore-flags <flag,flag>` — flags excluded from fingerprint (typically the target flag itself, since its tag value is unreliable)
+- Same `--min-cohort-size`, `--max-cohorts`, `--detail` as stratified
+
+### Interpreting stratified / env-cohort results
 
 - **Cohort diff** shows which flags differ between cohorts (green `+flag` = ON in this cohort, red `-flag` = OFF)
-- **Delta %** shows cost difference ON vs OFF within a cohort
-- If the delta is consistent across cohorts → the flag likely has a real effect
-- If the delta flips direction between cohorts → the flag's effect depends on which other flags are active (interaction effect)
+- **Delta %** shows cost difference between sides within a cohort (ON vs OFF for stratified, TREATMENT vs CONTROL for env-cohort)
+- If the delta is consistent across cohorts → the flag/feature likely has a real effect
+- If the delta flips direction between cohorts → the effect depends on which other flags are active (interaction effect)
 - Cohorts are sorted by size — larger cohorts have more reliable stats
+- `env-cohort` adds cross-env noise (different orgs, traffic patterns) on top of small-N task variance — read it with that caveat
 
 ### Workflow
 
 1. `tb-lf flags` — list all flags, find ones with partial rollout
 2. `tb-lf flag-cohort <flag> --from 7d` — quick screening for contrast and rough delta
-3. `tb-lf flag-cohort-stratified <flag> --from 7d --to today --env default` — isolate the real effect
-4. `tb-lf flag-cohort-stratified <flag> --from 7d --to today --detail traces --json` — get trace IDs for deep investigation
+3. `tb-lf flag-cohort-stratified <flag> --from 7d --to today --env default` — isolate the real effect (when both ON and OFF exist in the same env)
+4. `tb-lf env-cohort --treatment-env <review-env> --control-envs production --ignore-flags <flag> --from 14d --to today` — when the flag-tag is unreliable (override-on review env)
+5. `... --detail traces --json` — get trace IDs for deep investigation via `p-ai:trace-analysis`
 
 ## Getting started
 
