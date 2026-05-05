@@ -51,7 +51,7 @@ struct Cli {
 enum Commands {
     /// List traces
     #[command(
-        after_help = "Examples:\n  tb-lf traces --from 1d\n  tb-lf traces --triage flagged --limit 50\n  tb-lf traces --name my-agent --env production\n  tb-lf traces --stats --from 7d"
+        after_help = "Examples:\n  tb-lf traces --from 1d\n  tb-lf traces --triage flagged --limit 50\n  tb-lf traces --name my-agent --env production\n  tb-lf traces --tags resource:deal,tool:plan --from 7d\n  tb-lf traces --stats --from 7d"
     )]
     Traces {
         #[arg(long)]
@@ -68,6 +68,9 @@ enum Commands {
         satisfaction: Option<String>,
         #[arg(long)]
         sort: Option<String>,
+        /// Comma-separated Langfuse tags to filter by (e.g. resource:deal,tool:plan)
+        #[arg(long)]
+        tags: Option<String>,
         /// Show trace stats instead of list
         #[arg(long)]
         stats: bool,
@@ -356,8 +359,21 @@ enum Commands {
         pagination: Pagination,
     },
     /// List distinct trace names
-    #[command(after_help = "Examples:\n  tb-lf tags\n  tb-lf tags --from 7d\n  tb-lf tags --json")]
+    #[command(
+        after_help = "Examples:\n  tb-lf names\n  tb-lf names --from 7d\n  tb-lf names --json"
+    )]
+    Names {
+        #[command(flatten)]
+        time: TimeRange,
+    },
+    /// List distinct Langfuse tags applied to traces
+    #[command(
+        after_help = "Examples:\n  tb-lf tags\n  tb-lf tags --from 7d\n  tb-lf tags --prefix resource\n  tb-lf tags --json"
+    )]
     Tags {
+        /// Filter to tags starting with this prefix (e.g. resource, tool, skill, report, flag)
+        #[arg(long)]
+        prefix: Option<String>,
         #[command(flatten)]
         time: TimeRange,
     },
@@ -741,13 +757,18 @@ async fn run() -> tb_lf::error::Result<()> {
             triage,
             satisfaction,
             sort,
+            tags,
             stats,
             time,
             pagination,
         } => {
             if stats {
-                let mut params: Vec<(&str, Option<String>)> =
-                    vec![("project_id", pid), ("name", name), ("environment", env)];
+                let mut params: Vec<(&str, Option<String>)> = vec![
+                    ("project_id", pid),
+                    ("name", name),
+                    ("environment", env),
+                    ("tags", tags),
+                ];
                 time.push_date_params_inclusive_or_exit(&mut params);
                 let path = DevPortalClient::build_path("/traces/stats", &params);
                 let s: TraceStats = client.get(&path, CacheTtl::Short).await?;
@@ -775,6 +796,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("triage_status", triage),
                 ("satisfaction", satisfaction),
                 ("sort", sort),
+                ("tags", tags),
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
             pagination.push_params(&mut params);
@@ -2510,7 +2532,7 @@ async fn run() -> tb_lf::error::Result<()> {
             }
         }
 
-        Commands::Tags { time } => {
+        Commands::Names { time } => {
             let mut params: Vec<(&str, Option<String>)> = vec![("project_id", pid)];
             time.push_date_params_inclusive_or_exit(&mut params);
             let path = DevPortalClient::build_path("/traces/names", &params);
@@ -2532,6 +2554,40 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("{} ({})\n", "Trace Names".bold(), names.len());
             for name in &names {
                 println!("  {}", name);
+            }
+        }
+
+        Commands::Tags { prefix, time } => {
+            let mut params: Vec<(&str, Option<String>)> = vec![("project_id", pid)];
+            time.push_date_params_inclusive_or_exit(&mut params);
+            let path = DevPortalClient::build_path("/traces/tags", &params);
+            let all_tags: Vec<String> = client.get(&path, CacheTtl::Short).await?;
+
+            let tags: Vec<&String> = match &prefix {
+                Some(p) => {
+                    let needle = format!("{}:", p);
+                    all_tags.iter().filter(|t| t.starts_with(&needle)).collect()
+                }
+                None => all_tags.iter().collect(),
+            };
+
+            if cli.json {
+                println!("{}", output::render_json(&tags));
+                return Ok(());
+            }
+
+            if tags.is_empty() {
+                let hint = match &prefix {
+                    Some(p) => format!("No tags with prefix `{}:` found.", p),
+                    None => "No tags found.".to_string(),
+                };
+                println!("{}", output::empty_hint("trace tags", &hint));
+                return Ok(());
+            }
+
+            println!("{} ({})\n", "Trace Tags".bold(), tags.len());
+            for tag in &tags {
+                println!("  {}", tag);
             }
         }
 
@@ -2676,6 +2732,8 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("- `tb-lf teams` — list teams");
             println!("- `tb-lf search <query>` — search traces");
             println!("- `tb-lf trace <id> --project <p>` — full trace detail");
+            println!("- `tb-lf tags --prefix resource` — list tag values for filtering");
+            println!("- `tb-lf traces --tags resource:deal` — filter traces by Langfuse tag");
 
             // Interpreting metrics
             println!("\n## Interpreting metrics\n");
@@ -2709,6 +2767,9 @@ async fn run() -> tb_lf::error::Result<()> {
             println!();
             println!("{}", "Investigating Traces".bold().underline());
             println!("  tb-lf traces --name <agent>        Filter by name");
+            println!("  tb-lf traces --tags <a,b>          Filter by Langfuse tags");
+            println!("  tb-lf names                        List distinct trace names");
+            println!("  tb-lf tags --prefix resource       List tag values to filter by");
             println!("  tb-lf trace <id> --project <p>     Full trace detail");
             println!("  tb-lf trace <id> --observations    With observations");
             println!("  tb-lf scores --trace <id>          Scores for a trace");
@@ -2783,6 +2844,10 @@ async fn run() -> tb_lf::error::Result<()> {
                 (
                     "features",
                     "Features group related queue items:\n- Track which product features generate user feedback\n- Categories and teams help route items\n- Queue item count shows volume per feature",
+                ),
+                (
+                    "tags",
+                    "Langfuse tags annotate traces for filtering. ai-agent emits structured tags derived from the tools each run consumed:\n- resource:<type>: resource tools (describe_resource, query_resources, ...) tagged with the resource_type (e.g. resource:deal)\n- report:<type>: report tools (describe_report, query_report) tagged with the report_type\n- skill:<id>: one tag per skill loaded via load_skills\n- tool:<name>: allowlisted system tools (plan, compact_thread, fetch_web_page, read_file_from_url)\n- Object:<name>, Type:<name>: older ad-hoc tags from earlier instrumentation\nUse `tb-lf tags` to list distinct values, `tb-lf tags --prefix resource` to filter, and `tb-lf traces --tags resource:deal,tool:plan` to slice traces by them.",
                 ),
             ];
 
