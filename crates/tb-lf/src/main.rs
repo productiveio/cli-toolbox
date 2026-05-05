@@ -2767,6 +2767,9 @@ async fn run() -> tb_lf::error::Result<()> {
             println!();
             println!("{}", "Investigating Traces".bold().underline());
             println!("  tb-lf traces --name <agent>        Filter by name");
+            println!("  tb-lf traces --tags <a,b>          Filter by Langfuse tags");
+            println!("  tb-lf names                        List distinct trace names");
+            println!("  tb-lf tags --prefix resource       List tag values to filter by");
             println!("  tb-lf trace <id> --project <p>     Full trace detail");
             println!("  tb-lf trace <id> --observations    With observations");
             println!("  tb-lf scores --trace <id>          Scores for a trace");
@@ -2841,6 +2844,10 @@ async fn run() -> tb_lf::error::Result<()> {
                 (
                     "features",
                     "Features group related queue items:\n- Track which product features generate user feedback\n- Categories and teams help route items\n- Queue item count shows volume per feature",
+                ),
+                (
+                    "tags",
+                    "Langfuse tags annotate traces for filtering. ai-agent emits structured tags derived from the tools each run consumed:\n- resource:<type>: resource tools (describe_resource, query_resources, ...) tagged with the resource_type (e.g. resource:deal)\n- report:<type>: report tools (describe_report, query_report) tagged with the report_type\n- skill:<id>: one tag per skill loaded via load_skills\n- tool:<name>: allowlisted system tools (plan, compact_thread, fetch_web_page, read_file_from_url)\n- Object:<name>, Type:<name>: older ad-hoc tags from earlier instrumentation\nUse `tb-lf tags` to list distinct values, `tb-lf tags --prefix resource` to filter, and `tb-lf traces --tags resource:deal,tool:plan` to slice traces by them.",
                 ),
             ];
 
