@@ -15,6 +15,7 @@ CLI for querying Langfuse/DevPortal LLM observability data. Connects to a DevPor
 - **Metrics & dashboards** — KPI overview, daily reports, score interpretation
 - **Flag analysis** — feature flag impact on agent behavior (simple and stratified cohort comparison)
 - **Search** — full-text search across traces
+- **Tag filtering** — `tb-lf tags` lists Langfuse tags applied to traces (e.g. `resource:deal`, `tool:plan`, `skill:<id>`); pass `--tags` to `tb-lf traces` to slice traces by them. Use `tb-lf names` for distinct trace names
 
 ## Flag cohort analysis
 
