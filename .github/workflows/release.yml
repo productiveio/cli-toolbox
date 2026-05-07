@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       crate:
-        description: "Crate to build (e.g. tb-prod)"
+        description: "Crate to build (e.g. tb-sem)"
         type: choice
-        options: [tb-prod, tb-sem, tb-bug, tb-lf, tb-devctl, tb-session, tb-pr]
+        options: [tb-sem, tb-bug, tb-lf, tb-devctl, tb-session, tb-pr]
         required: true
       dry_run:
         description: "Dry run (build but don't create release)"

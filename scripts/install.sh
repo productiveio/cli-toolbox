@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="productiveio/cli-toolbox"
-ALL_TOOLS="tb-prod tb-sem tb-bug tb-lf tb-devctl tb-session tb-pr"
+ALL_TOOLS="tb-sem tb-bug tb-lf tb-devctl tb-session tb-pr"
 INSTALL_DIR="$HOME/.local/bin"
 
 # --- Flags ---
@@ -26,9 +26,9 @@ Options:
   -h, --help     Show this help
 
 Examples:
-  $0 tb-prod                       # Install/update tb-prod
+  $0 tb-lf                         # Install/update tb-lf
   $0 --all --with-skill            # Install all tools + Claude Code skills
-  $0 --reinstall tb-prod tb-lf     # Force reinstall specific tools
+  $0 --reinstall tb-sem tb-lf      # Force reinstall specific tools
 EOF
   exit 0
 }
