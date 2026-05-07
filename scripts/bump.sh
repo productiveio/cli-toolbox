@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VALID_TOOLS="tb-prod tb-sem tb-bug tb-lf tb-devctl tb-session tb-pr"
+VALID_TOOLS="tb-sem tb-bug tb-lf tb-devctl tb-session tb-pr"
 
 usage() {
   echo "Usage: $0 <tool> <version>"
@@ -9,7 +9,7 @@ usage() {
   echo "Bump a tool's version and commit. Tags are created during publish."
   echo ""
   echo "Tools: $VALID_TOOLS"
-  echo "Example: $0 tb-prod 0.2.0"
+  echo "Example: $0 tb-sem 0.2.0"
   exit 1
 }
 

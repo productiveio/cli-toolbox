@@ -8,12 +8,13 @@ A Cargo workspace monorepo containing CLI tools built for internal use at [Produ
 |-------|--------|-------------|
 | `tb-lf` | `tb-lf` | Langfuse insights — query and analyze LLM observability data |
 | `tb-sem` | `tb-sem` | Semaphore CI insights — pipeline and job analysis |
-| `tb-prod` | `tb-prod` | Productive.io CLI — tasks, projects, people, time tracking |
 | `tb-bug` | `tb-bug` | Bugsnag insights — error and stability analysis |
 | `tb-devctl` | `tb-devctl` | Local dev environment orchestrator for Productive services |
 | `tb-session` | `tb-session` | Claude Code session search — full-text index and resume past conversations |
 | `tb-pr` | `tb-pr` | GitHub PR radar — kanban TUI + CLI for tracking PRs needing your attention |
 | `toolbox-core` | (library) | Shared infrastructure: config, HTTP, output formatting, time parsing |
+
+> **Retired:** `tb-prod` (Productive.io CLI) is no longer published or installed via this toolbox. We use the official Productive MCP connected to the Claude org account (`mcp__claude_ai_Productive__*`) instead. The crate source is kept in `crates/tb-prod` for reference and is not part of the workspace install/release flow.
 
 ## Naming convention
 
@@ -29,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/productiveio/cli-toolbox/main/scrip
 curl -fsSL https://raw.githubusercontent.com/productiveio/cli-toolbox/main/scripts/install.sh | bash -s -- --all --with-skill
 
 # Install a specific tool
-curl -fsSL https://raw.githubusercontent.com/productiveio/cli-toolbox/main/scripts/install.sh | bash -s -- tb-prod
+curl -fsSL https://raw.githubusercontent.com/productiveio/cli-toolbox/main/scripts/install.sh | bash -s -- tb-lf
 ```
 
 Or if you have the repo cloned:
@@ -52,7 +53,6 @@ After installing, each tool needs an API token from its respective service. Run 
 
 Grab your token from:
 
-- **tb-prod** — [Productive.io](https://app.productive.io) → click your avatar → Profile settings → API access
 - **tb-sem** — [Semaphore CI](https://semaphoreci.com) → click your avatar → Profile Settings → API Token
 - **tb-bug** — [Bugsnag](https://app.bugsnag.com) → Settings → My account → Personal auth tokens
 - **tb-lf** — [DevPortal](https://devportal.productive.io) → AI Tools → click your avatar → API Tokens
@@ -67,7 +67,6 @@ Each tool ships with a Claude Code skill that runs `tb-<tool> prime` on load to 
 "Bash(tb-bug:*)",
 "Bash(tb-lf:*)",
 "Bash(tb-pr:*)",
-"Bash(tb-prod:*)",
 "Bash(tb-sem:*)",
 "Bash(tb-session:*)"
 ```
@@ -79,7 +78,7 @@ Each tool ships with a Claude Code skill that runs `tb-<tool> prime` on load to 
 cargo check --workspace
 
 # Build a specific binary
-cargo build --release -p tb-prod
+cargo build --release -p tb-sem
 
 # Run a specific binary
 cargo run -p tb-sem -- --version
@@ -90,8 +89,8 @@ cargo run -p tb-sem -- --version
 Each crate is versioned and released independently. Tag convention: `<crate>-v<version>`.
 
 ```bash
-git tag tb-prod-v0.1.0
-git push origin tb-prod-v0.1.0
+git tag tb-sem-v0.1.0
+git push origin tb-sem-v0.1.0
 ```
 
 Tags trigger CI to build platform binaries (macOS ARM, Linux x86_64) and create a GitHub release.

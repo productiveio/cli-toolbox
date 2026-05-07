@@ -11,19 +11,19 @@ Bump versions, push tags, trigger CI releases, and optionally install locally �
 
 ## Context
 
-This is for the `productiveio/cli-toolbox` workspace. It has 5 independent binaries: `tb-prod`, `tb-sem`, `tb-bug`, `tb-lf`, `tb-devctl`. Each is versioned and released independently using git tags in `<crate>-v<version>` format.
+This is for the `productiveio/cli-toolbox` workspace. It has 6 independent binaries: `tb-sem`, `tb-bug`, `tb-lf`, `tb-devctl`, `tb-session`, `tb-pr`. Each is versioned and released independently using git tags in `<crate>-v<version>` format.
 
 **Critical:** GitHub Actions does NOT trigger individual workflows when multiple tags are pushed in a single `git push --tags`. Tags MUST be pushed one at a time with a small delay between them.
 
 ## Step 1: Parse arguments
 
 Parse `$ARGUMENTS` to determine:
-- **Which tools** to publish: a specific tool name (e.g., `tb-prod`), multiple names, or `--all` for all 5
+- **Which tools** to publish: a specific tool name (e.g., `tb-sem`), multiple names, or `--all` for all 6
 - **Version**: the target version (e.g., `0.2.0`). If omitted, ask the user.
 - **`--install`**: after releases complete, install binaries locally via `scripts/install.sh`
 - **`--with-skill`**: when installing, also install Claude Code skills (passed through to install.sh)
 
-Valid tool names: `tb-prod`, `tb-sem`, `tb-bug`, `tb-lf`, `tb-devctl`
+Valid tool names: `tb-sem`, `tb-bug`, `tb-lf`, `tb-devctl`, `tb-session`, `tb-pr`
 
 If `--all` is used and no version is specified, read each crate's current version from `crates/<tool>/Cargo.toml` and suggest a patch bump for each. Ask the user to confirm.
 
@@ -110,7 +110,6 @@ At the end, print a summary table:
 ```
 === Published ===
 Tool        Version   Release   Installed
-tb-prod     0.2.0     ✓         ✓
 tb-sem      0.2.0     ✓         —
 tb-bug      0.2.0     ✓         ✓
 tb-lf       0.2.0     ✓         —
