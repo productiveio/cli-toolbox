@@ -60,9 +60,6 @@ pub struct App {
     pub scroll: [usize; COLUMNS_LEN],
     pub help_open: bool,
     pub full_titles: bool,
-    /// When true, PRs with `PrState::Draft` are hidden from the
-    /// review-queue columns (`WaitingOnMe`, `WaitingOnAuthor`). The
-    /// `DraftMine` column is unaffected — it exists for drafts.
     pub hide_drafts: bool,
     pub is_fetching: bool,
     pub last_error: Option<String>,
@@ -117,9 +114,9 @@ impl App {
         }
     }
 
-    /// PRs to actually render — same as `column_prs` minus any drafts
-    /// filtered out by the `hide_drafts` toggle. Only the review-queue
-    /// columns can hide drafts; `DraftMine` always shows everything.
+    /// `column_prs(col)` with drafts filtered out when `hide_drafts` is on.
+    /// Only `WaitingOnMe` / `WaitingOnAuthor` filter — `DraftMine` is left
+    /// alone since drafts are the whole point of that column.
     pub fn visible_prs(&self, col: Column) -> Vec<&Pr> {
         let prs = self.column_prs(col);
         if self.hide_drafts && self.column_filters_drafts(col) {
@@ -129,8 +126,6 @@ impl App {
         }
     }
 
-    /// How many drafts the `hide_drafts` toggle is currently hiding from
-    /// the given column. Always 0 for columns the toggle doesn't touch.
     pub fn hidden_draft_count(&self, col: Column) -> usize {
         if !self.hide_drafts || !self.column_filters_drafts(col) {
             return 0;
@@ -890,10 +885,11 @@ mod tests {
             .iter()
             .position(|c| *c == Column::WaitingOnMe)
             .unwrap();
-        // Disable the filter first so both PRs are visible — then select the
-        // draft and toggle the filter back on. clamp_selections must walk the
-        // selection back to the last visible index.
-        a.hide_drafts = false;
+        // Disable filter via key handler so both PRs are visible, point at the
+        // draft (index 1), then toggle the filter back on. clamp_selections
+        // must walk the selection back to the last visible index.
+        a.handle_key(key(KeyCode::Char('D')));
+        assert!(!a.hide_drafts);
         a.selected[a.focused] = 1;
         a.handle_key(key(KeyCode::Char('D')));
         assert!(a.hide_drafts);
