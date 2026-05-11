@@ -13,7 +13,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::commands::util::{copy_to_clipboard, open_url};
 use crate::core::github::{GhClient, fetch_board_state, merge_with_previous};
-use crate::core::model::{BoardState, Column, Notification, Pr};
+use crate::core::model::{BoardState, Column, Notification, Pr, PrState};
 use crate::error::{Error, Result};
 use crate::tui::columns;
 
@@ -60,6 +60,10 @@ pub struct App {
     pub scroll: [usize; COLUMNS_LEN],
     pub help_open: bool,
     pub full_titles: bool,
+    /// When true, PRs with `PrState::Draft` are hidden from the
+    /// review-queue columns (`WaitingOnMe`, `WaitingOnAuthor`). The
+    /// `DraftMine` column is unaffected — it exists for drafts.
+    pub hide_drafts: bool,
     pub is_fetching: bool,
     pub last_error: Option<String>,
     /// Transient non-error message (e.g. "copied <url>"). Rendered separately
@@ -78,6 +82,7 @@ impl App {
             scroll: [0; COLUMNS_LEN],
             help_open: false,
             full_titles: true,
+            hide_drafts: true,
             is_fetching: false,
             last_error: None,
             status: None,
@@ -112,6 +117,34 @@ impl App {
         }
     }
 
+    /// PRs to actually render — same as `column_prs` minus any drafts
+    /// filtered out by the `hide_drafts` toggle. Only the review-queue
+    /// columns can hide drafts; `DraftMine` always shows everything.
+    pub fn visible_prs(&self, col: Column) -> Vec<&Pr> {
+        let prs = self.column_prs(col);
+        if self.hide_drafts && self.column_filters_drafts(col) {
+            prs.iter().filter(|pr| pr.state != PrState::Draft).collect()
+        } else {
+            prs.iter().collect()
+        }
+    }
+
+    /// How many drafts the `hide_drafts` toggle is currently hiding from
+    /// the given column. Always 0 for columns the toggle doesn't touch.
+    pub fn hidden_draft_count(&self, col: Column) -> usize {
+        if !self.hide_drafts || !self.column_filters_drafts(col) {
+            return 0;
+        }
+        self.column_prs(col)
+            .iter()
+            .filter(|pr| pr.state == PrState::Draft)
+            .count()
+    }
+
+    fn column_filters_drafts(&self, col: Column) -> bool {
+        matches!(col, Column::WaitingOnMe | Column::WaitingOnAuthor)
+    }
+
     pub fn column_notifications(&self) -> &[Notification] {
         &self.state.columns.notifications
     }
@@ -121,7 +154,7 @@ impl App {
     fn column_len(&self, col: Column) -> usize {
         match col {
             Column::Mentions => self.column_notifications().len(),
-            _ => self.column_prs(col).len(),
+            _ => self.visible_prs(col).len(),
         }
     }
 
@@ -169,7 +202,9 @@ impl App {
         if col == Column::Mentions {
             return None;
         }
-        self.column_prs(col).get(self.selected[self.focused])
+        self.visible_prs(col)
+            .get(self.selected[self.focused])
+            .copied()
     }
 
     fn selected_notification(&self) -> Option<&Notification> {
@@ -315,6 +350,14 @@ impl App {
                 // Scroll offsets may now be wrong for the new card heights;
                 // reset so the selected card re-anchors on next render.
                 self.scroll = [0; COLUMNS_LEN];
+                Intent::None
+            }
+            KeyCode::Char('D') => {
+                self.hide_drafts = !self.hide_drafts;
+                // Column counts change — clamp selections and reset scroll so
+                // we don't index past the end of a now-shorter column.
+                self.scroll = [0; COLUMNS_LEN];
+                self.clamp_selections();
                 Intent::None
             }
             _ => Intent::None,
@@ -792,6 +835,69 @@ mod tests {
         a.remove_notification("thread-3");
         assert!(a.column_notifications().is_empty());
         assert_eq!(a.selected[mentions_idx], 0);
+    }
+
+    #[test]
+    fn hide_drafts_default_filters_drafts_from_waiting_columns_only() {
+        let mut state = sample_state();
+        let mut draft_pr = sample_pr("api", 9, "WIP review");
+        draft_pr.state = PrState::Draft;
+        state.columns.waiting_on_me.push(draft_pr);
+        let mut draft_author = sample_pr("api", 10, "WIP author");
+        draft_author.state = PrState::Draft;
+        state.columns.waiting_on_author.push(draft_author);
+
+        let mut a = App::new(state, "109-productive".to_string());
+        a.clamp_selections();
+
+        // Default: drafts hidden in non-mine review columns, but not in DraftMine.
+        assert!(a.hide_drafts);
+        assert_eq!(a.visible_prs(Column::WaitingOnMe).len(), 1);
+        assert_eq!(a.hidden_draft_count(Column::WaitingOnMe), 1);
+        assert_eq!(a.visible_prs(Column::WaitingOnAuthor).len(), 0);
+        assert_eq!(a.hidden_draft_count(Column::WaitingOnAuthor), 1);
+        // DraftMine is never filtered — its whole point is drafts.
+        assert_eq!(a.visible_prs(Column::DraftMine).len(), 1);
+        assert_eq!(a.hidden_draft_count(Column::DraftMine), 0);
+    }
+
+    #[test]
+    fn shift_d_toggles_draft_filter_and_resets_scroll() {
+        let mut a = app();
+        a.scroll = [3, 2, 1, 4, 0, 0];
+        assert!(a.hide_drafts); // default on
+
+        a.handle_key(key(KeyCode::Char('D')));
+        assert!(!a.hide_drafts);
+        assert_eq!(a.scroll, [0; COLUMNS_LEN]);
+
+        a.handle_key(key(KeyCode::Char('D')));
+        assert!(a.hide_drafts);
+    }
+
+    #[test]
+    fn toggling_filter_clamps_selection_to_visible_count() {
+        let mut state = sample_state();
+        // waiting_on_me has 1 ready PR + 1 draft. With filter on, only the
+        // ready PR is visible; selecting index 1 would be out of bounds.
+        let mut draft_pr = sample_pr("api", 9, "WIP");
+        draft_pr.state = PrState::Draft;
+        state.columns.waiting_on_me.push(draft_pr);
+        let mut a = App::new(state, "109-productive".to_string());
+        a.clamp_selections();
+
+        a.focused = ORDER
+            .iter()
+            .position(|c| *c == Column::WaitingOnMe)
+            .unwrap();
+        // Disable the filter first so both PRs are visible — then select the
+        // draft and toggle the filter back on. clamp_selections must walk the
+        // selection back to the last visible index.
+        a.hide_drafts = false;
+        a.selected[a.focused] = 1;
+        a.handle_key(key(KeyCode::Char('D')));
+        assert!(a.hide_drafts);
+        assert_eq!(a.selected[a.focused], 0);
     }
 
     #[test]

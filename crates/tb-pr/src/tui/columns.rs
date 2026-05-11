@@ -88,9 +88,16 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     let help = if app.help_open {
-        "?=close"
+        "?=close".to_string()
     } else {
-        "←/→ column   ↑/↓ nav   ⏎=open  t=task  r=refresh  c=copy  m=mark-all-read  w=wrap  ?=help  q=quit"
+        let drafts_label = if app.hide_drafts {
+            "D=show-drafts"
+        } else {
+            "D=hide-drafts"
+        };
+        format!(
+            "←/→ column   ↑/↓ nav   ⏎=open  t=task  r=refresh  c=copy  m=mark-all-read  w=wrap  {drafts_label}  ?=help  q=quit"
+        )
     };
     frame.render_widget(
         Paragraph::new(Span::styled(
@@ -123,10 +130,15 @@ fn render_column(frame: &mut Frame, area: Rect, app: &mut App, idx: usize, col: 
         return;
     }
 
-    let count = app.column_prs(col).len();
+    let count = app.visible_prs(col).len();
+    let hidden = app.hidden_draft_count(col);
     let is_focused = app.focused == idx;
     let selected = app.selected[idx].min(count.saturating_sub(1));
-    let title = format!(" {} ({}) ", column_title(col), count);
+    let title = if hidden > 0 {
+        format!(" {} ({}, {hidden} draft hidden) ", column_title(col), count)
+    } else {
+        format!(" {} ({}) ", column_title(col), count)
+    };
 
     let block_style = if is_focused {
         Style::default().add_modifier(Modifier::BOLD)
@@ -152,7 +164,7 @@ fn render_column(frame: &mut Frame, area: Rect, app: &mut App, idx: usize, col: 
     // Adjust scroll offset so the selected card is fully visible.
     let full_titles = app.full_titles;
     let heights: Vec<u16> = app
-        .column_prs(col)
+        .visible_prs(col)
         .iter()
         .map(|pr| card::card_height(pr, full_titles, inner.width))
         .collect();
@@ -167,7 +179,7 @@ fn render_column(frame: &mut Frame, area: Rect, app: &mut App, idx: usize, col: 
     // Reserve the last row for the "+N more" overflow hint so we never
     // push it past the column bounds.
     let card_end = end.saturating_sub(1);
-    let prs = app.column_prs(col);
+    let prs = app.visible_prs(col);
     let mut last_drawn = scroll_start;
     for (i, pr) in prs.iter().enumerate().skip(scroll_start) {
         let h = heights[i];
@@ -302,6 +314,10 @@ fn render_help(frame: &mut Frame) {
         ("c       ", "copy PR URL"),
         ("m       ", "mark all notifications read"),
         ("w       ", "wrap — show full titles"),
+        (
+            "D       ",
+            "toggle draft filter (hide drafts in waiting-on-me/author)",
+        ),
         ("?       ", "toggle this help"),
         ("q  Esc  ", "quit"),
     ]
