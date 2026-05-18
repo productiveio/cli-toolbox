@@ -2145,8 +2145,16 @@ async fn run() -> tb_lf::error::Result<()> {
 
                     println!("\n  {}\n", "Items:".bold());
                     for item in &items {
-                        let suite = item.suite.as_deref().unwrap_or("");
-                        let case = item.case.as_deref().unwrap_or("");
+                        let suite = item
+                            .suite_name
+                            .as_deref()
+                            .or(item.suite_key.as_deref())
+                            .unwrap_or("");
+                        let case = item
+                            .case_name
+                            .as_deref()
+                            .or(item.case_key.as_deref())
+                            .unwrap_or("");
                         let status = item.status.as_deref().unwrap_or("?");
                         let status_colored = match status {
                             "passed" => status.green().to_string(),
@@ -2155,8 +2163,8 @@ async fn run() -> tb_lf::error::Result<()> {
                         };
                         let score = item.score.map(output::score_color).unwrap_or_default();
                         let dur = item
-                            .duration_seconds
-                            .map(|d| format!("{:.0}s", d))
+                            .duration_ms
+                            .map(|d| format!("{:.1}s", d / 1000.0))
                             .unwrap_or_default();
 
                         println!(
@@ -2173,11 +2181,12 @@ async fn run() -> tb_lf::error::Result<()> {
                                 println!("    {}: {}", "Error".red(), err);
                             }
                             if let Some(log) = &item.conversation_log {
-                                println!("    {}", output::truncate(log, 200));
+                                let log_str = serde_json::to_string(log).unwrap_or_default();
+                                println!("    {}", output::truncate(&log_str, 200));
                             }
                         }
 
-                        if let Some(trace_id) = &item.trace_langfuse_id {
+                        if let Some(trace_id) = &item.trace_id {
                             println!("    trace: {}", trace_id.dimmed());
                         }
                     }
@@ -2285,13 +2294,14 @@ async fn run() -> tb_lf::error::Result<()> {
                     "/eval/coverage/cases",
                     &[
                         ("project_id", pid),
-                        ("suite", suite),
+                        ("suite_key", suite),
                         ("mode", mode),
                         ("branch", branch),
                         ("per_page", Some(limit.to_string())),
                     ],
                 );
-                let cases: Vec<EvalCase> = client.get(&path, CacheTtl::Short).await?;
+                let resp: PaginatedResponse<EvalCase> = client.get(&path, CacheTtl::Short).await?;
+                let cases = resp.data;
 
                 if cli.json {
                     println!("{}", output::render_json(&cases));
