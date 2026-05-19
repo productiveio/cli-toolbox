@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'd=$PWD; while [ \"$d\" != \"/\" ]; do [ -f \"$d/scripts/kg.mjs\" ] && [ -f \"$d/knowledge-graph.json\" ] && exec node \"$d/scripts/kg.mjs\" prime --topic=ai-harness 2>/dev/null; d=$(dirname \"$d\"); done; true'"
+            "command": "bash -c 'd=$PWD; while [ \"$d\" != \"$HOME\" ] && [ \"$d\" != \"/\" ]; do [ -f \"$d/scripts/kg.mjs\" ] && [ -f \"$d/knowledge-graph.json\" ] && { node \"$d/scripts/kg.mjs\" prime --topic=ai-harness 2>/dev/null; break; }; d=$(dirname \"$d\"); done; true'"
           }
         ]
       }
