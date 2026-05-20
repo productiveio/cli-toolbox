@@ -526,6 +526,33 @@ enum Commands {
         #[command(flatten)]
         pagination: Pagination,
     },
+    /// Upload one or more files to DevPortal Shares and get back a short URL
+    #[command(
+        after_help = "Examples:\n  tb-lf share upload report.html\n  tb-lf share upload report.html diagram.png --visibility unlisted --title \"Q3 review\"\n  tb-lf share upload ./bundle/*.html --visibility unlisted"
+    )]
+    Share {
+        #[command(subcommand)]
+        action: ShareAction,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum ShareAction {
+    /// Upload files and print the resulting share URL
+    #[command(
+        after_help = "Examples:\n  tb-lf share upload report.html\n  tb-lf share upload bundle/*.html --visibility unlisted --title \"Q3 review\""
+    )]
+    Upload {
+        /// One or more files to upload (bundle of >1 is browsable at /s/<token>/<filename>)
+        #[arg(required = true)]
+        files: Vec<std::path::PathBuf>,
+        /// Visibility: `private` (default, requires DevPortal login) or `unlisted` (public capability URL)
+        #[arg(long, default_value = "private")]
+        visibility: String,
+        /// Optional title shown on the bundle index page
+        #[arg(long)]
+        title: Option<String>,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -3370,10 +3397,111 @@ async fn run() -> tb_lf::error::Result<()> {
             }
         }
 
+        Commands::Share { action } => match action {
+            ShareAction::Upload {
+                files,
+                visibility,
+                title,
+            } => {
+                share_upload(&client, files, &visibility, title.as_deref(), cli.json).await?;
+            }
+        },
+
         Commands::Config { .. } | Commands::Skill { .. } => {} // handled before client construction
     }
 
     Ok(())
+}
+
+async fn share_upload(
+    client: &DevPortalClient,
+    files: Vec<std::path::PathBuf>,
+    visibility: &str,
+    title: Option<&str>,
+    json: bool,
+) -> Result<(), tb_lf::error::TbLfError> {
+    use reqwest::multipart;
+
+    if !["private", "unlisted"].contains(&visibility) {
+        return Err(tb_lf::error::TbLfError::Other(format!(
+            "invalid --visibility: expected `private` or `unlisted`, got `{}`",
+            visibility
+        )));
+    }
+
+    let mut form = multipart::Form::new().text("visibility", visibility.to_string());
+    if let Some(t) = title {
+        form = form.text("title", t.to_string());
+    }
+
+    for path in &files {
+        if !path.exists() {
+            return Err(tb_lf::error::TbLfError::Other(format!(
+                "file not found: {}",
+                path.display()
+            )));
+        }
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| {
+                tb_lf::error::TbLfError::Other(format!("invalid filename: {}", path.display()))
+            })?
+            .to_string();
+
+        let bytes = tokio::fs::read(path).await.map_err(|e| {
+            tb_lf::error::TbLfError::Other(format!("failed to read {}: {}", path.display(), e))
+        })?;
+        let mime = mime_for_path(path);
+        let part = multipart::Part::bytes(bytes)
+            .file_name(filename)
+            .mime_str(&mime)
+            .map_err(|e| tb_lf::error::TbLfError::Other(format!("invalid mime: {}", e)))?;
+        form = form.part("files[]", part);
+    }
+
+    let resp: tb_lf::types::ShareResponse = client.post_multipart("/spa_api/shares", form).await?;
+
+    if json {
+        println!("{}", output::render_json(&resp));
+        return Ok(());
+    }
+
+    println!("{}\n", "Share created".bold());
+    println!("  {} {}", "URL:".dimmed(), resp.url.bold());
+    if let Some(t) = &resp.title {
+        println!("  {} {}", "Title:".dimmed(), t);
+    }
+    println!("  {} {}", "Visibility:".dimmed(), resp.visibility);
+    println!("  {} {}", "Files:".dimmed(), resp.files.len());
+    for f in &resp.files {
+        println!("    {} {}", "-".dimmed(), f.filename);
+    }
+    Ok(())
+}
+
+fn mime_for_path(path: &std::path::Path) -> String {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .as_deref()
+    {
+        Some("html" | "htm") => "text/html",
+        Some("css") => "text/css",
+        Some("js" | "mjs") => "application/javascript",
+        Some("json") => "application/json",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("pdf") => "application/pdf",
+        Some("txt" | "md") => "text/plain",
+        Some("csv") => "text/csv",
+        _ => "application/octet-stream",
+    }
+    .to_string()
 }
 
 fn build_lf_project_options(projects: &[tb_lf::types::Project]) -> Vec<String> {
