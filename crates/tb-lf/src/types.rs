@@ -755,6 +755,24 @@ pub struct TraceMetricDetailTriage {
 
 // --- Tags ---
 
+// --- Shares ---
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ShareResponse {
+    pub token: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    pub visibility: String,
+    pub url: String,
+    pub files: Vec<ShareResponseFile>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ShareResponseFile {
+    pub filename: String,
+    pub url: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -767,7 +785,7 @@ mod tests {
                 {
                     "group": "2026-04-15",
                     "trace_count": 2075,
-                    "avg_turn_count": 3.14,
+                    "avg_turn_count": 3.25,
                     "avg_tool_calls": 3.3,
                     "error_rate": 0.005,
                     "avg_describe_resource_tokens": 1200.0,
@@ -791,7 +809,7 @@ mod tests {
         assert_eq!(resp.data.len(), 2);
         assert_eq!(resp.data[0].group, "2026-04-15");
         assert_eq!(resp.data[0].trace_count, Some(2075));
-        assert!((resp.data[0].avg_turn_count.unwrap() - 3.14).abs() < 0.01);
+        assert!((resp.data[0].avg_turn_count.unwrap() - 3.25).abs() < 0.01);
         assert!((resp.data[0].success_rate.unwrap() - 0.944).abs() < 0.001);
         assert_eq!(resp.data[1].success_rate, None);
         assert!(resp.meta.is_some());

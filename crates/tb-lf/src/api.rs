@@ -8,6 +8,7 @@ use crate::error::{Result, TbLfError};
 pub struct DevPortalClient {
     client: Client,
     base_url: String,
+    devportal_url: String,
     token: String,
     cache: Cache,
     no_cache: bool,
@@ -41,6 +42,7 @@ impl DevPortalClient {
         Ok(Self {
             client: Client::new(),
             base_url: config.base_api_url(),
+            devportal_url: config.url.clone(),
             token: config.token.clone(),
             cache: Cache::new("tb-lf")?,
             no_cache,
@@ -138,6 +140,33 @@ impl DevPortalClient {
             return Err(api_error(status, body));
         }
         Ok(())
+    }
+
+    /// POST a multipart form to a DevPortal endpoint. `path` is appended to
+    /// the bare DevPortal URL (not the `/spa_api/ai` API base), e.g. pass
+    /// `/spa_api/shares`.
+    pub async fn post_multipart<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        form: reqwest::multipart::Form,
+    ) -> Result<T> {
+        let url = format!("{}{}", self.devportal_url, path);
+        let resp = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .header("Accept", "application/json")
+            .multipart(form)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(api_error(status, body));
+        }
+        let body = resp.text().await?;
+        Ok(serde_json::from_str(&body)?)
     }
 
     pub fn cache(&self) -> &Cache {
