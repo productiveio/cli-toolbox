@@ -169,7 +169,105 @@ impl DevPortalClient {
         Ok(serde_json::from_str(&body)?)
     }
 
+    /// GET against the bare DevPortal URL (not the `/spa_api/ai` API base).
+    /// Uncached — alias state changes mid-session via PATCH/DELETE in the
+    /// same orchestration, so re-reads must be fresh.
+    pub async fn devportal_get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let url = format!("{}{}", self.devportal_url, path);
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .header("Accept", "application/json")
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(api_error(status, body));
+        }
+        let body = resp.text().await?;
+        Ok(serde_json::from_str(&body)?)
+    }
+
+    /// POST JSON against the bare DevPortal URL.
+    pub async fn devportal_post_json<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &impl Serialize,
+    ) -> Result<T> {
+        let url = format!("{}{}", self.devportal_url, path);
+        let resp = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .header("Accept", "application/json")
+            .json(body)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(api_error(status, body));
+        }
+        let body = resp.text().await?;
+        Ok(serde_json::from_str(&body)?)
+    }
+
+    /// PATCH JSON against the bare DevPortal URL.
+    pub async fn devportal_patch_json<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &impl Serialize,
+    ) -> Result<T> {
+        let url = format!("{}{}", self.devportal_url, path);
+        let resp = self
+            .client
+            .patch(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .header("Accept", "application/json")
+            .json(body)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(api_error(status, body));
+        }
+        let body = resp.text().await?;
+        Ok(serde_json::from_str(&body)?)
+    }
+
+    /// DELETE against the bare DevPortal URL.
+    pub async fn devportal_delete(&self, path: &str) -> Result<()> {
+        let url = format!("{}{}", self.devportal_url, path);
+        let resp = self
+            .client
+            .delete(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .header("Accept", "application/json")
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(api_error(status, body));
+        }
+        Ok(())
+    }
+
     pub fn cache(&self) -> &Cache {
         &self.cache
+    }
+
+    /// Bare DevPortal base URL (e.g. `https://devportal.productive.io`) —
+    /// used to build absolute `/u/<user_id>/<slug>` URLs to print after a
+    /// successful alias write.
+    pub fn devportal_url(&self) -> &str {
+        &self.devportal_url
     }
 }

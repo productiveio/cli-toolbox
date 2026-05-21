@@ -553,6 +553,38 @@ enum ShareAction {
         #[arg(long)]
         title: Option<String>,
     },
+    /// Manage per-user pretty aliases (`/u/<user_id>/<slug>`) for your shares
+    #[command(
+        after_help = "Examples:\n  tb-lf share alias set weekly-report <token>\n  tb-lf share alias set weekly-report https://devportal.productive.io/s/<token>\n  tb-lf share alias list\n  tb-lf share alias rm weekly-report"
+    )]
+    Alias {
+        #[command(subcommand)]
+        action: ShareAliasAction,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum ShareAliasAction {
+    /// Create or repoint an alias to a share
+    #[command(
+        after_help = "<share-target> accepts a bare token OR a /s/:token URL.\nFor `unlisted` targets, a TTY prompt confirms the opt-in; pass --force on non-TTY."
+    )]
+    Set {
+        /// Slug for the alias (kebab-case, 1-64 chars, [a-z0-9-], normalized client-side)
+        slug: String,
+        /// Target: bare token or `https://devportal.productive.io/s/<token>` URL
+        target: String,
+        /// Skip the `[y/N]` opt-in prompt when the target is `unlisted` (required on non-TTY)
+        #[arg(long)]
+        force: bool,
+    },
+    /// List your aliases
+    List,
+    /// Delete an alias by slug
+    Rm {
+        /// Slug to delete
+        slug: String,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -3415,6 +3447,21 @@ async fn run() -> tb_lf::error::Result<()> {
             } => {
                 share_upload(&client, files, &visibility, title.as_deref(), cli.json).await?;
             }
+            ShareAction::Alias { action } => match action {
+                ShareAliasAction::Set {
+                    slug,
+                    target,
+                    force,
+                } => {
+                    share_alias_set(&client, &slug, &target, force, cli.json).await?;
+                }
+                ShareAliasAction::List => {
+                    share_alias_list(&client, cli.json).await?;
+                }
+                ShareAliasAction::Rm { slug } => {
+                    share_alias_rm(&client, &slug, cli.json).await?;
+                }
+            },
         },
 
         Commands::Config { .. } | Commands::Skill { .. } => {} // handled before client construction
@@ -3487,6 +3534,251 @@ async fn share_upload(
     for f in &resp.files {
         println!("    {} {}", "-".dimmed(), f.filename);
     }
+    Ok(())
+}
+
+/// Resolve the share-target argument (bare token or `/s/<token>` URL) to
+/// the user's own `ShareSummary` by hitting `GET /spa_api/shares`. The
+/// server's shares index is already scoped to `created_by: current_user`,
+/// so any matching row is by definition owned by the caller. Returns the
+/// summary so the caller can read `id` + `visibility`.
+async fn resolve_own_share_by_target(
+    client: &DevPortalClient,
+    target: &str,
+) -> Result<tb_lf::types::ShareSummary, tb_lf::error::TbLfError> {
+    let token =
+        tb_lf::share_alias::parse_share_target(target).map_err(tb_lf::error::TbLfError::Other)?;
+
+    let shares: Vec<tb_lf::types::ShareSummary> = client.devportal_get("/spa_api/shares").await?;
+
+    shares
+        .into_iter()
+        .find(|s| s.token == token)
+        .ok_or_else(|| {
+            tb_lf::error::TbLfError::Other(format!(
+                "no share with token `{}` owned by the current user (run `tb-lf share upload …` first, or check that --visibility matches the bare token)",
+                token
+            ))
+        })
+}
+
+/// INV-5 gate. Returns Ok(()) if the caller should proceed; Err with a
+/// user-facing message if the opt-in failed.
+fn check_unlisted_opt_in(
+    gate: tb_lf::share_alias::OptInGate,
+    force: bool,
+) -> Result<(), tb_lf::error::TbLfError> {
+    use std::io::{BufRead, IsTerminal, Write};
+    use tb_lf::share_alias::OptInGate;
+
+    match gate {
+        OptInGate::None => Ok(()),
+        OptInGate::DeEscalationNotice => {
+            eprintln!(
+                "{} target was `unlisted` — non-logged-in viewers will lose access on the next read.",
+                "note:".yellow().bold()
+            );
+            Ok(())
+        }
+        OptInGate::PromptUnlistedTarget => {
+            if force {
+                return Ok(());
+            }
+            let stdin_tty = std::io::stdin().is_terminal();
+            let stderr_tty = std::io::stderr().is_terminal();
+            if !(stdin_tty && stderr_tty) {
+                return Err(tb_lf::error::TbLfError::Other(format!(
+                    "{}\n\nNot a TTY — pass --force to confirm this opt-in non-interactively.",
+                    tb_lf::share_alias::UNLISTED_OPT_IN_COPY
+                )));
+            }
+            eprintln!(
+                "{} {}",
+                "warn:".yellow().bold(),
+                tb_lf::share_alias::UNLISTED_OPT_IN_COPY
+            );
+            eprint!("Proceed? [y/N]: ");
+            std::io::stderr().flush().ok();
+            let mut line = String::new();
+            std::io::stdin()
+                .lock()
+                .read_line(&mut line)
+                .map_err(|e| tb_lf::error::TbLfError::Other(format!("read failed: {}", e)))?;
+            let answer = line.trim().to_lowercase();
+            if answer == "y" || answer == "yes" {
+                Ok(())
+            } else {
+                Err(tb_lf::error::TbLfError::Other(
+                    "aborted: did not confirm unlisted opt-in".into(),
+                ))
+            }
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct ShareAliasCreatePayload<'a> {
+    slug: &'a str,
+    share_id: u64,
+}
+
+#[derive(serde::Serialize)]
+struct ShareAliasUpdatePayload<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    slug: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    share_id: Option<u64>,
+}
+
+fn alias_url(base: &str, user_id: u64, slug: &str) -> String {
+    format!("{}/u/{}/{}", base.trim_end_matches('/'), user_id, slug)
+}
+
+async fn share_alias_set(
+    client: &DevPortalClient,
+    raw_slug: &str,
+    target: &str,
+    force: bool,
+    json: bool,
+) -> Result<(), tb_lf::error::TbLfError> {
+    let normalized = tb_lf::share_alias::normalize_slug(raw_slug);
+    if normalized != raw_slug {
+        eprintln!(
+            "{} normalized slug `{}` → `{}`",
+            "note:".yellow().bold(),
+            raw_slug,
+            normalized
+        );
+    }
+    tb_lf::share_alias::validate_slug(&normalized).map_err(tb_lf::error::TbLfError::Other)?;
+
+    let new_target = resolve_own_share_by_target(client, target).await?;
+    let becomes_unlisted = new_target.visibility == "unlisted";
+
+    let existing: Vec<tb_lf::types::ShareAlias> =
+        client.devportal_get("/spa_api/share_aliases").await?;
+    let existing_alias = existing.iter().find(|a| a.slug == normalized);
+
+    let was_unlisted = existing_alias
+        .and_then(|a| a.target.visibility.as_deref())
+        .map(|v| v == "unlisted")
+        .unwrap_or(false);
+
+    let gate = tb_lf::share_alias::opt_in_gate(was_unlisted, becomes_unlisted);
+    check_unlisted_opt_in(gate, force)?;
+
+    let result: tb_lf::types::ShareAlias = match existing_alias {
+        None => {
+            let payload = ShareAliasCreatePayload {
+                slug: &normalized,
+                share_id: new_target.id,
+            };
+            client
+                .devportal_post_json("/spa_api/share_aliases", &payload)
+                .await?
+        }
+        Some(existing) => {
+            let payload = ShareAliasUpdatePayload {
+                slug: None, // slug unchanged — the GET-lookup matched the same slug
+                share_id: Some(new_target.id),
+            };
+            let path = format!("/spa_api/share_aliases/{}", existing.id);
+            client.devportal_patch_json(&path, &payload).await?
+        }
+    };
+
+    if json {
+        println!("{}", output::render_json(&result));
+        return Ok(());
+    }
+
+    let url = alias_url(client.devportal_url(), result.user_id, &result.slug);
+    let verb = if existing_alias.is_some() {
+        "Alias repointed"
+    } else {
+        "Alias created"
+    };
+    println!("{}\n", verb.bold());
+    println!("  {} {}", "URL:".dimmed(), url.bold());
+    println!("  {} {}", "Slug:".dimmed(), result.slug);
+    if let Some(title) = &result.target.title {
+        println!("  {} {}", "Target title:".dimmed(), title);
+    }
+    if let Some(token) = &result.target.token {
+        println!("  {} {}", "Target token:".dimmed(), token);
+    }
+    if let Some(vis) = &result.target.visibility {
+        println!("  {} {}", "Target visibility:".dimmed(), vis);
+    }
+    Ok(())
+}
+
+async fn share_alias_list(
+    client: &DevPortalClient,
+    json: bool,
+) -> Result<(), tb_lf::error::TbLfError> {
+    let rows: Vec<tb_lf::types::ShareAlias> =
+        client.devportal_get("/spa_api/share_aliases").await?;
+
+    if json {
+        println!("{}", output::render_json(&rows));
+        return Ok(());
+    }
+
+    if rows.is_empty() {
+        println!(
+            "{}",
+            "No aliases yet. Create one with `tb-lf share alias set <slug> <token>`.".dimmed()
+        );
+        return Ok(());
+    }
+
+    let base = client.devportal_url();
+    println!("{}\n", format!("Aliases ({})", rows.len()).bold());
+    for row in &rows {
+        let url = alias_url(base, row.user_id, &row.slug);
+        println!("  {} {}", "•".dimmed(), row.slug.bold());
+        println!("    {} {}", "URL:".dimmed(), url);
+        if row.target.deleted {
+            println!("    {} {}", "Target:".dimmed(), "(deleted)".red().italic());
+        } else {
+            let token = row.target.token.as_deref().unwrap_or("?");
+            let vis = row.target.visibility.as_deref().unwrap_or("?");
+            let title = row.target.title.as_deref().unwrap_or("(no title)");
+            println!(
+                "    {} {} {} {}",
+                "Target:".dimmed(),
+                title,
+                format!("[{}]", vis).dimmed(),
+                format!("({})", token).dimmed()
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn share_alias_rm(
+    client: &DevPortalClient,
+    slug: &str,
+    json: bool,
+) -> Result<(), tb_lf::error::TbLfError> {
+    let normalized = tb_lf::share_alias::normalize_slug(slug);
+
+    let rows: Vec<tb_lf::types::ShareAlias> =
+        client.devportal_get("/spa_api/share_aliases").await?;
+    let target = rows.iter().find(|a| a.slug == normalized).ok_or_else(|| {
+        tb_lf::error::TbLfError::Other(format!("no alias with slug `{}`", normalized))
+    })?;
+
+    let path = format!("/spa_api/share_aliases/{}", target.id);
+    client.devportal_delete(&path).await?;
+
+    if json {
+        let payload = serde_json::json!({ "deleted": true, "slug": normalized });
+        println!("{}", output::render_json(&payload));
+        return Ok(());
+    }
+    println!("{} {}", "Deleted alias".bold(), normalized);
     Ok(())
 }
 

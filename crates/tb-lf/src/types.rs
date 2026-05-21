@@ -777,6 +777,43 @@ pub struct ShareResponseFile {
     pub url: String,
 }
 
+/// Slim share row returned by `GET /spa_api/shares`. Used by the alias
+/// CLI to resolve a `<token>` to its `share_id` (and to read its
+/// `visibility` for the INV-5 opt-in gate).
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ShareSummary {
+    pub id: u64,
+    pub token: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    pub visibility: String,
+}
+
+/// Alias row returned by `GET/POST/PATCH /spa_api/share_aliases`.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ShareAlias {
+    pub id: u64,
+    pub user_id: u64,
+    pub slug: String,
+    pub share_id: u64,
+    pub target: ShareAliasTarget,
+}
+
+/// Nested target payload mirrors the server's `target_payload` shape —
+/// `deleted: true` rows omit token/visibility.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ShareAliasTarget {
+    pub deleted: bool,
+    #[serde(default)]
+    pub id: Option<u64>,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub visibility: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
