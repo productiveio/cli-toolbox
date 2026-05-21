@@ -68,6 +68,48 @@ Key params:
 4. `tb-lf env-cohort --treatment-env <review-env> --control-envs production --ignore-flags <flag> --from 14d --to today` — when the flag-tag is unreliable (override-on review env)
 5. `... --detail traces --json` — get trace IDs for deep investigation via `p-ai:trace-analysis`
 
+## Shares
+
+Upload artifacts to DevPortal Shares and get back a short URL.
+
+```bash
+tb-lf share upload report.html
+tb-lf share upload bundle/*.html --visibility unlisted --title "Q3 review"
+```
+
+`--visibility private` (default) requires a DevPortal login to view; `--visibility unlisted` exposes a capability URL (anyone with the token can read).
+
+### Manage existing shares
+
+```bash
+tb-lf share list                                                  # your shares + URLs
+tb-lf share update <token-or-url> --title "Q4 review"             # rename
+tb-lf share update <token-or-url> --visibility unlisted            # flip visibility
+tb-lf share rm <token-or-url>                                     # soft-delete (purges in background)
+```
+
+`<token-or-url>` accepts either a bare token (`AbCdE…`) or a `/s/:token` URL (full or bare). Flipping a share `private → unlisted` is an exposure escalation — on TTY the CLI prompts `[y/N]` with the same copy as the SPA EditShareSheet's AlertDialog; on non-TTY pass `--force`. `unlisted → private` saves silently and emits a one-line "non-logged-in viewers will lose access" notice.
+
+### Aliases
+
+Each user has a personal alias namespace at `/u/<user_id>/<slug>` for shares. Aliases give a stable, readable URL that you can repoint without re-sharing the link. Cap: 20 aliases per user.
+
+```bash
+# Create or repoint an alias. Accepts a bare token or a /s/:token URL.
+tb-lf share alias set weekly-report <token>
+tb-lf share alias set weekly-report https://devportal.productive.io/s/<token>
+
+# List your aliases.
+tb-lf share alias list
+
+# Delete by slug.
+tb-lf share alias rm weekly-report
+```
+
+Slug rules (mirrored from the server): lowercase letters, digits, and hyphens; 1–64 chars; cannot start or end with a hyphen; no consecutive hyphens. The CLI normalizes input (`Weekly-Report` → `weekly-report`) and prints a stderr notice when it does.
+
+**Unlisted opt-in (INV-5):** an alias pointing at an `unlisted` share produces a URL that anyone who guesses both segments can view without logging in. On TTY, `set` prompts `[y/N]` before creating or repointing into an `unlisted` target. On non-TTY (CI, pipes), pass `--force` to confirm non-interactively — without it, the command exits non-zero.
+
 ## Getting started
 
 Run `tb-lf prime` for an overview of available projects, quick commands, and metric interpretation guidance.
