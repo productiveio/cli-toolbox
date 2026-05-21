@@ -3556,7 +3556,7 @@ async fn resolve_own_share_by_target(
         .find(|s| s.token == token)
         .ok_or_else(|| {
             tb_lf::error::TbLfError::Other(format!(
-                "no share with token `{}` owned by the current user (run `tb-lf share upload …` first, or check that --visibility matches the bare token)",
+                "no share with token `{}` owned by the current user — run `tb-lf share upload …` first, or copy a token from `tb-lf share alias list`",
                 token
             ))
         })
@@ -3623,11 +3623,8 @@ struct ShareAliasCreatePayload<'a> {
 }
 
 #[derive(serde::Serialize)]
-struct ShareAliasUpdatePayload<'a> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    slug: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    share_id: Option<u64>,
+struct ShareAliasRepointPayload {
+    share_id: u64,
 }
 
 fn alias_url(base: &str, user_id: u64, slug: &str) -> String {
@@ -3678,9 +3675,11 @@ async fn share_alias_set(
                 .await?
         }
         Some(existing) => {
-            let payload = ShareAliasUpdatePayload {
-                slug: None, // slug unchanged — the GET-lookup matched the same slug
-                share_id: Some(new_target.id),
+            // Slug unchanged — the GET-lookup matched the same slug — so
+            // the PATCH only carries `share_id`. Rename is not a `set` op
+            // (delete + recreate, or use the SPA Edit Sheet for now).
+            let payload = ShareAliasRepointPayload {
+                share_id: new_target.id,
             };
             let path = format!("/spa_api/share_aliases/{}", existing.id);
             client.devportal_patch_json(&path, &payload).await?

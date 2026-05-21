@@ -16,14 +16,10 @@ fn create_branch_into_private_target_no_gate() {
 }
 
 #[test]
-fn create_branch_into_unlisted_target_prompts() {
-    // First time the URL exists at all — guessable-URL warning fires.
-    assert_eq!(opt_in_gate(false, true), OptInGate::PromptUnlistedTarget);
-}
-
-#[test]
-fn repoint_from_private_to_unlisted_prompts() {
-    // Same as create-into-unlisted from the user's risk POV.
+fn into_unlisted_from_non_unlisted_prompts() {
+    // Single arm in `opt_in_gate`: covers BOTH create-into-unlisted (no
+    // prior alias, was_unlisted=false) and repoint-from-private-to-unlisted.
+    // Same risk surface, same gate.
     assert_eq!(opt_in_gate(false, true), OptInGate::PromptUnlistedTarget);
 }
 
