@@ -370,21 +370,25 @@ pub struct EvalRunDetail {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct EvalItem {
     #[serde(default)]
-    pub suite: Option<String>,
+    pub suite_key: Option<String>,
     #[serde(default)]
-    pub case: Option<String>,
+    pub suite_name: Option<String>,
+    #[serde(default)]
+    pub case_key: Option<String>,
+    #[serde(default)]
+    pub case_name: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
     #[serde(default, deserialize_with = "string_or_f64")]
     pub score: Option<f64>,
     #[serde(default, deserialize_with = "string_or_f64")]
-    pub duration_seconds: Option<f64>,
+    pub duration_ms: Option<f64>,
     #[serde(default)]
-    pub trace_langfuse_id: Option<String>,
+    pub trace_id: Option<String>,
     #[serde(default)]
     pub error_message: Option<String>,
     #[serde(default)]
-    pub conversation_log: Option<String>,
+    pub conversation_log: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -880,5 +884,108 @@ mod tests {
         assert!(detail.trace.is_some());
         assert!(detail.metrics.is_none());
         assert!(detail.triage.is_none());
+    }
+
+    #[test]
+    fn deserialize_eval_run_detail() {
+        // Mirrors devportal SpaApi::Ai::Eval::RunsController#run_json (include_items: true).
+        // conversation_log is a JSON array of {role, content}; metadata/scores are JSON; score is stringified.
+        let payload = json!({
+            "id": 60,
+            "name": "nightly-eval",
+            "revision": "abc123",
+            "branch": "main",
+            "mode": "full",
+            "status": "completed",
+            "total_cases": 2,
+            "passed_cases": 1,
+            "failed_cases": 1,
+            "total_score": "0.5",
+            "duration_ms": 12345.0,
+            "items": [
+                {
+                    "id": 1,
+                    "suite_key": "crm-agent",
+                    "suite_name": "CRM Agent",
+                    "case_key": "crm-agent/list-deals",
+                    "case_name": "List deals",
+                    "status": "passed",
+                    "score": "1.0",
+                    "duration_ms": 8421,
+                    "retry_count": 0,
+                    "trace_id": "lf-trace-1",
+                    "langfuse_project_id": "lf-proj",
+                    "session_id": "sess-1",
+                    "error_message": null,
+                    "conversation_log": [
+                        {"role": "user", "content": "list my deals"},
+                        {"role": "assistant", "content": "here are your deals"}
+                    ],
+                    "metadata": {"model": "claude-opus-4-7"},
+                    "created_at": "2026-05-05T12:00:00Z",
+                    "scores": [{"name": "accuracy", "score": 1.0}]
+                },
+                {
+                    "id": 2,
+                    "suite_key": "crm-agent",
+                    "case_key": "crm-agent/broken",
+                    "status": "failed",
+                    "score": "0.0",
+                    "duration_ms": 4000,
+                    "error_message": "boom",
+                    "conversation_log": null
+                }
+            ]
+        });
+
+        let detail: EvalRunDetail = serde_json::from_value(payload).unwrap();
+        assert_eq!(detail.run.id, 60);
+        assert_eq!(detail.run.passed_cases, Some(1));
+
+        let items = detail.items.unwrap();
+        assert_eq!(items.len(), 2);
+
+        let first = &items[0];
+        assert_eq!(first.suite_key.as_deref(), Some("crm-agent"));
+        assert_eq!(first.suite_name.as_deref(), Some("CRM Agent"));
+        assert_eq!(first.case_name.as_deref(), Some("List deals"));
+        assert_eq!(first.status.as_deref(), Some("passed"));
+        assert_eq!(first.score, Some(1.0));
+        assert_eq!(first.duration_ms, Some(8421.0));
+        assert_eq!(first.trace_id.as_deref(), Some("lf-trace-1"));
+        assert!(first.conversation_log.as_ref().unwrap().is_array());
+
+        assert!(items[1].conversation_log.is_none());
+    }
+
+    #[test]
+    fn deserialize_eval_cases_paginated() {
+        // Mirrors devportal SpaApi::Ai::Eval::CoverageController#cases — { data: [...], meta: {...} }
+        use crate::api::PaginatedResponse;
+        let payload = json!({
+            "data": [
+                {
+                    "suite_key": "timesheet-submission",
+                    "suite_name": "Timesheet Submission",
+                    "case_key": "timesheet-submission/case-1",
+                    "case_name": "Case 1",
+                    "run_count": 8,
+                    "last_run_at": "2026-05-18T08:24:50.978Z",
+                    "passed_count": 8,
+                    "failed_count": 0,
+                    "pass_rate": 1.0
+                }
+            ],
+            "meta": {"page": 1, "per_page": 50, "total": 364}
+        });
+
+        let resp: PaginatedResponse<EvalCase> = serde_json::from_value(payload).unwrap();
+        assert_eq!(resp.meta.total, 364);
+        assert_eq!(resp.data.len(), 1);
+        assert_eq!(
+            resp.data[0].suite_key.as_deref(),
+            Some("timesheet-submission")
+        );
+        assert_eq!(resp.data[0].pass_rate, Some(1.0));
     }
 }
