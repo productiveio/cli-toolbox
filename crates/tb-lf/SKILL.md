@@ -79,6 +79,17 @@ tb-lf share upload bundle/*.html --visibility unlisted --title "Q3 review"
 
 `--visibility private` (default) requires a DevPortal login to view; `--visibility unlisted` exposes a capability URL (anyone with the token can read).
 
+### Manage existing shares
+
+```bash
+tb-lf share list                                                  # your shares + URLs
+tb-lf share update <token-or-url> --title "Q4 review"             # rename
+tb-lf share update <token-or-url> --visibility unlisted            # flip visibility
+tb-lf share rm <token-or-url>                                     # soft-delete (purges in background)
+```
+
+`<token-or-url>` accepts either a bare token (`AbCdE…`) or a `/s/:token` URL (full or bare). Flipping a share `private → unlisted` is an exposure escalation — on TTY the CLI prompts `[y/N]` with the same copy as the SPA EditShareSheet's AlertDialog; on non-TTY pass `--force`. `unlisted → private` saves silently and emits a one-line "non-logged-in viewers will lose access" notice.
+
 ### Aliases
 
 Each user has a personal alias namespace at `/u/<user_id>/<slug>` for shares. Aliases give a stable, readable URL that you can repoint without re-sharing the link. Cap: 20 aliases per user.

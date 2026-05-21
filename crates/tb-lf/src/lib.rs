@@ -4,6 +4,7 @@ pub mod cli;
 pub mod config;
 pub mod error;
 pub mod output;
+pub mod share;
 pub mod share_alias;
 pub mod types;
 

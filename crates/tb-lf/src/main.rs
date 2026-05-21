@@ -553,6 +553,34 @@ enum ShareAction {
         #[arg(long)]
         title: Option<String>,
     },
+    /// List your shares
+    #[command(after_help = "Example:\n  tb-lf share list")]
+    List,
+    /// Update a share's title and/or visibility (token-or-URL target)
+    #[command(
+        after_help = "<share-target> accepts a bare token OR a /s/:token URL.\nFlipping `private` → `unlisted` prompts on TTY; pass --force on non-TTY."
+    )]
+    Update {
+        /// Target: bare token or `https://devportal.productive.io/s/<token>` URL
+        target: String,
+        /// New title
+        #[arg(long)]
+        title: Option<String>,
+        /// New visibility: `private` or `unlisted`
+        #[arg(long)]
+        visibility: Option<String>,
+        /// Skip the `[y/N]` prompt on `private` → `unlisted` escalation (required on non-TTY)
+        #[arg(long)]
+        force: bool,
+    },
+    /// Soft-delete a share (background purge job removes the blobs)
+    #[command(
+        after_help = "<share-target> accepts a bare token OR a /s/:token URL.\nThe share stops resolving at /s/:token immediately; blobs are purged in the background."
+    )]
+    Rm {
+        /// Target: bare token or `https://devportal.productive.io/s/<token>` URL
+        target: String,
+    },
     /// Manage per-user pretty aliases (`/u/<user_id>/<slug>`) for your shares
     #[command(
         after_help = "Examples:\n  tb-lf share alias set weekly-report <token>\n  tb-lf share alias set weekly-report https://devportal.productive.io/s/<token>\n  tb-lf share alias list\n  tb-lf share alias rm weekly-report"
@@ -3447,6 +3475,28 @@ async fn run() -> tb_lf::error::Result<()> {
             } => {
                 share_upload(&client, files, &visibility, title.as_deref(), cli.json).await?;
             }
+            ShareAction::List => {
+                share_list(&client, cli.json).await?;
+            }
+            ShareAction::Update {
+                target,
+                title,
+                visibility,
+                force,
+            } => {
+                share_update(
+                    &client,
+                    &target,
+                    title.as_deref(),
+                    visibility.as_deref(),
+                    force,
+                    cli.json,
+                )
+                .await?;
+            }
+            ShareAction::Rm { target } => {
+                share_rm(&client, &target, cli.json).await?;
+            }
             ShareAction::Alias { action } => match action {
                 ShareAliasAction::Set {
                     slug,
@@ -3779,6 +3829,179 @@ async fn share_alias_rm(
     }
     println!("{} {}", "Deleted alias".bold(), normalized);
     Ok(())
+}
+
+// --- Share CRUD (sister surface to `share alias`) ---
+
+use tb_lf::share::SHARE_ESCALATION_COPY;
+use tb_lf::share::{ShareVisibilityChange, share_url, visibility_change};
+
+#[derive(serde::Serialize)]
+struct ShareUpdatePayload<'a> {
+    #[serde(rename = "share")]
+    inner: ShareUpdateInner<'a>,
+}
+
+#[derive(serde::Serialize)]
+struct ShareUpdateInner<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    visibility: Option<&'a str>,
+}
+
+async fn share_list(client: &DevPortalClient, json: bool) -> Result<(), tb_lf::error::TbLfError> {
+    let rows: Vec<tb_lf::types::ShareSummary> = client.devportal_get("/spa_api/shares").await?;
+
+    if json {
+        println!("{}", output::render_json(&rows));
+        return Ok(());
+    }
+
+    if rows.is_empty() {
+        println!(
+            "{}",
+            "No shares yet. Upload one with `tb-lf share upload <files…>`.".dimmed()
+        );
+        return Ok(());
+    }
+
+    let base = client.devportal_url();
+    println!("{}\n", format!("Shares ({})", rows.len()).bold());
+    for row in &rows {
+        let url = share_url(base, &row.token);
+        let title = row.title.as_deref().unwrap_or("(no title)");
+        println!("  {} {}", "•".dimmed(), title.bold());
+        println!("    {} {}", "URL:".dimmed(), url);
+        println!(
+            "    {} {} {}",
+            "Token:".dimmed(),
+            row.token,
+            format!("[{}]", row.visibility).dimmed()
+        );
+    }
+    Ok(())
+}
+
+async fn share_update(
+    client: &DevPortalClient,
+    target: &str,
+    new_title: Option<&str>,
+    new_visibility: Option<&str>,
+    force: bool,
+    json: bool,
+) -> Result<(), tb_lf::error::TbLfError> {
+    if new_title.is_none() && new_visibility.is_none() {
+        return Err(tb_lf::error::TbLfError::Other(
+            "nothing to update — pass --title and/or --visibility".into(),
+        ));
+    }
+    if let Some(v) = new_visibility
+        && !["private", "unlisted"].contains(&v)
+    {
+        return Err(tb_lf::error::TbLfError::Other(format!(
+            "invalid --visibility: expected `private` or `unlisted`, got `{}`",
+            v
+        )));
+    }
+
+    let share = resolve_own_share_by_target(client, target).await?;
+
+    let change = visibility_change(&share.visibility, new_visibility);
+    if change == ShareVisibilityChange::Escalation {
+        check_visibility_escalation(force)?;
+    }
+
+    let payload = ShareUpdatePayload {
+        inner: ShareUpdateInner {
+            title: new_title,
+            visibility: new_visibility,
+        },
+    };
+    let path = format!("/spa_api/shares/{}", share.id);
+    let updated: tb_lf::types::ShareSummary = client.devportal_patch_json(&path, &payload).await?;
+
+    if json {
+        println!("{}", output::render_json(&updated));
+        return Ok(());
+    }
+
+    println!("{}\n", "Share updated".bold());
+    println!(
+        "  {} {}",
+        "URL:".dimmed(),
+        share_url(client.devportal_url(), &updated.token).bold()
+    );
+    if let Some(t) = &updated.title {
+        println!("  {} {}", "Title:".dimmed(), t);
+    }
+    println!("  {} {}", "Visibility:".dimmed(), updated.visibility);
+
+    if change == ShareVisibilityChange::DeEscalation {
+        eprintln!(
+            "{} share is now private — non-logged-in viewers will lose access.",
+            "note:".yellow().bold()
+        );
+    }
+    Ok(())
+}
+
+async fn share_rm(
+    client: &DevPortalClient,
+    target: &str,
+    json: bool,
+) -> Result<(), tb_lf::error::TbLfError> {
+    let share = resolve_own_share_by_target(client, target).await?;
+    let path = format!("/spa_api/shares/{}", share.id);
+    client.devportal_delete(&path).await?;
+
+    if json {
+        let payload = serde_json::json!({ "deleted": true, "token": share.token });
+        println!("{}", output::render_json(&payload));
+        return Ok(());
+    }
+    let title = share.title.as_deref().unwrap_or(&share.token);
+    println!("{} {}", "Deleted share".bold(), title);
+    eprintln!(
+        "{} blobs purge in the background; the URL stops resolving immediately.",
+        "note:".dimmed()
+    );
+    Ok(())
+}
+
+/// Sister of `check_unlisted_opt_in` for the share `private → unlisted`
+/// escalation. Same TTY/--force shape; different copy (the share URL was
+/// always known, the change is who can view without logging in).
+fn check_visibility_escalation(force: bool) -> Result<(), tb_lf::error::TbLfError> {
+    use std::io::{BufRead, IsTerminal, Write};
+
+    if force {
+        return Ok(());
+    }
+    let stdin_tty = std::io::stdin().is_terminal();
+    let stderr_tty = std::io::stderr().is_terminal();
+    if !(stdin_tty && stderr_tty) {
+        return Err(tb_lf::error::TbLfError::Other(format!(
+            "{}\n\nNot a TTY — pass --force to confirm this escalation non-interactively.",
+            SHARE_ESCALATION_COPY
+        )));
+    }
+    eprintln!("{} {}", "warn:".yellow().bold(), SHARE_ESCALATION_COPY);
+    eprint!("Proceed? [y/N]: ");
+    std::io::stderr().flush().ok();
+    let mut line = String::new();
+    std::io::stdin()
+        .lock()
+        .read_line(&mut line)
+        .map_err(|e| tb_lf::error::TbLfError::Other(format!("read failed: {}", e)))?;
+    let answer = line.trim().to_lowercase();
+    if answer == "y" || answer == "yes" {
+        Ok(())
+    } else {
+        Err(tb_lf::error::TbLfError::Other(
+            "aborted: did not confirm visibility escalation".into(),
+        ))
+    }
 }
 
 fn mime_for_path(path: &std::path::Path) -> String {
