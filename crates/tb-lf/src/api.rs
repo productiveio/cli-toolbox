@@ -1,4 +1,4 @@
-use reqwest::Client;
+use reqwest::{Client, Method, RequestBuilder};
 use serde::{Deserialize, Serialize};
 
 use crate::cache::{Cache, CacheTtl};
@@ -49,6 +49,37 @@ impl DevPortalClient {
         })
     }
 
+    /// Shared HTTP cycle: build URL, attach auth + Accept headers, apply
+    /// caller-supplied body/headers via `configure`, send, then either return
+    /// the body string or map non-2xx into a typed `TbLfError::Api`.
+    /// Callers are responsible for caching (only `get_raw` opts in).
+    async fn raw_request<F>(
+        &self,
+        method: Method,
+        base: &str,
+        path: &str,
+        configure: F,
+    ) -> Result<String>
+    where
+        F: FnOnce(RequestBuilder) -> RequestBuilder,
+    {
+        let url = format!("{}{}", base, path);
+        let request = self
+            .client
+            .request(method, &url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .header("Accept", "application/json");
+        let resp = configure(request).send().await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(api_error(status, body));
+        }
+
+        Ok(resp.text().await?)
+    }
+
     pub async fn get_raw(&self, path: &str, ttl: CacheTtl) -> Result<String> {
         let url = format!("{}{}", self.base_url, path);
 
@@ -58,21 +89,9 @@ impl DevPortalClient {
             return Ok(cached);
         }
 
-        let resp = self
-            .client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Accept", "application/json")
-            .send()
+        let body = self
+            .raw_request(Method::GET, &self.base_url, path, |b| b)
             .await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(api_error(status, body));
-        }
-
-        let body = resp.text().await?;
         self.cache.set(&url, &body);
         Ok(body)
     }
@@ -105,40 +124,15 @@ impl DevPortalClient {
         path: &str,
         body: &impl Serialize,
     ) -> Result<T> {
-        let url = format!("{}{}", self.base_url, path);
         let resp = self
-            .client
-            .patch(&url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Accept", "application/json")
-            .json(body)
-            .send()
+            .raw_request(Method::PATCH, &self.base_url, path, |b| b.json(body))
             .await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(api_error(status, body));
-        }
-        let body = resp.text().await?;
-        Ok(serde_json::from_str(&body)?)
+        Ok(serde_json::from_str(&resp)?)
     }
 
     pub async fn delete(&self, path: &str) -> Result<()> {
-        let url = format!("{}{}", self.base_url, path);
-        let resp = self
-            .client
-            .delete(&url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Accept", "application/json")
-            .send()
+        self.raw_request(Method::DELETE, &self.base_url, path, |b| b)
             .await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(api_error(status, body));
-        }
         Ok(())
     }
 
@@ -173,22 +167,10 @@ impl DevPortalClient {
     /// Uncached — alias state changes mid-session via PATCH/DELETE in the
     /// same orchestration, so re-reads must be fresh.
     pub async fn devportal_get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let url = format!("{}{}", self.devportal_url, path);
         let resp = self
-            .client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Accept", "application/json")
-            .send()
+            .raw_request(Method::GET, &self.devportal_url, path, |b| b)
             .await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(api_error(status, body));
-        }
-        let body = resp.text().await?;
-        Ok(serde_json::from_str(&body)?)
+        Ok(serde_json::from_str(&resp)?)
     }
 
     /// POST JSON against the bare DevPortal URL.
@@ -197,23 +179,10 @@ impl DevPortalClient {
         path: &str,
         body: &impl Serialize,
     ) -> Result<T> {
-        let url = format!("{}{}", self.devportal_url, path);
         let resp = self
-            .client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Accept", "application/json")
-            .json(body)
-            .send()
+            .raw_request(Method::POST, &self.devportal_url, path, |b| b.json(body))
             .await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(api_error(status, body));
-        }
-        let body = resp.text().await?;
-        Ok(serde_json::from_str(&body)?)
+        Ok(serde_json::from_str(&resp)?)
     }
 
     /// PATCH JSON against the bare DevPortal URL.
@@ -222,41 +191,16 @@ impl DevPortalClient {
         path: &str,
         body: &impl Serialize,
     ) -> Result<T> {
-        let url = format!("{}{}", self.devportal_url, path);
         let resp = self
-            .client
-            .patch(&url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Accept", "application/json")
-            .json(body)
-            .send()
+            .raw_request(Method::PATCH, &self.devportal_url, path, |b| b.json(body))
             .await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(api_error(status, body));
-        }
-        let body = resp.text().await?;
-        Ok(serde_json::from_str(&body)?)
+        Ok(serde_json::from_str(&resp)?)
     }
 
     /// DELETE against the bare DevPortal URL.
     pub async fn devportal_delete(&self, path: &str) -> Result<()> {
-        let url = format!("{}{}", self.devportal_url, path);
-        let resp = self
-            .client
-            .delete(&url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Accept", "application/json")
-            .send()
+        self.raw_request(Method::DELETE, &self.devportal_url, path, |b| b)
             .await?;
-
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(api_error(status, body));
-        }
         Ok(())
     }
 
