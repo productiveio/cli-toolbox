@@ -3802,6 +3802,7 @@ async fn share_alias_list(
                 format!("({})", token).dimmed()
             );
         }
+        println!("    {} {}", "Views:".dimmed(), row.views_count);
     }
     Ok(())
 }
@@ -3879,6 +3880,7 @@ async fn share_list(client: &DevPortalClient, json: bool) -> Result<(), tb_lf::e
             row.token,
             format!("[{}]", row.visibility).dimmed()
         );
+        println!("    {} {}", "Views:".dimmed(), row.views_count);
     }
     Ok(())
 }
