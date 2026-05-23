@@ -787,6 +787,8 @@ pub struct ShareSummary {
     #[serde(default)]
     pub title: Option<String>,
     pub visibility: String,
+    #[serde(default)]
+    pub views_count: u64,
 }
 
 /// Alias row returned by `GET/POST/PATCH /spa_api/share_aliases`.
@@ -796,6 +798,8 @@ pub struct ShareAlias {
     pub user_id: u64,
     pub slug: String,
     pub share_id: u64,
+    #[serde(default)]
+    pub views_count: u64,
     pub target: ShareAliasTarget,
 }
 

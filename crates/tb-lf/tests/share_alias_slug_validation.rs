@@ -22,7 +22,7 @@ fn accepts_well_formed_slugs() {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     ];
     for s in valid {
-        assert_eq!(s.len() <= 64, true, "test bug: `{}` too long", s);
+        assert!(s.len() <= 64, "test bug: `{}` too long", s);
         assert!(
             validate_slug(s).is_ok(),
             "expected `{}` to be valid, got: {:?}",
