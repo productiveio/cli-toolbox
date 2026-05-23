@@ -82,11 +82,13 @@ tb-lf share upload bundle/*.html --visibility unlisted --title "Q3 review"
 ### Manage existing shares
 
 ```bash
-tb-lf share list                                                  # your shares + URLs
+tb-lf share list                                                  # your shares + URLs + view counts
 tb-lf share update <token-or-url> --title "Q4 review"             # rename
 tb-lf share update <token-or-url> --visibility unlisted            # flip visibility
 tb-lf share rm <token-or-url>                                     # soft-delete (purges in background)
 ```
+
+`share list` includes a `Views:` line per share — total views via `/s/:token`. Alias views are tracked separately (see below).
 
 `<token-or-url>` accepts either a bare token (`AbCdE…`) or a `/s/:token` URL (full or bare). Flipping a share `private → unlisted` is an exposure escalation — on TTY the CLI prompts `[y/N]` with the same copy as the SPA EditShareSheet's AlertDialog; on non-TTY pass `--force`. `unlisted → private` saves silently and emits a one-line "non-logged-in viewers will lose access" notice.
 
@@ -99,7 +101,7 @@ Each user has a personal alias namespace at `/u/<user_id>/<slug>` for shares. Al
 tb-lf share alias set weekly-report <token>
 tb-lf share alias set weekly-report https://devportal.productive.io/s/<token>
 
-# List your aliases.
+# List your aliases (includes per-alias Views count).
 tb-lf share alias list
 
 # Delete by slug.
