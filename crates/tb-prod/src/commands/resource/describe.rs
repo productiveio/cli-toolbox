@@ -1,4 +1,4 @@
-use crate::schema::{self, ResourceDef, TypeCategory, operators_for_field};
+use crate::schema::{self, ResourceDef, Schema, TypeCategory, operators_for_field};
 
 use super::extensions;
 
@@ -93,120 +93,7 @@ pub fn run(resource: &ResourceDef, include: Option<&str>) {
     // --- Progressive disclosure sections ---
 
     if includes.contains(&"schema") {
-        println!("--- Schema ---\n");
-
-        // Fields table
-        println!("Fields:");
-        let mut fields: Vec<_> = resource.fields.values().collect();
-        fields.sort_by_key(|f| &f.key);
-
-        for f in &fields {
-            if !f.serialize {
-                continue; // skip hidden fields from display
-            }
-            let mut flags = Vec::new();
-            if f.id {
-                flags.push("id");
-            }
-            if f.required {
-                flags.push("required");
-            }
-            if f.readonly {
-                flags.push("readonly");
-            }
-            if f.create_only {
-                flags.push("createOnly");
-            }
-            if f.filter.is_some() {
-                flags.push("filterable");
-            }
-            if f.sort.is_some() {
-                flags.push("sortable");
-            }
-            if f.array {
-                flags.push("array");
-            }
-
-            let flags_str = if flags.is_empty() {
-                String::new()
-            } else {
-                format!("[{}]", flags.join(", "))
-            };
-
-            let desc = f.description.as_deref().unwrap_or("");
-            println!(
-                "  {:<24} {:<16} {:<40} {}",
-                f.key, f.field_type, flags_str, desc
-            );
-        }
-        println!();
-
-        // Filters table
-        println!("Filters:");
-        let mut filterable: Vec<_> = resource
-            .fields
-            .values()
-            .filter(|f| f.filter.is_some())
-            .collect();
-        filterable.sort_by_key(|f| f.filter.as_deref().unwrap_or(""));
-
-        for f in &filterable {
-            let filter_key = f.filter.as_deref().unwrap_or("");
-            let ops = operators_for_field(f);
-            println!(
-                "  {:<28} {:<16} {}",
-                filter_key,
-                f.field_type,
-                ops.join(", ")
-            );
-        }
-
-        // Dot-notation relationship filters
-        let rel_fields: Vec<_> = resource
-            .fields
-            .values()
-            .filter(|f| f.type_category == TypeCategory::Resource && f.relationship.is_some())
-            .collect();
-        if !rel_fields.is_empty() {
-            println!();
-            println!("Relationship filters (dot-notation):");
-            for rf in &rel_fields {
-                let rel_name = rf.relationship.as_deref().unwrap_or("");
-                if let Some(related_resource) = schema.resources.get(&rf.field_type) {
-                    let sub_filters: Vec<&str> = related_resource
-                        .fields
-                        .values()
-                        .filter_map(|f| f.filter.as_deref())
-                        .take(5)
-                        .collect();
-                    if !sub_filters.is_empty() {
-                        println!("  {}.{{{}...}}", rel_name, sub_filters.join(", "));
-                    }
-                }
-            }
-        }
-
-        println!();
-
-        // Sort fields
-        let mut sort_fields: Vec<&str> = resource
-            .fields
-            .values()
-            .filter_map(|f| f.sort.as_deref())
-            .collect();
-        sort_fields.sort();
-        if !sort_fields.is_empty() {
-            println!("Sort fields: {}", sort_fields.join(", "));
-        }
-        if let Some(default) = &resource.default_sort {
-            println!("Default sort: {}", default);
-        }
-
-        // Search config
-        if let Some(param) = &resource.search_filter_param {
-            println!("Search: keyword via filter param \"{}\"", param);
-        }
-        println!();
+        print!("{}", render_schema_section(resource, schema));
     }
 
     if includes.contains(&"actions") {
@@ -249,6 +136,151 @@ pub fn run(resource: &ResourceDef, include: Option<&str>) {
     }
 }
 
+/// Render the `--include=schema` section (fields, filters, sort, search) as a string.
+///
+/// The Fields table lists each field's **name** — what you see in query output. The key
+/// you put in a `create`/`update` payload is the schema `param`, which can differ (e.g.
+/// the field `closed` is written as `is_closed`, booleans become `is_*`). When it differs
+/// we surface it as `[write:NAME]` so payloads built from `describe` don't trip the
+/// validator's `Unknown field` error. Query filters use yet another key (`<rel>_id` for
+/// relationships), listed separately in the Filters table.
+fn render_schema_section(resource: &ResourceDef, schema: &Schema) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+
+    writeln!(out, "--- Schema ---\n").unwrap();
+
+    // Fields table
+    writeln!(
+        out,
+        "Fields  (name = field as seen in output; [write:NAME] = key to use in create/update payloads when it differs):"
+    )
+    .unwrap();
+    let mut fields: Vec<_> = resource.fields.values().collect();
+    fields.sort_by_key(|f| &f.key);
+
+    for f in &fields {
+        if !f.serialize {
+            continue; // skip hidden fields from display
+        }
+        let mut flags: Vec<String> = Vec::new();
+        if f.id {
+            flags.push("id".to_string());
+        }
+        if f.required {
+            flags.push("required".to_string());
+        }
+        if f.readonly {
+            flags.push("readonly".to_string());
+        }
+        if f.create_only {
+            flags.push("createOnly".to_string());
+        }
+        if f.filter.is_some() {
+            flags.push("filterable".to_string());
+        }
+        if f.sort.is_some() {
+            flags.push("sortable".to_string());
+        }
+        if f.array {
+            flags.push("array".to_string());
+        }
+        // Surface the create/update payload key when it differs from the field name.
+        if !f.readonly
+            && let Some(param) = &f.param
+            && param != &f.key
+        {
+            flags.push(format!("write:{param}"));
+        }
+
+        let flags_str = if flags.is_empty() {
+            String::new()
+        } else {
+            format!("[{}]", flags.join(", "))
+        };
+
+        let desc = f.description.as_deref().unwrap_or("");
+        writeln!(
+            out,
+            "  {:<24} {:<16} {:<40} {}",
+            f.key, f.field_type, flags_str, desc
+        )
+        .unwrap();
+    }
+    writeln!(out).unwrap();
+
+    // Filters table
+    writeln!(out, "Filters  (use these keys in query --filter):").unwrap();
+    let mut filterable: Vec<_> = resource
+        .fields
+        .values()
+        .filter(|f| f.filter.is_some())
+        .collect();
+    filterable.sort_by_key(|f| f.filter.as_deref().unwrap_or(""));
+
+    for f in &filterable {
+        let filter_key = f.filter.as_deref().unwrap_or("");
+        let ops = operators_for_field(f);
+        writeln!(
+            out,
+            "  {:<28} {:<16} {}",
+            filter_key,
+            f.field_type,
+            ops.join(", ")
+        )
+        .unwrap();
+    }
+
+    // Dot-notation relationship filters
+    let rel_fields: Vec<_> = resource
+        .fields
+        .values()
+        .filter(|f| f.type_category == TypeCategory::Resource && f.relationship.is_some())
+        .collect();
+    if !rel_fields.is_empty() {
+        writeln!(out).unwrap();
+        writeln!(out, "Relationship filters (dot-notation):").unwrap();
+        for rf in &rel_fields {
+            let rel_name = rf.relationship.as_deref().unwrap_or("");
+            if let Some(related_resource) = schema.resources.get(&rf.field_type) {
+                let sub_filters: Vec<&str> = related_resource
+                    .fields
+                    .values()
+                    .filter_map(|f| f.filter.as_deref())
+                    .take(5)
+                    .collect();
+                if !sub_filters.is_empty() {
+                    writeln!(out, "  {}.{{{}...}}", rel_name, sub_filters.join(", ")).unwrap();
+                }
+            }
+        }
+    }
+
+    writeln!(out).unwrap();
+
+    // Sort fields
+    let mut sort_fields: Vec<&str> = resource
+        .fields
+        .values()
+        .filter_map(|f| f.sort.as_deref())
+        .collect();
+    sort_fields.sort();
+    if !sort_fields.is_empty() {
+        writeln!(out, "Sort fields: {}", sort_fields.join(", ")).unwrap();
+    }
+    if let Some(default) = &resource.default_sort {
+        writeln!(out, "Default sort: {}", default).unwrap();
+    }
+
+    // Search config
+    if let Some(param) = &resource.search_filter_param {
+        writeln!(out, "Search: keyword via filter param \"{}\"", param).unwrap();
+    }
+    writeln!(out).unwrap();
+
+    out
+}
+
 /// Print all resource types when an invalid type is provided.
 pub fn print_all_types() {
     let schema = schema::schema();
@@ -261,5 +293,37 @@ pub fn print_all_types() {
             println!("  {:<28} {}", r.type_name, r.description_short);
         }
         println!();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::schema;
+
+    #[test]
+    fn schema_section_surfaces_write_param_when_it_differs() {
+        let s = schema();
+        let todos = s.resolve_resource("todos").unwrap();
+        let out = render_schema_section(todos, s);
+        // todos.closed is written as `is_closed` on create/update — must be surfaced.
+        assert!(
+            out.contains("write:is_closed"),
+            "missing write hint:\n{out}"
+        );
+        // The query filter for the same resource still uses the filter key.
+        assert!(out.contains("task_id"), "missing filter key:\n{out}");
+        // Legends make the create-vs-filter split explicit (resolves the #65 confusion).
+        assert!(out.contains("create/update") && out.contains("query --filter"));
+    }
+
+    #[test]
+    fn schema_section_omits_write_param_when_key_matches_or_readonly() {
+        let s = schema();
+        let todos = s.resolve_resource("todos").unwrap();
+        let out = render_schema_section(todos, s);
+        // param == field name → no spurious hint; readonly id field → never a write hint.
+        assert!(!out.contains("write:description"));
+        assert!(!out.contains("write:id"));
     }
 }
