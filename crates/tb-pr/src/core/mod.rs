@@ -4,3 +4,4 @@ pub mod github;
 pub mod model;
 pub mod productive;
 pub mod reviews;
+pub mod worktree;

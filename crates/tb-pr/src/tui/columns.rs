@@ -96,7 +96,7 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
             "D=hide-drafts"
         };
         format!(
-            "←/→ column   ↑/↓ nav   ⏎=open  t=task  r=refresh  c=copy  m=mark-all-read  w=wrap  {drafts_label}  ?=help  q=quit"
+            "←/→ column   ↑/↓ nav   ⏎=open  t=task  r=refresh  c=copy  w=worktree  e=editor  m=mark-all-read  f=wrap  {drafts_label}  ?=help  q=quit"
         )
     };
     frame.render_widget(
@@ -188,7 +188,15 @@ fn render_column(frame: &mut Frame, area: Rect, app: &mut App, idx: usize, col: 
         }
         let card_area = Rect::new(inner.x, y, inner.width, h);
         let selected_here = is_focused && i == selected;
-        card::render(frame, card_area, pr, selected_here, full_titles);
+        let has_worktree = app.has_worktree(pr);
+        card::render(
+            frame,
+            card_area,
+            pr,
+            selected_here,
+            full_titles,
+            has_worktree,
+        );
         y += h;
         last_drawn = i;
     }
@@ -312,8 +320,10 @@ fn render_help(frame: &mut Frame) {
         ("t       ", "open Productive task"),
         ("r       ", "refresh now"),
         ("c       ", "copy PR URL"),
+        ("w       ", "copy local worktree path (⎇ = present)"),
+        ("e       ", "open local worktree in editor"),
         ("m       ", "mark all notifications read"),
-        ("w       ", "wrap — show full titles"),
+        ("f       ", "wrap — show full titles"),
         (
             "D       ",
             "toggle draft filter (hide drafts in waiting-on-me/author)",

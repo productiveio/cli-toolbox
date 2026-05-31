@@ -10,6 +10,7 @@ use crate::core::github::{GhClient, PullDetail};
 use crate::core::model::{CheckState, PrState, SizeBucket};
 use crate::core::productive::extract_task_id;
 use crate::core::reviews::{Review, ReviewSummary};
+use crate::core::worktree::WorktreeIndex;
 use crate::error::Result;
 use toolbox_core::cache::CacheTtl;
 
@@ -104,6 +105,17 @@ pub async fn run(pr_ref: &str, json: bool) -> Result<()> {
         &config.productive.org_slug,
     );
 
+    // Local-worktree lookup mirrors the TUI: scan the configured roots and
+    // match on `(repo, head branch)`. Skipped entirely when no roots are
+    // configured so a plain `show` doesn't shell out to `git`.
+    let worktree_path = if config.worktrees.roots.is_empty() || detail.head.branch.is_empty() {
+        None
+    } else {
+        WorktreeIndex::scan(&config.worktrees.roots)
+            .resolve(&pr.repo, &detail.head.branch)
+            .map(|p| p.display().to_string())
+    };
+
     if json {
         let payload = ShowPayload {
             owner: &pr.owner,
@@ -117,9 +129,11 @@ pub async fn run(pr_ref: &str, json: bool) -> Result<()> {
             deletions: detail.deletions,
             size,
             base_branch: detail.base.branch.clone(),
+            head_branch: detail.head.branch.clone(),
             head_sha: detail.head.sha.clone(),
             comments_count: detail.comments,
             productive_task_id: task.clone(),
+            worktree_path: worktree_path.clone(),
             check_state,
             ready_to_merge: summary.is_ready_to_merge(),
             reviews: reviews
@@ -166,6 +180,9 @@ pub async fn run(pr_ref: &str, json: bool) -> Result<()> {
     println!("{:<14}{}", "Base:".dimmed(), detail.base.branch);
     let head_short: String = detail.head.sha.chars().take(12).collect();
     println!("{:<14}{}", "Head:".dimmed(), head_short);
+    if let Some(path) = &worktree_path {
+        println!("{:<14}{}", "Worktree:".dimmed(), path.green());
+    }
     if let Some(cs) = check_state {
         let (glyph, label) = match cs {
             CheckState::Success => ("✓".green().bold(), "passing"),
@@ -275,10 +292,13 @@ struct ShowPayload<'a> {
     deletions: u64,
     size: SizeBucket,
     base_branch: String,
+    head_branch: String,
     head_sha: String,
     comments_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     productive_task_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    worktree_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     check_state: Option<CheckState>,
     ready_to_merge: bool,

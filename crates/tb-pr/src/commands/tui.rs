@@ -33,6 +33,8 @@ pub async fn run() -> Result<()> {
         productive_org_slug: config.productive.org_slug,
         username_override: config.github.username_override,
         refresh_interval,
+        worktree_roots: config.worktrees.roots,
+        editor: config.worktrees.editor,
     };
     app::run(state, ctx, needs_refresh).await
 }

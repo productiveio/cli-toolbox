@@ -425,6 +425,10 @@ pub struct BaseRef {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct HeadRef {
     pub sha: String,
+    /// The head branch name. `#[serde(default)]` keeps older cached
+    /// `PullDetail` payloads (written before this field existed) loadable.
+    #[serde(rename = "ref", default)]
+    pub branch: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1018,6 +1022,9 @@ fn build_pr(
     let detail = details.get(&(owner, repo.clone(), item.number));
     let size = detail.map(|d| classifier::size_bucket(d.additions, d.deletions));
     let base_branch = detail.map(|d| d.base.branch.clone());
+    let head_branch = detail
+        .map(|d| d.head.branch.clone())
+        .filter(|b| !b.is_empty());
 
     let age_hours = (now - item.created_at).num_seconds() as f64 / 3600.0;
     let age_days = age_hours / 24.0;
@@ -1045,6 +1052,7 @@ fn build_pr(
         productive_task_id,
         comments_count: item.comments,
         base_branch,
+        head_branch,
         has_new_commits_since_my_review: None,
         check_state: None,
     }
@@ -1156,6 +1164,7 @@ mod tests {
             productive_task_id: None,
             comments_count: 0,
             base_branch: None,
+            head_branch: None,
             has_new_commits_since_my_review: None,
             check_state: None,
         }
