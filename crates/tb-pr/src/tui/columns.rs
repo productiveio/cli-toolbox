@@ -96,7 +96,7 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
             "D=hide-drafts"
         };
         format!(
-            "←/→ column   ↑/↓ nav   ⏎=open  t=task  r=refresh  c=copy  w=worktree  W=editor  m=mark-all-read  f=wrap  {drafts_label}  ?=help  q=quit"
+            "←/→ column   ↑/↓ nav   ⏎=open  t=task  r=refresh  c=copy  w=worktree  e=editor  m=mark-all-read  f=wrap  {drafts_label}  ?=help  q=quit"
         )
     };
     frame.render_widget(
@@ -321,7 +321,7 @@ fn render_help(frame: &mut Frame) {
         ("r       ", "refresh now"),
         ("c       ", "copy PR URL"),
         ("w       ", "copy local worktree path (⎇ = present)"),
-        ("W       ", "open local worktree in editor"),
+        ("e       ", "open local worktree in editor"),
         ("m       ", "mark all notifications read"),
         ("f       ", "wrap — show full titles"),
         (

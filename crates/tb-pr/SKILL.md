@@ -23,7 +23,7 @@ requests only — team/CODEOWNERS requests are intentionally excluded.
 - **Worktree detection** — when `[worktrees].roots` is configured, scans
   those directories for local git checkouts and matches them to PRs by
   `(repo, head branch)`. Cards show a green `⎇` when a worktree exists; in
-  the TUI `w` copies the worktree path and `W` opens it in the configured
+  the TUI `w` copies the worktree path and `e` opens it in the configured
   editor. `tb-pr show` prints the worktree path too.
 - **Caching** — sqlite/fs cache with a 5m TTL; `refresh` forces re-fetch.
 
@@ -51,7 +51,7 @@ your worktrees in `~/.config/tb-pr/config.toml`:
 ```toml
 [worktrees]
 roots = ["~/Code/productive-work/worktrees"]
-editor = "code"  # opened as `<editor> <worktree-path>` on `W`
+editor = "code"  # opened as `<editor> <worktree-path>` on `e`
 ```
 
 ## Live context

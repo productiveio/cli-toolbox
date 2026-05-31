@@ -81,7 +81,7 @@ All queries are scoped to `org:productiveio`.
 | r | refresh now |
 | c | copy PR URL to clipboard |
 | w | copy local worktree path (cards show `⎇` when present) |
-| W | open local worktree in the configured editor |
+| e | open local worktree in the configured editor |
 | f | toggle full titles (wrap) — on by default |
 | ? | help popup |
 | q / Esc / Ctrl-C | quit |
@@ -106,9 +106,9 @@ org_slug = "109-productive"
 # subdirectory that is a git working tree is matched to a PR by (repo, head
 # branch). `~/` is expanded. Empty by default → detection disabled.
 roots = ["~/Code/productive-work/worktrees"]
-# Command run by the `W` shortcut, invoked as `<editor> <worktree-path>`.
+# Command run by the `e` shortcut, invoked as `<editor> <worktree-path>`.
 # Must be on PATH or an absolute path — it's launched directly, not through a
-# shell. On macOS the VS Code `code` alias often isn't on PATH; either run
+# shell (the `e` shortcut). On macOS the VS Code `code` alias often isn't on PATH; either run
 # "Shell Command: Install 'code' command in PATH" from VS Code, or point at the
 # binary: "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code".
 editor = "code"
@@ -119,7 +119,7 @@ editor = "code"
 With `[worktrees].roots` set, the TUI scans those folders at launch (and on
 every refresh) and marks PRs whose head branch is checked out locally with a
 green `⎇` on the card. Press `w` to copy that worktree's absolute path to the
-clipboard, or `W` to open it in `[worktrees].editor`. Matching is by
+clipboard, or `e` to open it in `[worktrees].editor`. Matching is by
 `(repo, head branch)`; a branch name unique across your worktrees resolves
 even when the repo can't be parsed, and ambiguous collisions resolve by repo.
 `tb-pr show <pr>` prints the resolved worktree path (and `worktree_path` in

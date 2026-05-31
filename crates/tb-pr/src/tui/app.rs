@@ -403,7 +403,7 @@ impl App {
                     Intent::None
                 }
             },
-            KeyCode::Char('W') => match self.selected_worktree_path() {
+            KeyCode::Char('e') => match self.selected_worktree_path() {
                 Some(path) => Intent::OpenEditor(path),
                 None => {
                     self.flag_missing_worktree();
@@ -899,9 +899,9 @@ mod tests {
     }
 
     #[test]
-    fn shift_w_opens_editor_at_worktree() {
+    fn e_opens_editor_at_worktree() {
         let mut a = app();
-        match a.handle_key(key(KeyCode::Char('W'))) {
+        match a.handle_key(key(KeyCode::Char('e'))) {
             Intent::OpenEditor(path) => {
                 assert_eq!(path, "/Users/ivan/Code/worktrees/ai-agent-1");
             }
@@ -919,7 +919,7 @@ mod tests {
             a.last_error.as_deref(),
             Some("no local worktree for api@feature/api-2")
         );
-        assert_eq!(a.handle_key(key(KeyCode::Char('W'))), Intent::None);
+        assert_eq!(a.handle_key(key(KeyCode::Char('e'))), Intent::None);
         assert!(!a.has_worktree(a.selected_pr().unwrap()));
     }
 

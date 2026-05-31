@@ -118,7 +118,7 @@ pub fn render(
         ));
     }
     // Local-worktree marker: a green branch glyph signalling that this PR's
-    // head branch is checked out locally (copy path with `w`, open with `W`).
+    // head branch is checked out locally (copy path with `w`, open with `e`).
     if has_worktree {
         row2_spans.push(Span::raw(" "));
         row2_spans.push(Span::styled("⎇", Style::default().fg(Color::Green)));
