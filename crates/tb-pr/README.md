@@ -107,6 +107,10 @@ org_slug = "109-productive"
 # branch). `~/` is expanded. Empty by default → detection disabled.
 roots = ["~/Code/productive-work/worktrees"]
 # Command run by the `W` shortcut, invoked as `<editor> <worktree-path>`.
+# Must be on PATH or an absolute path — it's launched directly, not through a
+# shell. On macOS the VS Code `code` alias often isn't on PATH; either run
+# "Shell Command: Install 'code' command in PATH" from VS Code, or point at the
+# binary: "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code".
 editor = "code"
 ```
 

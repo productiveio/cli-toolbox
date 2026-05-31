@@ -179,10 +179,18 @@ pub fn open_in_editor(editor: &str, path: &str) -> Result<()> {
     if editor.trim().is_empty() {
         return Err(Error::Other("no editor configured".to_string()));
     }
-    let status = Command::new(editor)
-        .arg(path)
-        .status()
-        .map_err(|e| Error::Other(format!("failed to launch `{editor}`: {e}")))?;
+    let status = Command::new(editor).arg(path).status().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            // The editor is launched directly, not via a shell, so a PATH
+            // alias like macOS's `code` won't resolve. Point at the fix.
+            Error::Other(format!(
+                "`{editor}` not found — set [worktrees].editor to a command on \
+                 PATH or an absolute path to the binary"
+            ))
+        } else {
+            Error::Other(format!("failed to launch `{editor}`: {e}"))
+        }
+    })?;
     if !status.success() {
         return Err(Error::Other(format!("`{editor}` exited non-zero")));
     }
