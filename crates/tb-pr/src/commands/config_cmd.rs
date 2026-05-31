@@ -28,6 +28,15 @@ pub fn show() -> Result<()> {
         config.refresh.interval_minutes
     );
     println!("productive.org_slug:  {}", config.productive.org_slug);
+    println!(
+        "worktrees.roots:      {}",
+        if config.worktrees.roots.is_empty() {
+            "(none — worktree detection disabled)".to_string()
+        } else {
+            config.worktrees.roots.join(", ")
+        }
+    );
+    println!("worktrees.editor:     {}", config.worktrees.editor);
     match config.cache_dir() {
         Ok(p) => println!("cache_dir:            {}", p.display()),
         Err(e) => println!("cache_dir:            (error: {e})"),

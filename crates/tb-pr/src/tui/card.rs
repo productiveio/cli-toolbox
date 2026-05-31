@@ -47,7 +47,14 @@ fn check_glyph(state: CheckState) -> (&'static str, Color) {
     }
 }
 
-pub fn render(frame: &mut Frame, area: Rect, pr: &Pr, selected: bool, full_titles: bool) {
+pub fn render(
+    frame: &mut Frame,
+    area: Rect,
+    pr: &Pr,
+    selected: bool,
+    full_titles: bool,
+    has_worktree: bool,
+) {
     let border_color = rotting_color(pr.rotting);
     let border_style = if selected {
         Style::default()
@@ -109,6 +116,12 @@ pub fn render(frame: &mut Frame, area: Rect, pr: &Pr, selected: bool, full_title
             format!("[P-{task}]"),
             Style::default().fg(Color::Cyan),
         ));
+    }
+    // Local-worktree marker: a green branch glyph signalling that this PR's
+    // head branch is checked out locally (copy path with `w`, open with `W`).
+    if has_worktree {
+        row2_spans.push(Span::raw(" "));
+        row2_spans.push(Span::styled("⎇", Style::default().fg(Color::Green)));
     }
     frame.render_widget(Paragraph::new(Line::from(row2_spans)), row2_area);
 
@@ -356,6 +369,7 @@ mod tests {
             productive_task_id: None,
             comments_count: 0,
             base_branch: None,
+            head_branch: None,
             has_new_commits_since_my_review: None,
             check_state: None,
         };

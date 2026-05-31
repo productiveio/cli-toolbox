@@ -20,6 +20,11 @@ requests only — team/CODEOWNERS requests are intentionally excluded.
   rotting/critical). The TUI colors the border; the CLI colors the age.
 - **Productive task linking** — extracts `productive_task_id` from PR
   bodies using the org's task URL pattern.
+- **Worktree detection** — when `[worktrees].roots` is configured, scans
+  those directories for local git checkouts and matches them to PRs by
+  `(repo, head branch)`. Cards show a green `⎇` when a worktree exists; in
+  the TUI `w` copies the worktree path and `W` opens it in the configured
+  editor. `tb-pr show` prints the worktree path too.
 - **Caching** — sqlite/fs cache with a 5m TTL; `refresh` forces re-fetch.
 
 ## Quick reference
@@ -39,6 +44,15 @@ tb-pr prime                  # markdown context dump (this file uses it)
 Run `tb-pr doctor` to verify `gh auth` and config. Run `tb-pr prime` for the
 current review queue. For programmable output, prefer
 `tb-pr list --json --column=<col>`.
+
+To enable worktree detection, point `tb-pr` at the folder(s) where you keep
+your worktrees in `~/.config/tb-pr/config.toml`:
+
+```toml
+[worktrees]
+roots = ["~/Code/productive-work/worktrees"]
+editor = "code"  # opened as `<editor> <worktree-path>` on `W`
+```
 
 ## Live context
 

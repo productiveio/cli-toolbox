@@ -11,9 +11,10 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
-use crate::commands::util::{copy_to_clipboard, open_url};
+use crate::commands::util::{copy_to_clipboard, open_in_editor, open_url};
 use crate::core::github::{GhClient, fetch_board_state, merge_with_previous};
 use crate::core::model::{BoardState, Column, Notification, Pr, PrState};
+use crate::core::worktree::WorktreeIndex;
 use crate::error::{Error, Result};
 use crate::tui::columns;
 
@@ -37,6 +38,8 @@ pub enum Intent {
     Refresh,
     OpenUrl(String),
     CopyUrl(String),
+    /// Open a local git-worktree path in the configured editor.
+    OpenEditor(String),
     /// Resolve the latest comment on a PR → open → mark the thread as read.
     /// `fallback_pr_url` is used when neither comment feed has anything.
     OpenNotification {
@@ -68,10 +71,19 @@ pub struct App {
     pub status: Option<String>,
     pub tick_count: u64,
     productive_org_slug: String,
+    /// Branch → local-worktree index, rebuilt on each refresh.
+    worktrees: WorktreeIndex,
+    /// Command used to open a worktree (e.g. `code`).
+    editor: String,
 }
 
 impl App {
-    pub fn new(state: BoardState, productive_org_slug: String) -> Self {
+    pub fn new(
+        state: BoardState,
+        productive_org_slug: String,
+        worktrees: WorktreeIndex,
+        editor: String,
+    ) -> Self {
         Self {
             state,
             focused: 0,
@@ -85,6 +97,8 @@ impl App {
             status: None,
             tick_count: 0,
             productive_org_slug,
+            worktrees,
+            editor,
         }
     }
 
@@ -241,6 +255,41 @@ impl App {
         })
     }
 
+    /// Whether `pr`'s head branch has a local worktree in the configured roots.
+    /// Drives the `⎇` marker on the card.
+    pub fn has_worktree(&self, pr: &Pr) -> bool {
+        pr.head_branch
+            .as_deref()
+            .is_some_and(|branch| self.worktrees.resolve(&pr.repo, branch).is_some())
+    }
+
+    /// Absolute worktree path for the selected PR, as an owned string. `None`
+    /// when no PR is selected, the head branch is unknown, or no matching
+    /// local checkout exists.
+    fn selected_worktree_path(&self) -> Option<String> {
+        let pr = self.selected_pr()?;
+        let branch = pr.head_branch.as_deref()?;
+        self.worktrees
+            .resolve(&pr.repo, branch)
+            .map(|p| p.display().to_string())
+    }
+
+    /// Set a "no local worktree" error tailored to the selected PR.
+    fn flag_missing_worktree(&mut self) {
+        let label = self
+            .selected_pr()
+            .map(|pr| format!("{}@{}", pr.repo, pr.head_branch.as_deref().unwrap_or("?")));
+        self.last_error = Some(match label {
+            Some(l) => format!("no local worktree for {l}"),
+            None => "no PR selected".to_string(),
+        });
+    }
+
+    /// Replace the worktree index after a background re-scan.
+    pub fn set_worktrees(&mut self, worktrees: WorktreeIndex) {
+        self.worktrees = worktrees;
+    }
+
     pub fn replace_state(&mut self, state: BoardState) {
         self.state = state;
         self.last_error = None;
@@ -340,13 +389,27 @@ impl App {
                     Intent::MarkAllNotificationsRead
                 }
             }
-            KeyCode::Char('w') => {
+            KeyCode::Char('f') => {
                 self.full_titles = !self.full_titles;
                 // Scroll offsets may now be wrong for the new card heights;
                 // reset so the selected card re-anchors on next render.
                 self.scroll = [0; COLUMNS_LEN];
                 Intent::None
             }
+            KeyCode::Char('w') => match self.selected_worktree_path() {
+                Some(path) => Intent::CopyUrl(path),
+                None => {
+                    self.flag_missing_worktree();
+                    Intent::None
+                }
+            },
+            KeyCode::Char('W') => match self.selected_worktree_path() {
+                Some(path) => Intent::OpenEditor(path),
+                None => {
+                    self.flag_missing_worktree();
+                    Intent::None
+                }
+            },
             KeyCode::Char('D') => {
                 self.hide_drafts = !self.hide_drafts;
                 // Column counts change — clamp selections and reset scroll so
@@ -368,6 +431,10 @@ pub struct FetchCtx {
     pub productive_org_slug: String,
     pub username_override: String,
     pub refresh_interval: Duration,
+    /// Directories scanned for local worktrees (`[worktrees].roots`).
+    pub worktree_roots: Vec<String>,
+    /// Editor command for the open-worktree shortcut (`[worktrees].editor`).
+    pub editor: String,
 }
 
 #[derive(Debug)]
@@ -375,6 +442,8 @@ enum UiEvent {
     Key(KeyEvent),
     RefreshTick,
     FetchDone(std::result::Result<BoardState, String>),
+    /// A background re-scan of the worktree roots finished.
+    WorktreesScanned(WorktreeIndex),
     AnimTick,
     /// Background task finished opening + marking a single notification.
     /// `Ok(thread_id)` → remove it; `Err(msg)` → surface the error and keep it.
@@ -390,7 +459,10 @@ pub async fn run(state: BoardState, ctx: FetchCtx, needs_refresh: bool) -> Resul
     let _guard = RawModeGuard::enter()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout())).map_err(Error::Io)?;
     let productive_slug = ctx.productive_org_slug.clone();
-    let mut app = App::new(state, productive_slug);
+    // Initial worktree scan so the cached board shows `⎇` markers before the
+    // first background fetch even completes.
+    let worktrees = WorktreeIndex::scan(&ctx.worktree_roots);
+    let mut app = App::new(state, productive_slug, worktrees, ctx.editor.clone());
     app.clamp_selections();
 
     let result = event_loop(&mut terminal, &mut app, ctx, needs_refresh).await;
@@ -468,6 +540,10 @@ async fn event_loop(
                     Ok(()) => app.set_status(format!("copied {url}")),
                     Err(e) => app.mark_error(format!("copy failed: {e}")),
                 },
+                Intent::OpenEditor(path) => match open_in_editor(&app.editor, &path) {
+                    Ok(()) => app.set_status(format!("opened {path} in {}", app.editor)),
+                    Err(e) => app.mark_error(format!("editor failed: {e}")),
+                },
                 Intent::OpenNotification {
                     thread_id,
                     owner,
@@ -497,6 +573,7 @@ async fn event_loop(
             }
             UiEvent::FetchDone(Ok(state)) => app.replace_state(state),
             UiEvent::FetchDone(Err(msg)) => app.mark_error(msg),
+            UiEvent::WorktreesScanned(index) => app.set_worktrees(index),
             UiEvent::NotificationOpened(Ok(thread_id)) => {
                 app.remove_notification(&thread_id);
                 app.set_status("marked read".to_string());
@@ -602,6 +679,14 @@ fn spawn_fetch(tx: &UnboundedSender<UiEvent>, ctx: &Arc<FetchCtx>, app: &mut App
             let _ = cache.save_board(state);
         }
         let _ = tx.send(UiEvent::FetchDone(result));
+
+        // Re-scan worktrees alongside every refresh so a checkout created
+        // mid-session is picked up by the next `r`. The scan shells out to
+        // `git`, so run it off the async runtime.
+        let roots = ctx.worktree_roots.clone();
+        if let Ok(index) = tokio::task::spawn_blocking(move || WorktreeIndex::scan(&roots)).await {
+            let _ = tx.send(UiEvent::WorktreesScanned(index));
+        }
     });
 }
 
@@ -675,6 +760,7 @@ mod tests {
             productive_task_id: Some("1234".to_string()),
             comments_count: 3,
             base_branch: Some("main".to_string()),
+            head_branch: Some(format!("feature/{repo}-{number}")),
             has_new_commits_since_my_review: None,
             check_state: None,
         }
@@ -711,7 +797,19 @@ mod tests {
     }
 
     fn app() -> App {
-        let mut a = App::new(sample_state(), "109-productive".to_string());
+        // Index a worktree for the draft_mine PR (ai-agent #1) so the
+        // worktree-shortcut tests have a match to resolve.
+        let worktrees = WorktreeIndex::from_triples(&[(
+            "feature/ai-agent-1",
+            "ai-agent",
+            "/Users/ivan/Code/worktrees/ai-agent-1",
+        )]);
+        let mut a = App::new(
+            sample_state(),
+            "109-productive".to_string(),
+            worktrees,
+            "code".to_string(),
+        );
         a.clamp_selections();
         a
     }
@@ -777,15 +875,52 @@ mod tests {
     }
 
     #[test]
-    fn w_toggles_full_titles_and_resets_scroll() {
+    fn f_toggles_full_titles_and_resets_scroll() {
         let mut a = app();
         a.scroll = [3, 2, 1, 4, 0, 0];
         assert!(a.full_titles); // default on
-        a.handle_key(key(KeyCode::Char('w')));
+        a.handle_key(key(KeyCode::Char('f')));
         assert!(!a.full_titles);
         assert_eq!(a.scroll, [0; COLUMNS_LEN]);
-        a.handle_key(key(KeyCode::Char('w')));
+        a.handle_key(key(KeyCode::Char('f')));
         assert!(a.full_titles);
+    }
+
+    #[test]
+    fn w_copies_worktree_path_when_present() {
+        let mut a = app(); // draft_mine PR (ai-agent #1) has an indexed worktree
+        match a.handle_key(key(KeyCode::Char('w'))) {
+            Intent::CopyUrl(path) => {
+                assert_eq!(path, "/Users/ivan/Code/worktrees/ai-agent-1");
+            }
+            other => panic!("expected CopyUrl(path), got {other:?}"),
+        }
+        assert!(a.has_worktree(a.selected_pr().unwrap()));
+    }
+
+    #[test]
+    fn shift_w_opens_editor_at_worktree() {
+        let mut a = app();
+        match a.handle_key(key(KeyCode::Char('W'))) {
+            Intent::OpenEditor(path) => {
+                assert_eq!(path, "/Users/ivan/Code/worktrees/ai-agent-1");
+            }
+            other => panic!("expected OpenEditor(path), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn worktree_shortcuts_flag_error_when_absent() {
+        let mut a = app();
+        // review_mine PR (api #2) has no indexed worktree.
+        a.focused = ORDER.iter().position(|c| *c == Column::ReviewMine).unwrap();
+        assert_eq!(a.handle_key(key(KeyCode::Char('w'))), Intent::None);
+        assert_eq!(
+            a.last_error.as_deref(),
+            Some("no local worktree for api@feature/api-2")
+        );
+        assert_eq!(a.handle_key(key(KeyCode::Char('W'))), Intent::None);
+        assert!(!a.has_worktree(a.selected_pr().unwrap()));
     }
 
     #[test]
@@ -842,7 +977,12 @@ mod tests {
         draft_author.state = PrState::Draft;
         state.columns.waiting_on_author.push(draft_author);
 
-        let mut a = App::new(state, "109-productive".to_string());
+        let mut a = App::new(
+            state,
+            "109-productive".to_string(),
+            WorktreeIndex::default(),
+            "code".to_string(),
+        );
         a.clamp_selections();
 
         // Default: drafts hidden in non-mine review columns, but not in DraftMine.
@@ -878,7 +1018,12 @@ mod tests {
         let mut draft_pr = sample_pr("api", 9, "WIP");
         draft_pr.state = PrState::Draft;
         state.columns.waiting_on_me.push(draft_pr);
-        let mut a = App::new(state, "109-productive".to_string());
+        let mut a = App::new(
+            state,
+            "109-productive".to_string(),
+            WorktreeIndex::default(),
+            "code".to_string(),
+        );
         a.clamp_selections();
 
         a.focused = ORDER

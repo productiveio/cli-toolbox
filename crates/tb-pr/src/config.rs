@@ -21,6 +21,10 @@ fn default_productive_org_slug() -> String {
     "109-productive".to_string()
 }
 
+fn default_editor() -> String {
+    "code".to_string()
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GithubConfig {
     #[serde(default = "default_org")]
@@ -68,6 +72,30 @@ impl Default for ProductiveConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct WorktreesConfig {
+    /// Directories to scan (non-recursively) for local git worktrees. Each
+    /// immediate subdirectory that is a git working tree is matched against
+    /// PRs by `(repo, head branch)`. Empty by default — set this to the
+    /// folder(s) where you keep your worktrees to enable detection.
+    #[serde(default)]
+    pub roots: Vec<String>,
+
+    /// Command used by the "open worktree in editor" shortcut. Invoked as
+    /// `<editor> <worktree-path>`. Defaults to `code` (VS Code).
+    #[serde(default = "default_editor")]
+    pub editor: String,
+}
+
+impl Default for WorktreesConfig {
+    fn default() -> Self {
+        Self {
+            roots: Vec::new(),
+            editor: default_editor(),
+        }
+    }
+}
+
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Config {
     #[serde(default)]
@@ -78,6 +106,9 @@ pub struct Config {
 
     #[serde(default)]
     pub productive: ProductiveConfig,
+
+    #[serde(default)]
+    pub worktrees: WorktreesConfig,
 }
 
 impl Config {

@@ -114,6 +114,10 @@ pub struct Pr {
     pub productive_task_id: Option<String>,
     pub comments_count: u64,
     pub base_branch: Option<String>,
+    /// The PR's head branch (`head.ref`). Used to match the PR against local
+    /// git worktrees. `None` when the PR detail wasn't fetched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head_branch: Option<String>,
     /// Only set for PRs in the `waiting_on_author` column — true if the
     /// author has pushed commits since the viewer's last review.
     #[serde(skip_serializing_if = "Option::is_none")]
