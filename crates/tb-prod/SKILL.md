@@ -23,6 +23,13 @@ Run `tb-prod prime` for a command reference, resource type listing, and current 
 Run `tb-prod describe <type>` to learn a resource type's fields, filters, and actions.
 Use `tb-prod <command> --help` for detailed command usage.
 
+**Field naming — write keys vs filter keys.** A field's create/update key can differ from
+both its output name and its filter key. `describe <type> --include schema` shows all three:
+the Fields table lists the output name and marks the create/update key as `[write:NAME]`
+when it differs (e.g. `closed` → `is_closed`); the Filters table lists the query keys
+(e.g. relationship `task` filters as `task_id`). Relationship values in create/update are
+flat ID strings (`"task": "123"`), never the `{"id","type"}` object shape from responses.
+
 ## Live context
 
 !`tb-prod prime`

@@ -68,6 +68,9 @@ pub async fn run(client: &ProductiveClient, config: &Config) -> Result<()> {
     println!(
         "- Filter values for cacheable types (projects, people, etc.) auto-resolve names to IDs"
     );
+    println!(
+        "- Create/update keys can differ from output names: `describe <type> --include schema` marks the write key as `[write:NAME]` (e.g. `closed`→`is_closed`); relationships are flat ID strings (`\"task\": \"123\"`), filtered via `<rel>_id` (e.g. `task_id`)"
+    );
     println!("- `tb-prod describe <type>` for full field/filter/action details");
     println!("- `tb-prod prime project <name>` for deep project context");
     println!("- `tb-prod cache sync` to refresh cached data");

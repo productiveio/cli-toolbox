@@ -1,7 +1,7 @@
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::schema::{ResourceDef, Schema, TypeCategory};
+use crate::schema::{FieldDef, ResourceDef, Schema, TypeCategory};
 
 /// Validate fields for a create operation.
 pub fn validate_create(resource: &ResourceDef, input: &Value, schema: &Schema) -> Vec<String> {
@@ -13,7 +13,7 @@ pub fn validate_create(resource: &ResourceDef, input: &Value, schema: &Schema) -
     let mut errors = Vec::new();
 
     // Check for unknown and readonly fields
-    for key in map.keys() {
+    for (key, value) in map {
         match resource.field_by_param(key) {
             None => {
                 errors.push(format!(
@@ -24,6 +24,9 @@ pub fn validate_create(resource: &ResourceDef, input: &Value, schema: &Schema) -
             Some(f) => {
                 if f.readonly {
                     errors.push(format!("Field '{}' is readonly and cannot be set.", key));
+                }
+                if let Some(e) = relationship_shape_error(f, value) {
+                    errors.push(e);
                 }
             }
         }
@@ -59,7 +62,7 @@ pub fn validate_update(resource: &ResourceDef, input: &Value, schema: &Schema) -
 
     let mut errors = Vec::new();
 
-    for key in map.keys() {
+    for (key, value) in map {
         match resource.field_by_param(key) {
             None => {
                 errors.push(format!(
@@ -77,6 +80,9 @@ pub fn validate_update(resource: &ResourceDef, input: &Value, schema: &Schema) -
                         key
                     ));
                 }
+                if let Some(e) = relationship_shape_error(f, value) {
+                    errors.push(e);
+                }
             }
         }
     }
@@ -85,6 +91,36 @@ pub fn validate_update(resource: &ResourceDef, input: &Value, schema: &Schema) -
     errors.extend(validate_enum_values(resource, map, schema));
 
     errors
+}
+
+/// Relationship fields take a flat ID string (e.g. `"123"`), an array of ID strings for
+/// array relationships, or `null` — never the JSON:API `{"id","type"}` object shape that
+/// appears in *responses*. Passing the object form makes the body builder stringify the
+/// whole object into the `id` slot, producing a bogus reference the API rejects with a
+/// misleading 403 access_denied (read as a permissions problem). Catch it locally with a
+/// clear message instead.
+fn relationship_shape_error(field: &FieldDef, value: &Value) -> Option<String> {
+    if field.type_category != TypeCategory::Resource {
+        return None;
+    }
+    let has_object = match value {
+        Value::Object(_) => true,
+        Value::Array(items) => items.iter().any(Value::is_object),
+        _ => false,
+    };
+    if !has_object {
+        return None;
+    }
+    let param = field.param.as_deref().unwrap_or(&field.key);
+    let expected = if field.array {
+        "an array of ID strings (e.g. [\"123\", \"456\"])"
+    } else {
+        "a flat ID string (e.g. \"123\")"
+    };
+    Some(format!(
+        "Field '{}' is a relationship — provide {}, not a {{\"id\",\"type\"}} object.",
+        param, expected
+    ))
 }
 
 /// Validate that mutually exclusive field groups have exactly one member provided.
@@ -219,6 +255,35 @@ mod tests {
         let input = json!({"nonexistent_field": "x"});
         let errors = validate_create(tasks, &input, s);
         assert!(errors.iter().any(|e| e.contains("Unknown field")));
+    }
+
+    #[test]
+    fn validate_create_rejects_relationship_object_form() {
+        let s = schema();
+        let tasks = s.resolve_resource("tasks").unwrap();
+        // The JSON:API {id,type} object shape is a response shape, not valid input —
+        // passing it would otherwise produce a bogus id and a misleading API 403.
+        let bad = json!({
+            "title": "Test",
+            "project": {"id": "200", "type": "projects"},
+            "task_list": "300"
+        });
+        let errors = validate_create(tasks, &bad, s);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("relationship") && e.contains("'project'")),
+            "expected relationship-shape error, got: {:?}",
+            errors
+        );
+        // The flat ID string form passes the relationship-shape check.
+        let ok = json!({"title": "Test", "project": "200", "task_list": "300"});
+        assert!(
+            !validate_create(tasks, &ok, s)
+                .iter()
+                .any(|e| e.contains("relationship")),
+            "flat ID string should not trigger the relationship-shape error"
+        );
     }
 
     #[test]
