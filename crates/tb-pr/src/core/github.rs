@@ -327,10 +327,16 @@ struct ApiOwner {
     login: String,
 }
 
-/// Reasons we surface in the Mentions inbox. Excludes `review_requested`
-/// (already its own "Waiting on me" column) and `state_change` /
-/// `subscribed` (too noisy — every PR close/merge event).
-const INBOX_REASONS: &[&str] = &["mention", "team_mention", "author", "comment"];
+/// Reasons we surface in the Mentions inbox. Restricted to the reasons where
+/// the user was actually @mentioned — directly (`mention`) or via a team
+/// (`team_mention`). GitHub auto-subscribes you to a thread when you're
+/// mentioned, so these surface even on PRs you weren't previously watching.
+///
+/// Deliberately excludes subscription-driven reasons (`author`, `comment`,
+/// `subscribed`, `state_change`): those fire for any activity on a PR you
+/// happen to be subscribed to, which is not a mention. `review_requested` is
+/// also excluded — it has its own "Waiting on me" column.
+const INBOX_REASONS: &[&str] = &["mention", "team_mention"];
 
 /// Shape the raw `/notifications` payload into our `Notification` struct.
 /// Returns `None` when the thread is not a PR in the configured org, when
@@ -1135,6 +1141,59 @@ mod tests {
             parse_repo_url("https://api.github.com/repos/owner-only"),
             None
         );
+    }
+
+    fn api_notification(reason: &str) -> ApiNotification {
+        ApiNotification {
+            id: "1".into(),
+            reason: reason.into(),
+            updated_at: Utc::now(),
+            subject: ApiSubject {
+                title: "Some PR".into(),
+                url: Some("https://api.github.com/repos/productiveio/ai-agent/pulls/123".into()),
+                kind: "PullRequest".into(),
+            },
+            repository: ApiRepository {
+                name: "ai-agent".into(),
+                owner: ApiOwner {
+                    login: "productiveio".into(),
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn mentions_inbox_keeps_only_mention_reasons() {
+        // Mention-based reasons are surfaced...
+        for reason in ["mention", "team_mention"] {
+            assert!(
+                into_pr_notification(api_notification(reason), "productiveio").is_some(),
+                "reason {reason} should be kept",
+            );
+        }
+        // ...while subscription-driven activity on watched PRs is dropped.
+        for reason in [
+            "author",
+            "comment",
+            "subscribed",
+            "state_change",
+            "review_requested",
+        ] {
+            assert!(
+                into_pr_notification(api_notification(reason), "productiveio").is_none(),
+                "reason {reason} should be dropped",
+            );
+        }
+    }
+
+    #[test]
+    fn mentions_inbox_drops_other_orgs_and_non_prs() {
+        // Right reason, wrong org.
+        assert!(into_pr_notification(api_notification("mention"), "someoneelse").is_none());
+        // Right reason, but not a PR.
+        let mut issue = api_notification("mention");
+        issue.subject.kind = "Issue".into();
+        assert!(into_pr_notification(issue, "productiveio").is_none());
     }
 
     #[test]
