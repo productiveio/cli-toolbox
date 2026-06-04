@@ -95,8 +95,13 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
         } else {
             "D=hide-drafts"
         };
+        let author_label = if app.hide_waiting_on_author {
+            "A=show-wait-author"
+        } else {
+            "A=hide-wait-author"
+        };
         format!(
-            "←/→ column   ↑/↓ nav   ⏎=open  t=task  r=refresh  c=copy  w=worktree  e=editor  m=mark-all-read  f=wrap  {drafts_label}  ?=help  q=quit"
+            "←/→ column   ↑/↓ nav   ⏎=open  t=task  r=refresh  c=copy  w=worktree  e=editor  m=mark-all-read  f=wrap  {drafts_label}  {author_label}  ?=help  q=quit"
         )
     };
     frame.render_widget(
@@ -109,18 +114,20 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_columns(frame: &mut Frame, area: Rect, app: &mut App) {
-    let order = App::columns_order();
-    let constraints: Vec<Constraint> = order
+    let visible = app.visible_columns();
+    let constraints: Vec<Constraint> = visible
         .iter()
-        .map(|_| Constraint::Ratio(1, order.len() as u32))
+        .map(|_| Constraint::Ratio(1, visible.len() as u32))
         .collect();
     let slots = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(constraints)
         .split(area);
 
-    for (i, col) in order.iter().enumerate() {
-        render_column(frame, slots[i], app, i, *col);
+    // `order_idx` (the column's slot in the full ORDER) indexes selected/scroll
+    // and drives focus comparison; `slots` is packed to the visible columns only.
+    for (slot, (order_idx, col)) in visible.iter().enumerate() {
+        render_column(frame, slots[slot], app, *order_idx, *col);
     }
 }
 
@@ -328,6 +335,7 @@ fn render_help(frame: &mut Frame) {
             "D       ",
             "toggle draft filter (hide drafts in waiting-on-me/author)",
         ),
+        ("A       ", "toggle the \"Waiting on author\" column"),
         ("?       ", "toggle this help"),
         ("q  Esc  ", "quit"),
     ]
