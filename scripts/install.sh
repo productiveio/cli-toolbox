@@ -125,6 +125,21 @@ download_asset() {
   curl -fsSL -o "$dest" "$url"
 }
 
+# On Apple Silicon the kernel SIGKILLs any binary whose code signature
+# doesn't validate. Our release binaries ship with a linker-generated
+# adhoc signature, but downloading invalidates it: macOS tags the file
+# with com.apple.quarantine / com.apple.provenance xattrs, which breaks
+# the seal. The symptom is a bare "Killed: 9" on first run (and a failed
+# `skill install`). Strip the quarantine flag and re-sign adhoc so the
+# signature covers the file as it sits on disk. No-op on Linux.
+resign_macos_binary() {
+  local dest="$1"
+  [[ "$PLATFORM" == macos-* ]] || return 0
+  command -v codesign &>/dev/null || return 0
+  xattr -d com.apple.quarantine "$dest" 2>/dev/null || true
+  codesign --force --sign - "$dest" 2>/dev/null || true
+}
+
 get_local_version() {
   local tool="$1"
   if command -v "$tool" &>/dev/null; then
@@ -168,6 +183,7 @@ for tool in "${tools[@]}"; do
   echo "[$tool] Downloading ${tool}-${PLATFORM} from release ${tool}-v${latest}..."
   if download_asset "$tool" "$latest" "$PLATFORM" "$INSTALL_DIR/$tool"; then
     chmod +x "$INSTALL_DIR/$tool"
+    resign_macos_binary "$INSTALL_DIR/$tool"
     echo "[$tool] Installed $latest to $INSTALL_DIR/$tool"
     installed+=("$tool")
 
