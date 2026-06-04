@@ -64,6 +64,9 @@ pub struct App {
     pub help_open: bool,
     pub full_titles: bool,
     pub hide_drafts: bool,
+    /// "Waiting on author" is a low-traffic column for most users, so it's
+    /// collapsed out of the board by default and toggled back with `A`.
+    pub hide_waiting_on_author: bool,
     pub is_fetching: bool,
     pub last_error: Option<String>,
     /// Transient non-error message (e.g. "copied <url>"). Rendered separately
@@ -92,6 +95,7 @@ impl App {
             help_open: false,
             full_titles: true,
             hide_drafts: true,
+            hide_waiting_on_author: true,
             is_fetching: false,
             last_error: None,
             status: None,
@@ -106,8 +110,21 @@ impl App {
         &self.state
     }
 
-    pub fn columns_order() -> &'static [Column] {
-        &ORDER
+    /// Whether a column is currently collapsed out of the board view.
+    fn column_hidden(&self, col: Column) -> bool {
+        self.hide_waiting_on_author && col == Column::WaitingOnAuthor
+    }
+
+    /// `ORDER` positions of the columns currently shown, left-to-right. The
+    /// position (not a 0..n slot) is what indexes `selected`/`scroll`, so it
+    /// stays stable when a column is toggled on or off.
+    pub fn visible_columns(&self) -> Vec<(usize, Column)> {
+        ORDER
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| !self.column_hidden(**c))
+            .map(|(i, c)| (i, *c))
+            .collect()
     }
 
     pub fn focused_column(&self) -> Column {
@@ -168,11 +185,21 @@ impl App {
     }
 
     fn focus_left(&mut self) {
-        self.focused = (self.focused + ORDER.len() - 1) % ORDER.len();
+        let vis = self.visible_columns();
+        let pos = vis
+            .iter()
+            .position(|(i, _)| *i == self.focused)
+            .unwrap_or(0);
+        self.focused = vis[(pos + vis.len() - 1) % vis.len()].0;
     }
 
     fn focus_right(&mut self) {
-        self.focused = (self.focused + 1) % ORDER.len();
+        let vis = self.visible_columns();
+        let pos = vis
+            .iter()
+            .position(|(i, _)| *i == self.focused)
+            .unwrap_or(0);
+        self.focused = vis[(pos + 1) % vis.len()].0;
     }
 
     fn move_up(&mut self) {
@@ -416,6 +443,20 @@ impl App {
                 // we don't index past the end of a now-shorter column.
                 self.scroll = [0; COLUMNS_LEN];
                 self.clamp_selections();
+                Intent::None
+            }
+            KeyCode::Char('A') => {
+                self.hide_waiting_on_author = !self.hide_waiting_on_author;
+                // If we just collapsed the focused column, snap focus to the
+                // nearest still-visible one (prefers the left neighbour).
+                if self.column_hidden(self.focused_column()) {
+                    self.focused = self
+                        .visible_columns()
+                        .iter()
+                        .map(|(i, _)| *i)
+                        .min_by_key(|i| i.abs_diff(self.focused))
+                        .unwrap_or(0);
+                }
                 Intent::None
             }
             _ => Intent::None,
@@ -884,6 +925,47 @@ mod tests {
         assert_eq!(a.scroll, [0; COLUMNS_LEN]);
         a.handle_key(key(KeyCode::Char('f')));
         assert!(a.full_titles);
+    }
+
+    #[test]
+    fn waiting_on_author_hidden_by_default_and_toggled_with_a() {
+        let mut a = app();
+        let author_idx = ORDER
+            .iter()
+            .position(|c| *c == Column::WaitingOnAuthor)
+            .unwrap();
+        let on_me_idx = ORDER
+            .iter()
+            .position(|c| *c == Column::WaitingOnMe)
+            .unwrap();
+
+        // Hidden by default — absent from the layout and skipped by navigation.
+        assert!(a.hide_waiting_on_author);
+        assert!(!a.visible_columns().iter().any(|(i, _)| *i == author_idx));
+        a.focused = on_me_idx;
+        a.handle_key(key(KeyCode::Right));
+        assert_eq!(a.focused_column(), Column::Mentions);
+
+        // `A` reveals it; it's now in the layout and navigable.
+        a.handle_key(key(KeyCode::Char('A')));
+        assert!(!a.hide_waiting_on_author);
+        assert!(a.visible_columns().iter().any(|(i, _)| *i == author_idx));
+        a.focused = on_me_idx;
+        a.handle_key(key(KeyCode::Right));
+        assert_eq!(a.focused_column(), Column::WaitingOnAuthor);
+    }
+
+    #[test]
+    fn hiding_focused_author_column_snaps_to_left_neighbour() {
+        let mut a = app();
+        a.handle_key(key(KeyCode::Char('A'))); // reveal
+        a.focused = ORDER
+            .iter()
+            .position(|c| *c == Column::WaitingOnAuthor)
+            .unwrap();
+        a.handle_key(key(KeyCode::Char('A'))); // hide again while focused on it
+        assert!(a.hide_waiting_on_author);
+        assert_eq!(a.focused_column(), Column::WaitingOnMe);
     }
 
     #[test]
