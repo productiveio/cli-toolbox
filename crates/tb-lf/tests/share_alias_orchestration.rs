@@ -47,7 +47,7 @@ fn parses_bare_token() {
 #[test]
 fn parses_full_devportal_url() {
     assert_eq!(
-        parse_share_target("https://devportal.productive.io/s/AbCdE_xy").unwrap(),
+        parse_share_target("https://backyard.productive.io/s/AbCdE_xy").unwrap(),
         "AbCdE_xy"
     );
 }
@@ -55,7 +55,7 @@ fn parses_full_devportal_url() {
 #[test]
 fn parses_url_with_trailing_slash() {
     assert_eq!(
-        parse_share_target("https://devportal.productive.io/s/AbCdE_xy/").unwrap(),
+        parse_share_target("https://backyard.productive.io/s/AbCdE_xy/").unwrap(),
         "AbCdE_xy"
     );
 }
@@ -65,7 +65,7 @@ fn parses_bundle_subpath_url() {
     // Bundles serve files at /s/<token>/<filename> — `set` should still
     // accept that and extract the leading token.
     assert_eq!(
-        parse_share_target("https://devportal.productive.io/s/AbCdE_xy/report.html").unwrap(),
+        parse_share_target("https://backyard.productive.io/s/AbCdE_xy/report.html").unwrap(),
         "AbCdE_xy"
     );
 }

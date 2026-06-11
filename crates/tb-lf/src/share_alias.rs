@@ -153,7 +153,7 @@ mod tests {
     #[test]
     fn parse_target_full_url() {
         assert_eq!(
-            parse_share_target("https://devportal.productive.io/s/AbCdE_xy").unwrap(),
+            parse_share_target("https://backyard.productive.io/s/AbCdE_xy").unwrap(),
             "AbCdE_xy"
         );
     }
@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn parse_target_trailing_slash() {
         assert_eq!(
-            parse_share_target("https://devportal.productive.io/s/AbCdE_xy/").unwrap(),
+            parse_share_target("https://backyard.productive.io/s/AbCdE_xy/").unwrap(),
             "AbCdE_xy"
         );
     }
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn parse_target_bundle_subpath_keeps_first_segment() {
         assert_eq!(
-            parse_share_target("https://devportal.productive.io/s/AbCdE_xy/report.html").unwrap(),
+            parse_share_target("https://backyard.productive.io/s/AbCdE_xy/report.html").unwrap(),
             "AbCdE_xy"
         );
     }

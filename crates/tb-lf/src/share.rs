@@ -8,7 +8,7 @@
 pub const SHARE_ESCALATION_COPY: &str =
     "Anyone with this URL will be able to view it without logging in. Continue?";
 
-/// `https://devportal.productive.io/s/<token>` — trims a trailing slash
+/// `https://backyard.productive.io/s/<token>` — trims a trailing slash
 /// from the base so we never emit `//s/...`.
 pub fn share_url(base: &str, token: &str) -> String {
     format!("{}/s/{}", base.trim_end_matches('/'), token)
@@ -48,12 +48,12 @@ mod tests {
     #[test]
     fn share_url_strips_trailing_slash() {
         assert_eq!(
-            share_url("https://devportal.productive.io", "abc"),
-            "https://devportal.productive.io/s/abc"
+            share_url("https://backyard.productive.io", "abc"),
+            "https://backyard.productive.io/s/abc"
         );
         assert_eq!(
-            share_url("https://devportal.productive.io/", "abc"),
-            "https://devportal.productive.io/s/abc"
+            share_url("https://backyard.productive.io/", "abc"),
+            "https://backyard.productive.io/s/abc"
         );
         assert_eq!(
             share_url("http://localhost:3080", "xyz"),

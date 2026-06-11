@@ -99,7 +99,7 @@ Each user has a personal alias namespace at `/u/<user_id>/<slug>` for shares. Al
 ```bash
 # Create or repoint an alias. Accepts a bare token or a /s/:token URL.
 tb-lf share alias set weekly-report <token>
-tb-lf share alias set weekly-report https://devportal.productive.io/s/<token>
+tb-lf share alias set weekly-report https://backyard.productive.io/s/<token>
 
 # List your aliases (includes per-alias Views count).
 tb-lf share alias list

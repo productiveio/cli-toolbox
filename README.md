@@ -55,7 +55,7 @@ Grab your token from:
 
 - **tb-sem** — [Semaphore CI](https://semaphoreci.com) → click your avatar → Profile Settings → API Token
 - **tb-bug** — [Bugsnag](https://app.bugsnag.com) → Settings → My account → Personal auth tokens
-- **tb-lf** — [DevPortal](https://devportal.productive.io) → AI Tools → click your avatar → API Tokens
+- **tb-lf** — [Backyard](https://backyard.productive.io) → AI Tools → click your avatar → API Tokens
 
 Config files are stored in `~/.config/tb-<tool>/config.toml`. Run `tb-<tool> doctor` to verify connectivity.
 

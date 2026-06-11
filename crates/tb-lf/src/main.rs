@@ -561,7 +561,7 @@ enum ShareAction {
         after_help = "<share-target> accepts a bare token OR a /s/:token URL.\nFlipping `private` → `unlisted` prompts on TTY; pass --force on non-TTY."
     )]
     Update {
-        /// Target: bare token or `https://devportal.productive.io/s/<token>` URL
+        /// Target: bare token or `https://backyard.productive.io/s/<token>` URL
         target: String,
         /// New title
         #[arg(long)]
@@ -578,12 +578,12 @@ enum ShareAction {
         after_help = "<share-target> accepts a bare token OR a /s/:token URL.\nThe share stops resolving at /s/:token immediately; blobs are purged in the background."
     )]
     Rm {
-        /// Target: bare token or `https://devportal.productive.io/s/<token>` URL
+        /// Target: bare token or `https://backyard.productive.io/s/<token>` URL
         target: String,
     },
     /// Manage per-user pretty aliases (`/u/<user_id>/<slug>`) for your shares
     #[command(
-        after_help = "Examples:\n  tb-lf share alias set weekly-report <token>\n  tb-lf share alias set weekly-report https://devportal.productive.io/s/<token>\n  tb-lf share alias list\n  tb-lf share alias rm weekly-report"
+        after_help = "Examples:\n  tb-lf share alias set weekly-report <token>\n  tb-lf share alias set weekly-report https://backyard.productive.io/s/<token>\n  tb-lf share alias list\n  tb-lf share alias rm weekly-report"
     )]
     Alias {
         #[command(subcommand)]
@@ -600,7 +600,7 @@ enum ShareAliasAction {
     Set {
         /// Slug for the alias (kebab-case, 1-64 chars, [a-z0-9-], normalized client-side)
         slug: String,
-        /// Target: bare token or `https://devportal.productive.io/s/<token>` URL
+        /// Target: bare token or `https://backyard.productive.io/s/<token>` URL
         target: String,
         /// Skip the `[y/N]` opt-in prompt when the target is `unlisted` (required on non-TTY)
         #[arg(long)]
@@ -701,7 +701,7 @@ enum EvalAction {
 enum ConfigAction {
     /// Initialize configuration
     Init {
-        /// DevPortal base URL (default: https://devportal.productive.io/)
+        /// Backyard base URL (default: https://backyard.productive.io/)
         #[arg(long)]
         url: Option<String>,
         /// API token (prompted interactively if omitted)
@@ -4073,9 +4073,9 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
             let default_url = existing
                 .as_ref()
                 .map(|c| c.url.as_str())
-                .unwrap_or("https://devportal.productive.io/");
+                .unwrap_or("https://backyard.productive.io/");
             let url = match toolbox_core::prompt::prompt_text(
-                "DevPortal URL:",
+                "Backyard URL:",
                 url.as_deref(),
                 default_url,
             ) {

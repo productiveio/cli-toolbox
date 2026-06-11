@@ -208,7 +208,7 @@ impl DevPortalClient {
         &self.cache
     }
 
-    /// Bare DevPortal base URL (e.g. `https://devportal.productive.io`) —
+    /// Bare Backyard base URL (e.g. `https://backyard.productive.io`) —
     /// used to build absolute `/u/<user_id>/<slug>` URLs to print after a
     /// successful alias write.
     pub fn devportal_url(&self) -> &str {
