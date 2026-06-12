@@ -79,6 +79,12 @@ tb-lf share upload bundle/*.html --visibility unlisted --title "Q3 review"
 
 `--visibility private` (default) requires a DevPortal login to view; `--visibility unlisted` exposes a capability URL (anyone with the token can read).
 
+### Slack-ready summary
+
+After every `share upload`, write a 1–3 sentence summary of the shared artifact and present it together with the share URL as one ready-to-paste Slack block: what the artifact is, the headline finding or key numbers, and why the reader should care.
+
+You write the summary from the artifact's actual content — you produced or read the file you just uploaded. The CLI deliberately does not generate it (ZFC: summarization is reasoning, and reasoning belongs to the model, not the code). It's a draft for the user to paste — never post it to Slack yourself without explicit confirmation.
+
 ### Manage existing shares
 
 ```bash
