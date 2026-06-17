@@ -43,6 +43,7 @@ Mix them freely — backend in Docker, the one you're hacking on locally.
 tb-devctl start api,frontend --docker      # Docker: declarative full service set
 tb-devctl start frontend --local --bg      # Local, background
 tb-devctl start frontend --local           # Local, foreground (Ctrl+C to stop)
+tb-devctl start frontend --local --dir ../alt-checkout  # Local, custom working dir
 tb-devctl start --preset backend           # Named preset from tb-devctl.toml
 
 # Stop / restart
