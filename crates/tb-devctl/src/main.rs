@@ -80,6 +80,12 @@ enum Commands {
 
     /// Diagnose environment health
     Doctor,
+
+    /// Manage Claude Code skill file
+    Skill {
+        #[command(subcommand)]
+        action: toolbox_core::skill::SkillAction,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -94,6 +100,20 @@ enum InfraAction {
 
 fn main() {
     let cli = Cli::parse();
+
+    // `skill` doesn't need a loaded config — handle it before locating tb-devctl.toml
+    // so it works from anywhere (e.g. `scripts/install.sh --with-skill`).
+    if let Commands::Skill { action } = &cli.command {
+        let skill = toolbox_core::skill::SkillConfig {
+            tool_name: "tb-devctl",
+            content: include_str!("../SKILL.md"),
+        };
+        if let Err(e) = toolbox_core::skill::run(&skill, action) {
+            eprintln!("{} {}", "Error:".red().bold(), e);
+            std::process::exit(1);
+        }
+        return;
+    }
 
     let cwd = env::current_dir().unwrap_or_else(|e| {
         eprintln!(
@@ -158,6 +178,7 @@ fn main() {
             InfraAction::Status => commands::infra::status(&cfg, &root),
         },
         Commands::Doctor => commands::doctor::run(&cfg, &root),
+        Commands::Skill { .. } => unreachable!("handled before config load"),
     };
 
     if let Err(e) = result {
