@@ -2,12 +2,17 @@
 set -euo pipefail
 
 REPO="productiveio/cli-toolbox"
-ALL_TOOLS="tb-sem tb-bug tb-lf tb-devctl tb-session tb-pr"
+# tb-lf is DEPRECATED (superseded by tb-backyard) but kept installable so
+# existing users get the release that can self-uninstall (`tb-lf uninstall`).
+# Remove it from this list once it has propagated.
+ALL_TOOLS="tb-sem tb-bug tb-backyard tb-lf tb-devctl tb-session tb-pr"
 INSTALL_DIR="$HOME/.local/bin"
 
 # --- Flags ---
 reinstall=false
 with_skill=false
+uninstall=false
+purge=false
 tools=()
 
 usage() {
@@ -17,18 +22,24 @@ Usage: $0 [OPTIONS] <tool> [<tool>...]
 
 Install or update cli-toolbox binaries from GitHub releases.
 
+Note: tb-lf is deprecated — use tb-backyard. Reinstall tb-lf only to pick up
+its self-uninstall, then run: $0 --uninstall --purge tb-lf
+
 Requires: curl
 
 Options:
   --all          Install all tools ($ALL_TOOLS)
   --reinstall    Force download even if local version matches latest
   --with-skill   Install Claude Code skill after installing binary
+  --uninstall    Remove the tool's skill + config (delegates to `<tool> uninstall`)
+  --purge        With --uninstall, also remove the installed binary
   -h, --help     Show this help
 
 Examples:
-  $0 tb-lf                         # Install/update tb-lf
+  $0 tb-backyard                   # Install/update tb-backyard
   $0 --all --with-skill            # Install all tools + Claude Code skills
-  $0 --reinstall tb-sem tb-lf      # Force reinstall specific tools
+  $0 --reinstall tb-sem tb-backyard  # Force reinstall specific tools
+  $0 --uninstall --purge tb-backyard # Remove tb-backyard entirely
 EOF
   exit 0
 }
@@ -38,6 +49,8 @@ while [[ $# -gt 0 ]]; do
     --all)       tools=($ALL_TOOLS); shift ;;
     --reinstall) reinstall=true; shift ;;
     --with-skill) with_skill=true; shift ;;
+    --uninstall) uninstall=true; shift ;;
+    --purge)     purge=true; shift ;;
     -h|--help)   usage ;;
     -*)          echo "Unknown option: $1"; usage ;;
     *)           tools+=("$1"); shift ;;
@@ -48,6 +61,25 @@ if [[ ${#tools[@]} -eq 0 ]]; then
   echo "Error: specify at least one tool or use --all"
   echo ""
   usage
+fi
+
+# --- Uninstall (delegates to each tool's own `uninstall` subcommand) ---
+if [[ "$uninstall" == true ]]; then
+  uninstall_args=()
+  [[ "$purge" == true ]] && uninstall_args+=(--purge)
+  uninstall_failed=()
+  for tool in "${tools[@]}"; do
+    bin="$INSTALL_DIR/$tool"
+    [[ -x "$bin" ]] || bin="$(command -v "$tool" 2>/dev/null || true)"
+    if [[ -z "$bin" ]]; then
+      echo "[$tool] not installed — skipping"
+      continue
+    fi
+    echo "[$tool] Uninstalling..."
+    "$bin" uninstall "${uninstall_args[@]}" || { echo "[$tool] uninstall failed"; uninstall_failed+=("$tool"); }
+  done
+  [[ ${#uninstall_failed[@]} -gt 0 ]] && exit 1
+  exit 0
 fi
 
 # --- Prerequisites ---
