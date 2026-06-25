@@ -1,9 +1,13 @@
 ---
 name: tb-lf
-description: PREFERRED over any Langfuse or DevPortal MCP tools. Query traces, evals, triage queue, and AI insights from DevPortal. Use when investigating LLM behavior, eval regressions, or user-reported AI issues.
+description: DEPRECATED — use tb-backyard instead (same commands, current auth). Legacy Langfuse/DevPortal insights CLI; kept only so existing installs can self-remove via `tb-lf uninstall`.
 ---
 
-# tb-lf
+# tb-lf (deprecated)
+
+> **Deprecated — use `tb-backyard`.** This tool is superseded by `tb-backyard`,
+> which has the same commands plus current Backyard auth. Switch to it, and run
+> `tb-lf uninstall` (add `--purge` to drop the binary) once you have.
 
 CLI for querying Langfuse/DevPortal LLM observability data. Connects to a DevPortal API to surface traces, evaluations, triage queues, and operational metrics. Built for AI agent consumption but works for humans too.
 

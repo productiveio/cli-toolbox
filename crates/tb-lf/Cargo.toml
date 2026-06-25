@@ -1,8 +1,8 @@
 [package]
 name = "tb-lf"
-version = "0.8.2"
+version = "0.9.0"
 edition = "2024"
-description = "Langfuse insights CLI — devportal-backed"
+description = "[DEPRECATED — use tb-backyard] Langfuse insights CLI"
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

@@ -534,6 +534,15 @@ enum Commands {
         #[command(subcommand)]
         action: ShareAction,
     },
+    /// Remove tb-lf's skill and config (and, with --purge, the binary)
+    #[command(
+        after_help = "tb-lf is deprecated; use tb-backyard. This removes ~/.claude/skills/tb-lf/\nand the config dir. The binary is left in place unless you pass --purge.\n\nExamples:\n  tb-lf uninstall\n  tb-lf uninstall --purge"
+    )]
+    Uninstall {
+        /// Also remove the installed binary (~/.local/bin/tb-lf)
+        #[arg(long)]
+        purge: bool,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -806,6 +815,12 @@ toolbox_core::run_main!(run());
 async fn run() -> tb_lf::error::Result<()> {
     let cli = Cli::parse();
 
+    eprintln!(
+        "{}",
+        "⚠ tb-lf is deprecated — use tb-backyard instead. Run `tb-lf uninstall` to remove it."
+            .yellow()
+    );
+
     if cli.version {
         toolbox_core::version_check::print_version("tb-lf", env!("CARGO_PKG_VERSION"));
         return Ok(());
@@ -826,6 +841,10 @@ async fn run() -> tb_lf::error::Result<()> {
             content: include_str!("../SKILL.md"),
         };
         toolbox_core::skill::run(&skill, action).map_err(tb_lf::error::TbLfError::Other)?;
+        return Ok(());
+    }
+    if let Commands::Uninstall { purge } = command {
+        toolbox_core::uninstall::run("tb-lf", purge).map_err(tb_lf::error::TbLfError::Other)?;
         return Ok(());
     }
 
@@ -3514,7 +3533,7 @@ async fn run() -> tb_lf::error::Result<()> {
             },
         },
 
-        Commands::Config { .. } | Commands::Skill { .. } => {} // handled before client construction
+        Commands::Config { .. } | Commands::Skill { .. } | Commands::Uninstall { .. } => {} // handled before client construction
     }
 
     Ok(())
