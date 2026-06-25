@@ -1,0 +1,28 @@
+[package]
+name = "tb-backyard"
+version = "0.1.0"
+edition = "2024"
+description = "Productive Backyard CLI — AI insights, evals, and document shares"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "tb-backyard"
+path = "src/main.rs"
+
+[lib]
+doctest = false
+
+[dependencies]
+toolbox-core = { workspace = true, features = ["cache", "prompt", "version-check"] }
+clap.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+chrono.workspace = true
+colored.workspace = true
+thiserror.workspace = true
+base64 = "0.22"
