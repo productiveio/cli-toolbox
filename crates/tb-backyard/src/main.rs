@@ -4289,7 +4289,7 @@ fn print_friction_breakdown(stats: &serde_json::Value, key: &str, label: &str) {
         .iter()
         .map(|(k, v)| (k, v.as_i64().unwrap_or(0)))
         .collect();
-    rows.sort_by(|a, b| b.1.cmp(&a.1));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.1));
     println!("\n  {}", label.bold());
     for (k, n) in rows {
         println!("    {n:>4}  {k}");
