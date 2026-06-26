@@ -910,7 +910,7 @@ mod tests {
                 "agent_type": "DiscoveryAgent",
                 "outcome": "successful"
             },
-            "flags": { "aiAgentDiscoveryAgent": true, "aiApiLatest": false },
+            "flags": { "myFeatureFlag": true, "otherFlag": false },
             "triage": { "category": "feature_request", "confidence": "high" }
         });
 
@@ -930,7 +930,7 @@ mod tests {
 
         let flags = detail.flags.unwrap();
         assert_eq!(flags.len(), 2);
-        assert_eq!(flags["aiAgentDiscoveryAgent"], json!(true));
+        assert_eq!(flags["myFeatureFlag"], json!(true));
 
         let triage = detail.triage.unwrap();
         assert_eq!(triage.category.as_deref(), Some("feature_request"));

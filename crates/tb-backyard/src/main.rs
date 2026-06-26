@@ -440,7 +440,7 @@ enum Commands {
     /// Compare cohort stats for a feature flag (ON vs OFF)
     #[command(
         name = "flag-cohort",
-        after_help = "Examples:\n  tb-backyard flag-cohort aiAgentLazyOutput --from 7d\n  tb-backyard flag-cohort aiAgentLazyOutput --from 2026-03-20 --to 2026-03-25\n  tb-backyard flag-cohort aiAgentLazyOutput --from 7d --name agent-generation\n  tb-backyard flag-cohort aiAgentLazyOutput --from 7d --json"
+        after_help = "Examples:\n  tb-backyard flag-cohort myFeatureFlag --from 7d\n  tb-backyard flag-cohort myFeatureFlag --from 2026-03-20 --to 2026-03-25\n  tb-backyard flag-cohort myFeatureFlag --from 7d --name my-agent\n  tb-backyard flag-cohort myFeatureFlag --from 7d --json"
     )]
     FlagCohort {
         /// Flag name to compare
@@ -457,7 +457,7 @@ enum Commands {
     /// Stratified flag-cohort analysis — control for other flags
     #[command(
         name = "flag-cohort-stratified",
-        after_help = "Examples:\n  tb-backyard flag-cohort-stratified aiAgentDiscoveryAgent --from 7d --to today\n  tb-backyard flag-cohort-stratified aiAgentDiscoveryAgent --from 7d --to today --env default\n  tb-backyard flag-cohort-stratified aiAgentDiscoveryAgent --from 7d --to today --max-cohorts 5\n  tb-backyard flag-cohort-stratified aiAgentDiscoveryAgent --from 7d --to today --detail traces --json"
+        after_help = "Examples:\n  tb-backyard flag-cohort-stratified myFeatureFlag --from 7d --to today\n  tb-backyard flag-cohort-stratified myFeatureFlag --from 7d --to today --env default\n  tb-backyard flag-cohort-stratified myFeatureFlag --from 7d --to today --max-cohorts 5\n  tb-backyard flag-cohort-stratified myFeatureFlag --from 7d --to today --detail traces --json"
     )]
     FlagCohortStratified {
         /// Flag name to analyze
@@ -483,7 +483,7 @@ enum Commands {
     /// Cross-environment cohort analysis — pivot on env (treatment vs control) instead of flag-tag
     #[command(
         name = "env-cohort",
-        after_help = "Examples:\n  tb-backyard env-cohort --treatment-env lazy-output-redesign --control-envs production,latest --from 14d --to today\n  tb-backyard env-cohort --treatment-env lazy-output-redesign --control-envs production --ignore-flags aiAgentLazyOutput --from 14d --to today\n  tb-backyard env-cohort --treatment-env lazy-output-redesign --control-envs production --ignore-flags aiAgentLazyOutput --from 14d --to today --detail traces --json\n\nUse this when the target flag is forced-ON in code in the treatment env (so the trace flag-tag is unreliable). control-envs are envs where the feature is OFF / not deployed. ignore-flags excludes flags from the fingerprint — typically the target flag itself."
+        after_help = "Examples:\n  tb-backyard env-cohort --treatment-env my-review-env --control-envs production,latest --from 14d --to today\n  tb-backyard env-cohort --treatment-env my-review-env --control-envs production --ignore-flags myFeatureFlag --from 14d --to today\n  tb-backyard env-cohort --treatment-env my-review-env --control-envs production --ignore-flags myFeatureFlag --from 14d --to today --detail traces --json\n\nUse this when the target flag is forced-ON in code in the treatment env (so the trace flag-tag is unreliable). control-envs are envs where the feature is OFF / not deployed. ignore-flags excludes flags from the fingerprint — typically the target flag itself."
     )]
     EnvCohort {
         /// Environment where the feature is forced-ON in code (e.g. a review env)
@@ -513,7 +513,7 @@ enum Commands {
     /// Download trace summaries for a flag cohort as JSON
     #[command(
         name = "flag-traces",
-        after_help = "Examples:\n  tb-backyard flag-traces aiAgentLazyOutput --from 7d\n  tb-backyard flag-traces aiAgentLazyOutput --value false --from 7d\n  tb-backyard flag-traces aiAgentLazyOutput --from 7d --name agent-generation"
+        after_help = "Examples:\n  tb-backyard flag-traces myFeatureFlag --from 7d\n  tb-backyard flag-traces myFeatureFlag --value false --from 7d\n  tb-backyard flag-traces myFeatureFlag --from 7d --name my-agent"
     )]
     FlagTraces {
         /// Flag name to filter by
