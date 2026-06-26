@@ -26,7 +26,9 @@ impl Config {
         let from_secrets: Option<Config> = toolbox_core::config::load_secrets_section("backyard")
             .map_err(|e| TbBackyardError::Config(e.to_string()))?;
 
-        // 2. Fall back to ~/.config/tb-backyard/config.toml
+        // 2. Fall back to the standalone config file at the platform config dir
+        //    (see toolbox_core::config::config_path — `~/Library/Application
+        //    Support/tb-backyard` on macOS, `~/.config/tb-backyard` on Linux).
         let from_file = match from_secrets {
             Some(c) => Some(c),
             None => {
@@ -37,9 +39,14 @@ impl Config {
         };
 
         // 3. Token: BACKYARD_TOKEN override → PRODUCTIVE_AUTH_TOKEN envelope →
-        //    config file. Backyard accepts a Productive PAT (X-Auth-Token); the
-        //    common `PRODUCTIVE_AUTH_TOKEN` is a base64 JSON envelope, so the
-        //    inner `personal_access_token` is extracted from it.
+        //    config file. Backyard accepts a Productive PAT via X-Auth-Token.
+        //
+        // TECH DEBT — remove when the secrets-inventory-system lands (brain:
+        // idea/secrets-inventory-system). Both env vars are a stopgap, and
+        // PRODUCTIVE_AUTH_TOKEN is a base64 envelope we crack for the inner PAT
+        // even though that envelope form is itself being deprecated. Once the
+        // inventory exposes a raw secret source, source the PAT from there and
+        // drop `resolve_env_token` + `decode_pat_envelope`.
         let env_token = Self::resolve_env_token();
 
         // A config file is optional: an env-supplied token is enough to run
@@ -52,9 +59,12 @@ impl Config {
                 project: None,
             },
             (None, None) => {
-                return Err(TbBackyardError::Config(
-                    "No config found. Set PRODUCTIVE_AUTH_TOKEN/BACKYARD_TOKEN, run `tb-backyard config init --token <TOKEN>`, or create ~/.config/tb-backyard/config.toml".into(),
-                ));
+                let cfg = Self::config_path()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| "the config file".into());
+                return Err(TbBackyardError::Config(format!(
+                    "No config found. Set PRODUCTIVE_AUTH_TOKEN or BACKYARD_TOKEN, run `tb-backyard config init --token <TOKEN>`, or create {cfg}",
+                )));
             }
         };
 
