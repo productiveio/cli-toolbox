@@ -193,9 +193,8 @@ mod tests {
 
     #[test]
     fn decode_pat_envelope_extracts_inner_token() {
-        let raw = envelope(
-            r#"{"organization_id":"109","personal_access_token":"abc123","user_id":"53237"}"#,
-        );
+        let raw =
+            envelope(r#"{"organization_id":"1","personal_access_token":"abc123","user_id":"2"}"#);
         assert_eq!(decode_pat_envelope(&raw).as_deref(), Some("abc123"));
         // Tolerates surrounding whitespace (env vars sometimes carry a newline).
         assert_eq!(
