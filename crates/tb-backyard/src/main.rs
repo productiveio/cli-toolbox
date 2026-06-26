@@ -241,10 +241,14 @@ enum Commands {
         pagination: Pagination,
     },
     /// Triage queue statistics
-    #[command(after_help = "Examples:\n  tb-backyard queue-stats\n  tb-backyard queue-stats --json")]
+    #[command(
+        after_help = "Examples:\n  tb-backyard queue-stats\n  tb-backyard queue-stats --json"
+    )]
     QueueStats,
     /// Show a single queue item
-    #[command(after_help = "Examples:\n  tb-backyard queue-item 42\n  tb-backyard queue-item 42 --json")]
+    #[command(
+        after_help = "Examples:\n  tb-backyard queue-item 42\n  tb-backyard queue-item 42 --json"
+    )]
     QueueItem { id: i64 },
     /// Update a queue item
     #[command(
@@ -390,7 +394,9 @@ enum Commands {
         status: Option<String>,
     },
     /// Queue items for a feature
-    #[command(after_help = "Examples:\n  tb-backyard feature-items 5\n  tb-backyard feature-items 5 --json")]
+    #[command(
+        after_help = "Examples:\n  tb-backyard feature-items 5\n  tb-backyard feature-items 5 --json"
+    )]
     FeatureItems { id: i64 },
     /// AI-optimized context block
     #[command(
@@ -895,7 +901,8 @@ async fn run() -> tb_backyard::error::Result<()> {
             tool_name: "tb-backyard",
             content: include_str!("../SKILL.md"),
         };
-        toolbox_core::skill::run(&skill, action).map_err(tb_backyard::error::TbBackyardError::Other)?;
+        toolbox_core::skill::run(&skill, action)
+            .map_err(tb_backyard::error::TbBackyardError::Other)?;
         return Ok(());
     }
     if let Commands::Uninstall { purge } = command {
@@ -973,7 +980,10 @@ async fn run() -> tb_backyard::error::Result<()> {
             if resp.data.is_empty() {
                 println!(
                     "{}",
-                    output::empty_hint("traces", "Try widening filters or check `tb-backyard doctor`.")
+                    output::empty_hint(
+                        "traces",
+                        "Try widening filters or check `tb-backyard doctor`."
+                    )
                 );
                 return Ok(());
             }
@@ -1028,7 +1038,9 @@ async fn run() -> tb_backyard::error::Result<()> {
             observations,
         } => {
             let project_id = project_id.ok_or_else(|| {
-                tb_backyard::error::TbBackyardError::Config("--project required for trace fetch.".into())
+                tb_backyard::error::TbBackyardError::Config(
+                    "--project required for trace fetch.".into(),
+                )
             })?;
             let path = format!("/langfuse/traces/{}?project_id={}", id, project_id);
             let trace: serde_json::Value = client.get(&path, CacheTtl::Long).await?;
@@ -1272,7 +1284,9 @@ async fn run() -> tb_backyard::error::Result<()> {
 
         Commands::Observation { id } => {
             let project_id = project_id.ok_or_else(|| {
-                tb_backyard::error::TbBackyardError::Config("--project required for observation fetch.".into())
+                tb_backyard::error::TbBackyardError::Config(
+                    "--project required for observation fetch.".into(),
+                )
             })?;
             let path = format!("/langfuse/observations/{}?project_id={}", id, project_id);
             let obs: serde_json::Value = client.get(&path, CacheTtl::Long).await?;
@@ -1843,10 +1857,8 @@ async fn run() -> tb_backyard::error::Result<()> {
         }
 
         Commands::QueueItem { id } => {
-            let path = BackyardClient::build_path(
-                &format!("/queue_items/{}", id),
-                &[("project_id", pid)],
-            );
+            let path =
+                BackyardClient::build_path(&format!("/queue_items/{}", id), &[("project_id", pid)]);
             let item: QueueItem = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -1913,7 +1925,11 @@ async fn run() -> tb_backyard::error::Result<()> {
             if let Some(trace_id) = &item.trace_langfuse_id {
                 println!(
                     "\n  {}",
-                    format!("Run `tb-backyard trace {}` to see the full trace.", trace_id).dimmed()
+                    format!(
+                        "Run `tb-backyard trace {}` to see the full trace.",
+                        trace_id
+                    )
+                    .dimmed()
                 );
             }
         }
@@ -2866,7 +2882,10 @@ async fn run() -> tb_backyard::error::Result<()> {
                 // Minimal ~50 token output for hook injection
                 let mut parts = vec![format!("tb-backyard v{}", tb_backyard::VERSION)];
                 if let Ok(resp) = client
-                    .get::<tb_backyard::api::PaginatedResponse<Project>>("/projects", CacheTtl::Long)
+                    .get::<tb_backyard::api::PaginatedResponse<Project>>(
+                        "/projects",
+                        CacheTtl::Long,
+                    )
                     .await
                 {
                     let names: Vec<&str> = resp.data.iter().map(|p| p.name.as_str()).collect();
@@ -2900,7 +2919,9 @@ async fn run() -> tb_backyard::error::Result<()> {
             println!("- `tb-backyard eval runs --limit 5` — recent eval runs");
             println!("- `tb-backyard queue --status pending_review` — pending triage items");
             println!("- `tb-backyard queue-update <id> --team <id>` — assign team to queue item");
-            println!("- `tb-backyard queue-bulk-update --filter-* --set-* --dry-run` — bulk update");
+            println!(
+                "- `tb-backyard queue-bulk-update --filter-* --set-* --dry-run` — bulk update"
+            );
             println!("- `tb-backyard teams` — list teams");
             println!("- `tb-backyard search <query>` — search traces");
             println!("- `tb-backyard trace <id> --project <p>` — full trace detail");
@@ -2914,7 +2935,10 @@ async fn run() -> tb_backyard::error::Result<()> {
             println!("- Triage: flagged=needs review, dismissed=noise, untouched=not yet triaged");
             println!("- Eval pass rate: >=0.90 healthy, <0.70 needs attention");
 
-            toolbox_core::version_check::print_update_hint("tb-backyard", env!("CARGO_PKG_VERSION"));
+            toolbox_core::version_check::print_update_hint(
+                "tb-backyard",
+                env!("CARGO_PKG_VERSION"),
+            );
         }
 
         Commands::Human => {
@@ -2968,7 +2992,9 @@ async fn run() -> tb_backyard::error::Result<()> {
             println!("  tb-backyard queue-update 42 --team 25    Assign team");
             println!("  tb-backyard queue-update 42 --no-team    Clear team");
             println!("  tb-backyard queue-update 42 --status confirmed");
-            println!("  tb-backyard queue-bulk-update --filter-status pending_review --set-team 25");
+            println!(
+                "  tb-backyard queue-bulk-update --filter-status pending_review --set-team 25"
+            );
             println!("  tb-backyard queue-bulk-update ... --dry-run  Preview first");
             println!("  tb-backyard queue-delete 42              Delete an item");
             println!();
@@ -3098,7 +3124,10 @@ async fn run() -> tb_backyard::error::Result<()> {
                 format!("{} B", bytes)
             };
             println!("  {:<10} {} files, {}", "Cache:", count, size_str);
-            toolbox_core::version_check::print_update_hint("tb-backyard", env!("CARGO_PKG_VERSION"));
+            toolbox_core::version_check::print_update_hint(
+                "tb-backyard",
+                env!("CARGO_PKG_VERSION"),
+            );
         }
 
         Commands::Flags => {
@@ -3659,22 +3688,32 @@ async fn share_upload(
             .file_name()
             .and_then(|n| n.to_str())
             .ok_or_else(|| {
-                tb_backyard::error::TbBackyardError::Other(format!("invalid filename: {}", path.display()))
+                tb_backyard::error::TbBackyardError::Other(format!(
+                    "invalid filename: {}",
+                    path.display()
+                ))
             })?
             .to_string();
 
         let bytes = tokio::fs::read(path).await.map_err(|e| {
-            tb_backyard::error::TbBackyardError::Other(format!("failed to read {}: {}", path.display(), e))
+            tb_backyard::error::TbBackyardError::Other(format!(
+                "failed to read {}: {}",
+                path.display(),
+                e
+            ))
         })?;
         let mime = mime_for_path(path);
         let part = multipart::Part::bytes(bytes)
             .file_name(filename)
             .mime_str(&mime)
-            .map_err(|e| tb_backyard::error::TbBackyardError::Other(format!("invalid mime: {}", e)))?;
+            .map_err(|e| {
+                tb_backyard::error::TbBackyardError::Other(format!("invalid mime: {}", e))
+            })?;
         form = form.part("files[]", part);
     }
 
-    let resp: tb_backyard::types::ShareResponse = client.post_multipart("/spa_api/shares", form).await?;
+    let resp: tb_backyard::types::ShareResponse =
+        client.post_multipart("/spa_api/shares", form).await?;
 
     if json {
         println!("{}", output::render_json(&resp));
@@ -3703,10 +3742,11 @@ async fn resolve_own_share_by_target(
     client: &BackyardClient,
     target: &str,
 ) -> Result<tb_backyard::types::ShareSummary, tb_backyard::error::TbBackyardError> {
-    let token =
-        tb_backyard::share_alias::parse_share_target(target).map_err(tb_backyard::error::TbBackyardError::Other)?;
+    let token = tb_backyard::share_alias::parse_share_target(target)
+        .map_err(tb_backyard::error::TbBackyardError::Other)?;
 
-    let shares: Vec<tb_backyard::types::ShareSummary> = client.backyard_get("/spa_api/shares").await?;
+    let shares: Vec<tb_backyard::types::ShareSummary> =
+        client.backyard_get("/spa_api/shares").await?;
 
     shares
         .into_iter()
@@ -3757,10 +3797,9 @@ fn check_unlisted_opt_in(
             eprint!("Proceed? [y/N]: ");
             std::io::stderr().flush().ok();
             let mut line = String::new();
-            std::io::stdin()
-                .lock()
-                .read_line(&mut line)
-                .map_err(|e| tb_backyard::error::TbBackyardError::Other(format!("read failed: {}", e)))?;
+            std::io::stdin().lock().read_line(&mut line).map_err(|e| {
+                tb_backyard::error::TbBackyardError::Other(format!("read failed: {}", e))
+            })?;
             let answer = line.trim().to_lowercase();
             if answer == "y" || answer == "yes" {
                 Ok(())
@@ -3804,7 +3843,8 @@ async fn share_alias_set(
             normalized
         );
     }
-    tb_backyard::share_alias::validate_slug(&normalized).map_err(tb_backyard::error::TbBackyardError::Other)?;
+    tb_backyard::share_alias::validate_slug(&normalized)
+        .map_err(tb_backyard::error::TbBackyardError::Other)?;
 
     let new_target = resolve_own_share_by_target(client, target).await?;
     let becomes_unlisted = new_target.visibility == "unlisted";
@@ -3884,7 +3924,8 @@ async fn share_alias_list(
     if rows.is_empty() {
         println!(
             "{}",
-            "No aliases yet. Create one with `tb-backyard share alias set <slug> <token>`.".dimmed()
+            "No aliases yet. Create one with `tb-backyard share alias set <slug> <token>`."
+                .dimmed()
         );
         return Ok(());
     }
@@ -3958,8 +3999,12 @@ struct ShareUpdateInner<'a> {
     visibility: Option<&'a str>,
 }
 
-async fn share_list(client: &BackyardClient, json: bool) -> Result<(), tb_backyard::error::TbBackyardError> {
-    let rows: Vec<tb_backyard::types::ShareSummary> = client.backyard_get("/spa_api/shares").await?;
+async fn share_list(
+    client: &BackyardClient,
+    json: bool,
+) -> Result<(), tb_backyard::error::TbBackyardError> {
+    let rows: Vec<tb_backyard::types::ShareSummary> =
+        client.backyard_get("/spa_api/shares").await?;
 
     if json {
         println!("{}", output::render_json(&rows));
@@ -4028,7 +4073,8 @@ async fn share_update(
         },
     };
     let path = format!("/spa_api/shares/{}", share.id);
-    let updated: tb_backyard::types::ShareSummary = client.backyard_patch_json(&path, &payload).await?;
+    let updated: tb_backyard::types::ShareSummary =
+        client.backyard_patch_json(&path, &payload).await?;
 
     if json {
         println!("{}", output::render_json(&updated));
@@ -4097,9 +4143,8 @@ async fn friction_submit(
         friction::build_quick_payload(desc, category, severity, root_cause, repo, time_lost)
     } else {
         let raw = match body {
-            Some(path) => std::fs::read_to_string(path).map_err(|e| {
-                TbBackyardError::Other(format!("reading {}: {e}", path.display()))
-            })?,
+            Some(path) => std::fs::read_to_string(path)
+                .map_err(|e| TbBackyardError::Other(format!("reading {}: {e}", path.display())))?,
             None => {
                 use std::io::Read;
                 let mut buf = String::new();
@@ -4152,14 +4197,22 @@ async fn friction_list(
     if resp.data.is_empty() {
         println!(
             "{}",
-            output::empty_hint("friction entries", "Log one with `tb-backyard friction submit`.")
+            output::empty_hint(
+                "friction entries",
+                "Log one with `tb-backyard friction submit`."
+            )
         );
         return Ok(());
     }
 
     println!(
         "{}\n",
-        format!("Friction entries ({} of {})", resp.data.len(), resp.meta.total).bold()
+        format!(
+            "Friction entries ({} of {})",
+            resp.data.len(),
+            resp.meta.total
+        )
+        .bold()
     );
     for e in &resp.data {
         let summary = e.summary.as_deref().unwrap_or("(no summary)");
@@ -4187,8 +4240,10 @@ async fn friction_report(
     repo: Option<&str>,
     json: bool,
 ) -> Result<(), tb_backyard::error::TbBackyardError> {
-    let path =
-        BackyardClient::build_path("/feedback_entries/stats", &[("repo", repo.map(str::to_string))]);
+    let path = BackyardClient::build_path(
+        "/feedback_entries/stats",
+        &[("repo", repo.map(str::to_string))],
+    );
     let stats: serde_json::Value = client.get(&path, CacheTtl::Short).await?;
 
     if json {
@@ -4198,7 +4253,10 @@ async fn friction_report(
 
     let scope = repo.unwrap_or("all repos");
     println!("{}\n", format!("Friction Report — {scope}").bold());
-    let total = stats.get("total").and_then(serde_json::Value::as_i64).unwrap_or(0);
+    let total = stats
+        .get("total")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0);
     let lost = stats
         .get("total_time_lost_minutes")
         .and_then(serde_json::Value::as_i64)
@@ -4423,7 +4481,10 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_backyard::error::Res
                 token,
                 project,
             };
-            toolbox_core::config::save_config(&tb_backyard::config::Config::config_path()?, &config)?;
+            toolbox_core::config::save_config(
+                &tb_backyard::config::Config::config_path()?,
+                &config,
+            )?;
             println!(
                 "Config saved to {}",
                 tb_backyard::config::Config::config_path()?.display()
@@ -4453,7 +4514,9 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_backyard::error::Res
                     .await?;
 
                 if resp.data.is_empty() {
-                    return Err(tb_backyard::error::TbBackyardError::Config("No projects found".into()));
+                    return Err(tb_backyard::error::TbBackyardError::Config(
+                        "No projects found".into(),
+                    ));
                 }
 
                 let options = build_lf_project_options(&resp.data);
@@ -4483,7 +4546,10 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_backyard::error::Res
 
             // Scalar set (requires value)
             let value = value.as_ref().ok_or_else(|| {
-                tb_backyard::error::TbBackyardError::Config(format!("Value is required for key '{}'", key))
+                tb_backyard::error::TbBackyardError::Config(format!(
+                    "Value is required for key '{}'",
+                    key
+                ))
             })?;
 
             match key.as_str() {

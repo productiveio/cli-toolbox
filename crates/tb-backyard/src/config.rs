@@ -91,7 +91,8 @@ impl Config {
     }
 
     pub fn config_path() -> Result<PathBuf> {
-        toolbox_core::config::config_path("tb-backyard").map_err(|e| TbBackyardError::Config(e.to_string()))
+        toolbox_core::config::config_path("tb-backyard")
+            .map_err(|e| TbBackyardError::Config(e.to_string()))
     }
 
     pub fn base_api_url(&self) -> String {
@@ -182,10 +183,15 @@ mod tests {
 
     #[test]
     fn decode_pat_envelope_extracts_inner_token() {
-        let raw = envelope(r#"{"organization_id":"109","personal_access_token":"abc123","user_id":"53237"}"#);
+        let raw = envelope(
+            r#"{"organization_id":"109","personal_access_token":"abc123","user_id":"53237"}"#,
+        );
         assert_eq!(decode_pat_envelope(&raw).as_deref(), Some("abc123"));
         // Tolerates surrounding whitespace (env vars sometimes carry a newline).
-        assert_eq!(decode_pat_envelope(&format!("  {raw}\n")).as_deref(), Some("abc123"));
+        assert_eq!(
+            decode_pat_envelope(&format!("  {raw}\n")).as_deref(),
+            Some("abc123")
+        );
     }
 
     #[test]
@@ -195,6 +201,9 @@ mod tests {
         // Valid base64, but the JSON has no personal_access_token.
         assert_eq!(decode_pat_envelope(&envelope(r#"{"user_id":"1"}"#)), None);
         // Present but empty → treated as absent so the caller falls through.
-        assert_eq!(decode_pat_envelope(&envelope(r#"{"personal_access_token":""}"#)), None);
+        assert_eq!(
+            decode_pat_envelope(&envelope(r#"{"personal_access_token":""}"#)),
+            None
+        );
     }
 }

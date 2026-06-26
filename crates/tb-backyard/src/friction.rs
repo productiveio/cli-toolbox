@@ -77,7 +77,14 @@ mod tests {
 
     #[test]
     fn build_quick_payload_omits_unset_and_wraps() {
-        let p = build_quick_payload("slow tool\nmore", None, "medium", "knowledge-gap", None, None);
+        let p = build_quick_payload(
+            "slow tool\nmore",
+            None,
+            "medium",
+            "knowledge-gap",
+            None,
+            None,
+        );
         let e = &p["feedback_entry"];
         assert_eq!(e["friction_description"], json!("slow tool\nmore"));
         assert_eq!(e["summary"], json!("slow tool"));
@@ -86,7 +93,14 @@ mod tests {
         assert!(e.get("repo").is_none());
         assert!(e.get("time_lost_minutes").is_none());
 
-        let p = build_quick_payload("x", Some("behavioral"), "high", "behavioral", Some("api"), Some(5));
+        let p = build_quick_payload(
+            "x",
+            Some("behavioral"),
+            "high",
+            "behavioral",
+            Some("api"),
+            Some(5),
+        );
         let e = &p["feedback_entry"];
         assert_eq!(e["category"], json!("behavioral"));
         assert_eq!(e["repo"], json!("api"));
@@ -96,7 +110,10 @@ mod tests {
     #[test]
     fn wrap_payload_is_idempotent() {
         let bare = json!({"summary": "x"});
-        assert_eq!(wrap_payload(bare.clone()), json!({"feedback_entry": {"summary": "x"}}));
+        assert_eq!(
+            wrap_payload(bare.clone()),
+            json!({"feedback_entry": {"summary": "x"}})
+        );
         let wrapped = json!({"feedback_entry": {"summary": "x"}});
         assert_eq!(wrap_payload(wrapped.clone()), wrapped);
     }
