@@ -1,11 +1,11 @@
 use clap::Parser;
 use colored::Colorize;
-use tb_lf::api::{DevPortalClient, PaginatedResponse};
-use tb_lf::cache::CacheTtl;
-use tb_lf::cli::Pagination;
-use tb_lf::config::{self, Config};
-use tb_lf::output;
-use tb_lf::types::*;
+use tb_backyard::api::{BackyardClient, PaginatedResponse};
+use tb_backyard::cache::CacheTtl;
+use tb_backyard::cli::Pagination;
+use tb_backyard::config::{self, Config};
+use tb_backyard::output;
+use tb_backyard::types::*;
 use toolbox_core::time_range::TimeRange;
 
 /// Convert (Option<i64>, --no-* flag) into Nullable<i64>.
@@ -22,9 +22,9 @@ fn to_nullable(value: Option<i64>, clear: bool) -> Nullable<i64> {
 
 #[derive(Parser)]
 #[command(
-    name = "tb-lf",
+    name = "tb-backyard",
     disable_version_flag = true,
-    about = "Langfuse/DevPortal insights CLI"
+    about = "Langfuse/Backyard insights CLI"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -34,7 +34,7 @@ struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
-    /// DevPortal project name or ID
+    /// Backyard project name or ID
     #[arg(long, global = true)]
     project: Option<String>,
 
@@ -51,7 +51,7 @@ struct Cli {
 enum Commands {
     /// List traces
     #[command(
-        after_help = "Examples:\n  tb-lf traces --from 1d\n  tb-lf traces --triage flagged --limit 50\n  tb-lf traces --name my-agent --env production\n  tb-lf traces --tags resource:deal,tool:plan --from 7d\n  tb-lf traces --stats --from 7d"
+        after_help = "Examples:\n  tb-backyard traces --from 1d\n  tb-backyard traces --triage flagged --limit 50\n  tb-backyard traces --name my-agent --env production\n  tb-backyard traces --tags resource:deal,tool:plan --from 7d\n  tb-backyard traces --stats --from 7d"
     )]
     Traces {
         #[arg(long)]
@@ -81,7 +81,7 @@ enum Commands {
     },
     /// Fetch a single trace (Langfuse proxy)
     #[command(
-        after_help = "Examples:\n  tb-lf trace abc123 --project production\n  tb-lf trace abc123 --project production --full\n  tb-lf trace abc123 --project production --observations"
+        after_help = "Examples:\n  tb-backyard trace abc123 --project production\n  tb-backyard trace abc123 --project production --full\n  tb-backyard trace abc123 --project production --observations"
     )]
     Trace {
         id: String,
@@ -94,7 +94,7 @@ enum Commands {
     },
     /// List sessions
     #[command(
-        after_help = "Examples:\n  tb-lf sessions --from 7d\n  tb-lf sessions --user user@example.com\n  tb-lf sessions --stats"
+        after_help = "Examples:\n  tb-backyard sessions --from 7d\n  tb-backyard sessions --user user@example.com\n  tb-backyard sessions --stats"
     )]
     Sessions {
         #[arg(long)]
@@ -114,12 +114,12 @@ enum Commands {
     },
     /// Show all traces in a session
     #[command(
-        after_help = "Examples:\n  tb-lf session my-session-id\n  tb-lf session my-session-id --json"
+        after_help = "Examples:\n  tb-backyard session my-session-id\n  tb-backyard session my-session-id --json"
     )]
     Session { id: String },
     /// List observations
     #[command(
-        after_help = "Examples:\n  tb-lf observations --trace abc123\n  tb-lf observations --type GENERATION --model gpt-4\n  tb-lf observations --level ERROR\n  tb-lf observations --from 7d"
+        after_help = "Examples:\n  tb-backyard observations --trace abc123\n  tb-backyard observations --type GENERATION --model gpt-4\n  tb-backyard observations --level ERROR\n  tb-backyard observations --from 7d"
     )]
     Observations {
         #[arg(long)]
@@ -137,12 +137,12 @@ enum Commands {
     },
     /// Fetch a single observation (Langfuse proxy)
     #[command(
-        after_help = "Examples:\n  tb-lf observation abc123 --project production\n  tb-lf observation abc123 --project production --json"
+        after_help = "Examples:\n  tb-backyard observation abc123 --project production\n  tb-backyard observation abc123 --project production --json"
     )]
     Observation { id: String },
     /// List scores
     #[command(
-        after_help = "Examples:\n  tb-lf scores --trace abc123\n  tb-lf scores --name correctness --source EVAL\n  tb-lf scores --json | jq '.[] | select(.value < 0.5)'"
+        after_help = "Examples:\n  tb-backyard scores --trace abc123\n  tb-backyard scores --name correctness --source EVAL\n  tb-backyard scores --json | jq '.[] | select(.value < 0.5)'"
     )]
     Scores {
         #[arg(long)]
@@ -161,7 +161,7 @@ enum Commands {
     },
     /// List comments
     #[command(
-        after_help = "Examples:\n  tb-lf comments --trace abc123\n  tb-lf comments --type trace\n  tb-lf comments --from 7d\n  tb-lf comments --json"
+        after_help = "Examples:\n  tb-backyard comments --trace abc123\n  tb-backyard comments --type trace\n  tb-backyard comments --from 7d\n  tb-backyard comments --json"
     )]
     Comments {
         #[arg(long)]
@@ -175,7 +175,7 @@ enum Commands {
     },
     /// Show dashboard overview
     #[command(
-        after_help = "Examples:\n  tb-lf dashboard\n  tb-lf dashboard --from 2025-01-01 --to 2025-01-31\n  tb-lf dashboard --json"
+        after_help = "Examples:\n  tb-backyard dashboard\n  tb-backyard dashboard --from 2025-01-01 --to 2025-01-31\n  tb-backyard dashboard --json"
     )]
     Dashboard {
         #[command(flatten)]
@@ -184,7 +184,7 @@ enum Commands {
     /// Show daily metrics
     #[command(
         alias = "metrics",
-        after_help = "Examples:\n  tb-lf daily-metrics --days 14\n  tb-lf daily-metrics --env production --from 30d\n  tb-lf daily-metrics --json | jq '.[] | .date'"
+        after_help = "Examples:\n  tb-backyard daily-metrics --days 14\n  tb-backyard daily-metrics --env production --from 30d\n  tb-backyard daily-metrics --json | jq '.[] | .date'"
     )]
     DailyMetrics {
         /// Number of days back
@@ -197,7 +197,7 @@ enum Commands {
     },
     /// Trace-level scoring metrics (aggregated or per-trace)
     #[command(
-        after_help = "Examples:\n  tb-lf trace-metrics\n  tb-lf trace-metrics --group-by day --from 7d\n  tb-lf trace-metrics --group-by outcome\n  tb-lf trace-metrics --group-by agent_type --env production\n  tb-lf trace-metrics --group-by flag:my_flag --from 14d\n  tb-lf trace-metrics abc123def456"
+        after_help = "Examples:\n  tb-backyard trace-metrics\n  tb-backyard trace-metrics --group-by day --from 7d\n  tb-backyard trace-metrics --group-by outcome\n  tb-backyard trace-metrics --group-by agent_type --env production\n  tb-backyard trace-metrics --group-by flag:my_flag --from 14d\n  tb-backyard trace-metrics abc123def456"
     )]
     TraceMetrics {
         /// Trace Langfuse ID — show per-trace detail instead of aggregates
@@ -216,7 +216,7 @@ enum Commands {
     },
     /// List triage queue items
     #[command(
-        after_help = "Examples:\n  tb-lf queue --status pending_review\n  tb-lf queue --category bug --confidence high\n  tb-lf queue --from 7d\n  tb-lf queue --from 2026-03-01 --to 2026-03-10\n  tb-lf queue --full --limit 5"
+        after_help = "Examples:\n  tb-backyard queue --status pending_review\n  tb-backyard queue --category bug --confidence high\n  tb-backyard queue --from 7d\n  tb-backyard queue --from 2026-03-01 --to 2026-03-10\n  tb-backyard queue --full --limit 5"
     )]
     Queue {
         #[arg(long)]
@@ -241,14 +241,18 @@ enum Commands {
         pagination: Pagination,
     },
     /// Triage queue statistics
-    #[command(after_help = "Examples:\n  tb-lf queue-stats\n  tb-lf queue-stats --json")]
+    #[command(
+        after_help = "Examples:\n  tb-backyard queue-stats\n  tb-backyard queue-stats --json"
+    )]
     QueueStats,
     /// Show a single queue item
-    #[command(after_help = "Examples:\n  tb-lf queue-item 42\n  tb-lf queue-item 42 --json")]
+    #[command(
+        after_help = "Examples:\n  tb-backyard queue-item 42\n  tb-backyard queue-item 42 --json"
+    )]
     QueueItem { id: i64 },
     /// Update a queue item
     #[command(
-        after_help = "Examples:\n  tb-lf queue-update 42 --status confirmed\n  tb-lf queue-update 42 --team 3 --note 'needs follow-up'\n  tb-lf queue-update 42 --no-team                        Clear team\n  tb-lf queue-update 42 --category bug --reviewed-by tibor"
+        after_help = "Examples:\n  tb-backyard queue-update 42 --status confirmed\n  tb-backyard queue-update 42 --team 3 --note 'needs follow-up'\n  tb-backyard queue-update 42 --no-team                        Clear team\n  tb-backyard queue-update 42 --category bug --reviewed-by tibor"
     )]
     QueueUpdate {
         id: i64,
@@ -273,7 +277,7 @@ enum Commands {
     },
     /// Bulk-update queue items matching filters
     #[command(
-        after_help = "Examples:\n  tb-lf queue-bulk-update --ids 1,2,3 --set-team 5\n  tb-lf queue-bulk-update --filter-status pending_review --set-team 3\n  tb-lf queue-bulk-update --filter-category bug --set-status confirmed --set-reviewed-by tibor\n  tb-lf queue-bulk-update --filter-confidence high --filter-category feature_request --set-team 5 --dry-run"
+        after_help = "Examples:\n  tb-backyard queue-bulk-update --ids 1,2,3 --set-team 5\n  tb-backyard queue-bulk-update --filter-status pending_review --set-team 3\n  tb-backyard queue-bulk-update --filter-category bug --set-status confirmed --set-reviewed-by tibor\n  tb-backyard queue-bulk-update --filter-confidence high --filter-category feature_request --set-team 5 --dry-run"
     )]
     QueueBulkUpdate {
         /// Update specific items by ID (comma-separated), skipping filter query
@@ -314,17 +318,17 @@ enum Commands {
         time: TimeRange,
     },
     /// Delete a queue item
-    #[command(after_help = "Examples:\n  tb-lf queue-delete 42")]
+    #[command(after_help = "Examples:\n  tb-backyard queue-delete 42")]
     QueueDelete { id: i64 },
     /// List teams
-    #[command(after_help = "Examples:\n  tb-lf teams\n  tb-lf teams --json")]
+    #[command(after_help = "Examples:\n  tb-backyard teams\n  tb-backyard teams --json")]
     Teams {
         #[arg(long)]
         status: Option<String>,
     },
     /// List triage runs
     #[command(
-        after_help = "Examples:\n  tb-lf triage-runs\n  tb-lf triage-runs --status completed --limit 5\n  tb-lf triage-runs --from 7d\n  tb-lf triage-runs --json"
+        after_help = "Examples:\n  tb-backyard triage-runs\n  tb-backyard triage-runs --status completed --limit 5\n  tb-backyard triage-runs --from 7d\n  tb-backyard triage-runs --json"
     )]
     TriageRuns {
         #[arg(long)]
@@ -336,7 +340,7 @@ enum Commands {
     },
     /// Triage run statistics
     #[command(
-        after_help = "Examples:\n  tb-lf triage-runs-stats\n  tb-lf triage-runs-stats --json"
+        after_help = "Examples:\n  tb-backyard triage-runs-stats\n  tb-backyard triage-runs-stats --json"
     )]
     TriageRunsStats,
     /// Eval runs and coverage
@@ -346,7 +350,7 @@ enum Commands {
     },
     /// Search traces
     #[command(
-        after_help = "Examples:\n  tb-lf search \"login error\"\n  tb-lf search \"john smith\" --ids-only\n  tb-lf search \"timeout\" --from 3d --limit 50"
+        after_help = "Examples:\n  tb-backyard search \"login error\"\n  tb-backyard search \"john smith\" --ids-only\n  tb-backyard search \"timeout\" --from 3d --limit 50"
     )]
     Search {
         query: String,
@@ -360,7 +364,7 @@ enum Commands {
     },
     /// List distinct trace names
     #[command(
-        after_help = "Examples:\n  tb-lf names\n  tb-lf names --from 7d\n  tb-lf names --json"
+        after_help = "Examples:\n  tb-backyard names\n  tb-backyard names --from 7d\n  tb-backyard names --json"
     )]
     Names {
         #[command(flatten)]
@@ -368,7 +372,7 @@ enum Commands {
     },
     /// List distinct Langfuse tags applied to traces
     #[command(
-        after_help = "Examples:\n  tb-lf tags\n  tb-lf tags --from 7d\n  tb-lf tags --prefix resource\n  tb-lf tags --json"
+        after_help = "Examples:\n  tb-backyard tags\n  tb-backyard tags --from 7d\n  tb-backyard tags --prefix resource\n  tb-backyard tags --json"
     )]
     Tags {
         /// Filter to tags starting with this prefix (e.g. resource, tool, skill, report, flag)
@@ -379,7 +383,7 @@ enum Commands {
     },
     /// List tracked features
     #[command(
-        after_help = "Examples:\n  tb-lf features\n  tb-lf features --category billing --status active\n  tb-lf features --json"
+        after_help = "Examples:\n  tb-backyard features\n  tb-backyard features --category billing --status active\n  tb-backyard features --json"
     )]
     Features {
         #[arg(long)]
@@ -390,11 +394,13 @@ enum Commands {
         status: Option<String>,
     },
     /// Queue items for a feature
-    #[command(after_help = "Examples:\n  tb-lf feature-items 5\n  tb-lf feature-items 5 --json")]
+    #[command(
+        after_help = "Examples:\n  tb-backyard feature-items 5\n  tb-backyard feature-items 5 --json"
+    )]
     FeatureItems { id: i64 },
     /// AI-optimized context block
     #[command(
-        after_help = "Examples:\n  tb-lf prime --project production\n  tb-lf prime --mcp\n  tb-lf prime --json"
+        after_help = "Examples:\n  tb-backyard prime --project production\n  tb-backyard prime --mcp\n  tb-backyard prime --json"
     )]
     Prime {
         /// Minimal output for MCP hook injection
@@ -402,11 +408,11 @@ enum Commands {
         mcp: bool,
     },
     /// Cheat sheet for human users
-    #[command(after_help = "Examples:\n  tb-lf human")]
+    #[command(after_help = "Examples:\n  tb-backyard human")]
     Human,
     /// Domain knowledge reference
     #[command(
-        after_help = "Examples:\n  tb-lf explain traces\n  tb-lf explain evaluations\n  tb-lf explain --json"
+        after_help = "Examples:\n  tb-backyard explain traces\n  tb-backyard explain evaluations\n  tb-backyard explain --json"
     )]
     Explain {
         /// Topic: entities, relationships, traces, scores, observations, sessions, evaluations, triage, features
@@ -414,14 +420,14 @@ enum Commands {
     },
     /// Configuration management
     #[command(
-        after_help = "Examples:\n  tb-lf config show\n  tb-lf config set url https://devportal.example.com\n  tb-lf config set project production"
+        after_help = "Examples:\n  tb-backyard config show\n  tb-backyard config set url https://backyard.example.com\n  tb-backyard config set project production"
     )]
     Config {
         #[command(subcommand)]
         action: Option<ConfigAction>,
     },
     /// Health check
-    #[command(after_help = "Examples:\n  tb-lf doctor\n  tb-lf doctor --json")]
+    #[command(after_help = "Examples:\n  tb-backyard doctor\n  tb-backyard doctor --json")]
     Doctor,
     /// Manage Claude Code skill file
     Skill {
@@ -429,12 +435,12 @@ enum Commands {
         action: toolbox_core::skill::SkillAction,
     },
     /// List feature flags seen in traces
-    #[command(after_help = "Examples:\n  tb-lf flags\n  tb-lf flags --json")]
+    #[command(after_help = "Examples:\n  tb-backyard flags\n  tb-backyard flags --json")]
     Flags,
     /// Compare cohort stats for a feature flag (ON vs OFF)
     #[command(
         name = "flag-cohort",
-        after_help = "Examples:\n  tb-lf flag-cohort myFeatureFlag --from 7d\n  tb-lf flag-cohort myFeatureFlag --from 2026-03-20 --to 2026-03-25\n  tb-lf flag-cohort myFeatureFlag --from 7d --name my-agent\n  tb-lf flag-cohort myFeatureFlag --from 7d --json"
+        after_help = "Examples:\n  tb-backyard flag-cohort myFeatureFlag --from 7d\n  tb-backyard flag-cohort myFeatureFlag --from 2026-03-20 --to 2026-03-25\n  tb-backyard flag-cohort myFeatureFlag --from 7d --name my-agent\n  tb-backyard flag-cohort myFeatureFlag --from 7d --json"
     )]
     FlagCohort {
         /// Flag name to compare
@@ -451,7 +457,7 @@ enum Commands {
     /// Stratified flag-cohort analysis — control for other flags
     #[command(
         name = "flag-cohort-stratified",
-        after_help = "Examples:\n  tb-lf flag-cohort-stratified myFeatureFlag --from 7d --to today\n  tb-lf flag-cohort-stratified myFeatureFlag --from 7d --to today --env default\n  tb-lf flag-cohort-stratified myFeatureFlag --from 7d --to today --max-cohorts 5\n  tb-lf flag-cohort-stratified myFeatureFlag --from 7d --to today --detail traces --json"
+        after_help = "Examples:\n  tb-backyard flag-cohort-stratified myFeatureFlag --from 7d --to today\n  tb-backyard flag-cohort-stratified myFeatureFlag --from 7d --to today --env default\n  tb-backyard flag-cohort-stratified myFeatureFlag --from 7d --to today --max-cohorts 5\n  tb-backyard flag-cohort-stratified myFeatureFlag --from 7d --to today --detail traces --json"
     )]
     FlagCohortStratified {
         /// Flag name to analyze
@@ -477,7 +483,7 @@ enum Commands {
     /// Cross-environment cohort analysis — pivot on env (treatment vs control) instead of flag-tag
     #[command(
         name = "env-cohort",
-        after_help = "Examples:\n  tb-lf env-cohort --treatment-env my-review-env --control-envs production,latest --from 14d --to today\n  tb-lf env-cohort --treatment-env my-review-env --control-envs production --ignore-flags myFeatureFlag --from 14d --to today\n  tb-lf env-cohort --treatment-env my-review-env --control-envs production --ignore-flags myFeatureFlag --from 14d --to today --detail traces --json\n\nUse this when the target flag is forced-ON in code in the treatment env (so the trace flag-tag is unreliable). control-envs are envs where the feature is OFF / not deployed. ignore-flags excludes flags from the fingerprint — typically the target flag itself."
+        after_help = "Examples:\n  tb-backyard env-cohort --treatment-env my-review-env --control-envs production,latest --from 14d --to today\n  tb-backyard env-cohort --treatment-env my-review-env --control-envs production --ignore-flags myFeatureFlag --from 14d --to today\n  tb-backyard env-cohort --treatment-env my-review-env --control-envs production --ignore-flags myFeatureFlag --from 14d --to today --detail traces --json\n\nUse this when the target flag is forced-ON in code in the treatment env (so the trace flag-tag is unreliable). control-envs are envs where the feature is OFF / not deployed. ignore-flags excludes flags from the fingerprint — typically the target flag itself."
     )]
     EnvCohort {
         /// Environment where the feature is forced-ON in code (e.g. a review env)
@@ -507,7 +513,7 @@ enum Commands {
     /// Download trace summaries for a flag cohort as JSON
     #[command(
         name = "flag-traces",
-        after_help = "Examples:\n  tb-lf flag-traces myFeatureFlag --from 7d\n  tb-lf flag-traces myFeatureFlag --value false --from 7d\n  tb-lf flag-traces myFeatureFlag --from 7d --name my-agent"
+        after_help = "Examples:\n  tb-backyard flag-traces myFeatureFlag --from 7d\n  tb-backyard flag-traces myFeatureFlag --value false --from 7d\n  tb-backyard flag-traces myFeatureFlag --from 7d --name my-agent"
     )]
     FlagTraces {
         /// Flag name to filter by
@@ -526,20 +532,28 @@ enum Commands {
         #[command(flatten)]
         pagination: Pagination,
     },
-    /// Upload one or more files to DevPortal Shares and get back a short URL
+    /// Upload one or more files to Backyard Shares and get back a short URL
     #[command(
-        after_help = "Examples:\n  tb-lf share upload report.html\n  tb-lf share upload report.html diagram.png --visibility unlisted --title \"Q3 review\"\n  tb-lf share upload ./bundle/*.html --visibility unlisted"
+        after_help = "Examples:\n  tb-backyard share upload report.html\n  tb-backyard share upload report.html diagram.png --visibility unlisted --title \"Q3 review\"\n  tb-backyard share upload ./bundle/*.html --visibility unlisted"
     )]
     Share {
         #[command(subcommand)]
         action: ShareAction,
     },
-    /// Remove tb-lf's skill and config (and, with --purge, the binary)
+    /// Log and review Claude Code session friction (Backyard feedback entries)
     #[command(
-        after_help = "tb-lf is deprecated; use tb-backyard. This removes ~/.claude/skills/tb-lf/\nand the config dir. The binary is left in place unless you pass --purge.\n\nExamples:\n  tb-lf uninstall\n  tb-lf uninstall --purge"
+        after_help = "Examples:\n  tb-backyard friction submit --description \"stale skill doc\" --severity low\n  cat entry.json | tb-backyard friction submit\n  tb-backyard friction list --repo cli-toolbox\n  tb-backyard friction report --repo cli-toolbox"
+    )]
+    Friction {
+        #[command(subcommand)]
+        action: FrictionAction,
+    },
+    /// Remove tb-backyard's skill and config (and, with --purge, the binary)
+    #[command(
+        after_help = "Removes ~/.claude/skills/tb-backyard/ and the config dir.\nThe binary is left in place unless you pass --purge.\n\nExamples:\n  tb-backyard uninstall\n  tb-backyard uninstall --purge"
     )]
     Uninstall {
-        /// Also remove the installed binary (~/.local/bin/tb-lf)
+        /// Also remove the installed binary (~/.local/bin/tb-backyard)
         #[arg(long)]
         purge: bool,
     },
@@ -549,13 +563,13 @@ enum Commands {
 enum ShareAction {
     /// Upload files and print the resulting share URL
     #[command(
-        after_help = "Examples:\n  tb-lf share upload report.html\n  tb-lf share upload bundle/*.html --visibility unlisted --title \"Q3 review\""
+        after_help = "Examples:\n  tb-backyard share upload report.html\n  tb-backyard share upload bundle/*.html --visibility unlisted --title \"Q3 review\""
     )]
     Upload {
         /// One or more files to upload (bundle of >1 is browsable at /s/<token>/<filename>)
         #[arg(required = true)]
         files: Vec<std::path::PathBuf>,
-        /// Visibility: `private` (default, requires DevPortal login) or `unlisted` (public capability URL)
+        /// Visibility: `private` (default, requires Backyard login) or `unlisted` (public capability URL)
         #[arg(long, default_value = "private")]
         visibility: String,
         /// Optional title shown on the bundle index page
@@ -563,14 +577,14 @@ enum ShareAction {
         title: Option<String>,
     },
     /// List your shares
-    #[command(after_help = "Example:\n  tb-lf share list")]
+    #[command(after_help = "Example:\n  tb-backyard share list")]
     List,
     /// Update a share's title and/or visibility (token-or-URL target)
     #[command(
         after_help = "<share-target> accepts a bare token OR a /s/:token URL.\nFlipping `private` → `unlisted` prompts on TTY; pass --force on non-TTY."
     )]
     Update {
-        /// Target: bare token or `https://devportal.productive.io/s/<token>` URL
+        /// Target: bare token or `https://backyard.productive.io/s/<token>` URL
         target: String,
         /// New title
         #[arg(long)]
@@ -587,12 +601,12 @@ enum ShareAction {
         after_help = "<share-target> accepts a bare token OR a /s/:token URL.\nThe share stops resolving at /s/:token immediately; blobs are purged in the background."
     )]
     Rm {
-        /// Target: bare token or `https://devportal.productive.io/s/<token>` URL
+        /// Target: bare token or `https://backyard.productive.io/s/<token>` URL
         target: String,
     },
     /// Manage per-user pretty aliases (`/u/<user_id>/<slug>`) for your shares
     #[command(
-        after_help = "Examples:\n  tb-lf share alias set weekly-report <token>\n  tb-lf share alias set weekly-report https://devportal.productive.io/s/<token>\n  tb-lf share alias list\n  tb-lf share alias rm weekly-report"
+        after_help = "Examples:\n  tb-backyard share alias set weekly-report <token>\n  tb-backyard share alias set weekly-report https://backyard.productive.io/s/<token>\n  tb-backyard share alias list\n  tb-backyard share alias rm weekly-report"
     )]
     Alias {
         #[command(subcommand)]
@@ -609,7 +623,7 @@ enum ShareAliasAction {
     Set {
         /// Slug for the alias (kebab-case, 1-64 chars, [a-z0-9-], normalized client-side)
         slug: String,
-        /// Target: bare token or `https://devportal.productive.io/s/<token>` URL
+        /// Target: bare token or `https://backyard.productive.io/s/<token>` URL
         target: String,
         /// Skip the `[y/N]` opt-in prompt when the target is `unlisted` (required on non-TTY)
         #[arg(long)]
@@ -625,10 +639,63 @@ enum ShareAliasAction {
 }
 
 #[derive(clap::Subcommand)]
+enum FrictionAction {
+    /// Submit a friction report. Reads a `feedback_entry` JSON object from
+    /// stdin (or --body), or builds a minimal one from --description.
+    #[command(
+        after_help = "The interactive interview is the `p-friction` skill's job; this submits the\nauthenticated POST. Pipe a full payload, or use --description for quick logging.\n\nExamples:\n  tb-backyard friction submit --description \"stale skill doc\" --category behavioral\n  jq -n '{summary:\"x\", friction_description:\"…\"}' | tb-backyard friction submit\n  tb-backyard friction submit --body entry.json"
+    )]
+    Submit {
+        /// Read the feedback_entry JSON from a file instead of stdin
+        #[arg(long)]
+        body: Option<std::path::PathBuf>,
+        /// Quick mode: one-line description (builds a minimal payload from flags)
+        #[arg(long)]
+        description: Option<String>,
+        /// Severity: low | medium | high | critical (quick mode)
+        #[arg(long, default_value = "medium")]
+        severity: String,
+        /// Category (quick mode); server keyword-matches if omitted
+        #[arg(long)]
+        category: Option<String>,
+        /// Root cause (quick mode)
+        #[arg(long, default_value = "knowledge-gap")]
+        root_cause: String,
+        /// Repo slug (quick mode)
+        #[arg(long)]
+        repo: Option<String>,
+        /// Minutes lost (quick mode)
+        #[arg(long)]
+        time_lost: Option<i64>,
+    },
+    /// List recent friction entries
+    #[command(
+        after_help = "Examples:\n  tb-backyard friction list\n  tb-backyard friction list --repo cli-toolbox --limit 20"
+    )]
+    List {
+        /// Filter by repo slug
+        #[arg(long)]
+        repo: Option<String>,
+        /// Max entries to show (default 20)
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+    },
+    /// Friction stats report (totals, breakdowns, resolution flow)
+    #[command(
+        after_help = "Examples:\n  tb-backyard friction report\n  tb-backyard friction report --repo cli-toolbox"
+    )]
+    Report {
+        /// Filter by repo slug
+        #[arg(long)]
+        repo: Option<String>,
+    },
+}
+
+#[derive(clap::Subcommand)]
 enum EvalAction {
     /// List eval runs
     #[command(
-        after_help = "Examples:\n  tb-lf eval runs\n  tb-lf eval runs --status failed --branch main\n  tb-lf eval runs --from 7d\n  tb-lf eval runs --mode regression --limit 10"
+        after_help = "Examples:\n  tb-backyard eval runs\n  tb-backyard eval runs --status failed --branch main\n  tb-backyard eval runs --from 7d\n  tb-backyard eval runs --mode regression --limit 10"
     )]
     Runs {
         #[arg(long)]
@@ -644,7 +711,7 @@ enum EvalAction {
     },
     /// Show a single eval run
     #[command(
-        after_help = "Examples:\n  tb-lf eval run 42\n  tb-lf eval run 42 --failed\n  tb-lf eval run 42 --full"
+        after_help = "Examples:\n  tb-backyard eval run 42\n  tb-backyard eval run 42 --failed\n  tb-backyard eval run 42 --full"
     )]
     Run {
         id: i64,
@@ -657,7 +724,7 @@ enum EvalAction {
     },
     /// Score trends across git revisions
     #[command(
-        after_help = "Examples:\n  tb-lf eval revisions\n  tb-lf eval revisions --branch main --limit 10\n  tb-lf eval revisions --json"
+        after_help = "Examples:\n  tb-backyard eval revisions\n  tb-backyard eval revisions --branch main --limit 10\n  tb-backyard eval revisions --json"
     )]
     Revisions {
         #[arg(long)]
@@ -669,7 +736,7 @@ enum EvalAction {
     },
     /// Test suite coverage
     #[command(
-        after_help = "Examples:\n  tb-lf eval suites\n  tb-lf eval suites --mode regression\n  tb-lf eval suites --json"
+        after_help = "Examples:\n  tb-backyard eval suites\n  tb-backyard eval suites --mode regression\n  tb-backyard eval suites --json"
     )]
     Suites {
         #[arg(long)]
@@ -679,7 +746,7 @@ enum EvalAction {
     },
     /// Test case coverage
     #[command(
-        after_help = "Examples:\n  tb-lf eval cases\n  tb-lf eval cases --suite my-suite --limit 20\n  tb-lf eval cases --json"
+        after_help = "Examples:\n  tb-backyard eval cases\n  tb-backyard eval cases --suite my-suite --limit 20\n  tb-backyard eval cases --json"
     )]
     Cases {
         #[arg(long)]
@@ -693,7 +760,7 @@ enum EvalAction {
     },
     /// Flaky test detection
     #[command(
-        after_help = "Examples:\n  tb-lf eval flaky\n  tb-lf eval flaky --last-n 50\n  tb-lf eval flaky --branch main --json"
+        after_help = "Examples:\n  tb-backyard eval flaky\n  tb-backyard eval flaky --last-n 50\n  tb-backyard eval flaky --branch main --json"
     )]
     Flaky {
         /// Sample size for flaky detection
@@ -710,7 +777,7 @@ enum EvalAction {
 enum ConfigAction {
     /// Initialize configuration
     Init {
-        /// DevPortal base URL (default: https://devportal.productive.io/)
+        /// Backyard base URL (default: https://backyard.productive.io/)
         #[arg(long)]
         url: Option<String>,
         /// API token (prompted interactively if omitted)
@@ -812,22 +879,16 @@ fn print_cohort_diff(flags: &[String], all_flag_sets: &[&Vec<String>]) {
 
 toolbox_core::run_main!(run());
 
-async fn run() -> tb_lf::error::Result<()> {
+async fn run() -> tb_backyard::error::Result<()> {
     let cli = Cli::parse();
 
-    eprintln!(
-        "{}",
-        "⚠ tb-lf is deprecated — use tb-backyard instead. Run `tb-lf uninstall` to remove it."
-            .yellow()
-    );
-
     if cli.version {
-        toolbox_core::version_check::print_version("tb-lf", env!("CARGO_PKG_VERSION"));
+        toolbox_core::version_check::print_version("tb-backyard", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
 
     let Some(command) = cli.command else {
-        Cli::parse_from(["tb-lf", "--help"]);
+        Cli::parse_from(["tb-backyard", "--help"]);
         unreachable!()
     };
 
@@ -837,19 +898,21 @@ async fn run() -> tb_lf::error::Result<()> {
     }
     if let Commands::Skill { ref action } = command {
         let skill = toolbox_core::skill::SkillConfig {
-            tool_name: "tb-lf",
+            tool_name: "tb-backyard",
             content: include_str!("../SKILL.md"),
         };
-        toolbox_core::skill::run(&skill, action).map_err(tb_lf::error::TbLfError::Other)?;
+        toolbox_core::skill::run(&skill, action)
+            .map_err(tb_backyard::error::TbBackyardError::Other)?;
         return Ok(());
     }
     if let Commands::Uninstall { purge } = command {
-        toolbox_core::uninstall::run("tb-lf", purge).map_err(tb_lf::error::TbLfError::Other)?;
+        toolbox_core::uninstall::run("tb-backyard", purge)
+            .map_err(tb_backyard::error::TbBackyardError::Other)?;
         return Ok(());
     }
 
     let config = Config::load()?;
-    let client = DevPortalClient::new(&config, cli.no_cache)?;
+    let client = BackyardClient::new(&config, cli.no_cache)?;
     let project_id =
         config::resolve_project(&client, cli.project.as_deref(), config.project.as_deref()).await?;
     let pid = project_id.map(|id| id.to_string());
@@ -876,7 +939,7 @@ async fn run() -> tb_lf::error::Result<()> {
                     ("tags", tags),
                 ];
                 time.push_date_params_inclusive_or_exit(&mut params);
-                let path = DevPortalClient::build_path("/traces/stats", &params);
+                let path = BackyardClient::build_path("/traces/stats", &params);
                 let s: TraceStats = client.get(&path, CacheTtl::Short).await?;
                 if cli.json {
                     println!("{}", output::render_json(&s));
@@ -906,7 +969,7 @@ async fn run() -> tb_lf::error::Result<()> {
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
             pagination.push_params(&mut params);
-            let path = DevPortalClient::build_path("/traces", &params);
+            let path = BackyardClient::build_path("/traces", &params);
             let resp: PaginatedResponse<Trace> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -917,7 +980,10 @@ async fn run() -> tb_lf::error::Result<()> {
             if resp.data.is_empty() {
                 println!(
                     "{}",
-                    output::empty_hint("traces", "Try widening filters or check `tb-lf doctor`.")
+                    output::empty_hint(
+                        "traces",
+                        "Try widening filters or check `tb-backyard doctor`."
+                    )
                 );
                 return Ok(());
             }
@@ -962,7 +1028,7 @@ async fn run() -> tb_lf::error::Result<()> {
             }
             println!(
                 "\n  {}",
-                "Run `tb-lf trace <id>` for full details.".dimmed()
+                "Run `tb-backyard trace <id>` for full details.".dimmed()
             );
         }
 
@@ -972,7 +1038,9 @@ async fn run() -> tb_lf::error::Result<()> {
             observations,
         } => {
             let project_id = project_id.ok_or_else(|| {
-                tb_lf::error::TbLfError::Config("--project required for trace fetch.".into())
+                tb_backyard::error::TbBackyardError::Config(
+                    "--project required for trace fetch.".into(),
+                )
             })?;
             let path = format!("/langfuse/traces/{}?project_id={}", id, project_id);
             let trace: serde_json::Value = client.get(&path, CacheTtl::Long).await?;
@@ -1002,7 +1070,7 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             if observations {
-                let obs_path = DevPortalClient::build_path(
+                let obs_path = BackyardClient::build_path(
                     "/observations",
                     &[
                         ("project_id", Some(project_id.to_string())),
@@ -1050,7 +1118,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 let mut params: Vec<(&str, Option<String>)> =
                     vec![("project_id", pid), ("environment", env)];
                 time.push_date_params_inclusive_or_exit(&mut params);
-                let path = DevPortalClient::build_path("/sessions/stats", &params);
+                let path = BackyardClient::build_path("/sessions/stats", &params);
                 let s: serde_json::Value = client.get(&path, CacheTtl::Short).await?;
                 println!("{}", output::render_json(&s));
                 return Ok(());
@@ -1065,7 +1133,7 @@ async fn run() -> tb_lf::error::Result<()> {
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
             pagination.push_params(&mut params);
-            let path = DevPortalClient::build_path("/sessions", &params);
+            let path = BackyardClient::build_path("/sessions", &params);
             let resp: PaginatedResponse<Session> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -1110,7 +1178,7 @@ async fn run() -> tb_lf::error::Result<()> {
 
         Commands::Session { id } => {
             let path =
-                DevPortalClient::build_path(&format!("/sessions/{}", id), &[("project_id", pid)]);
+                BackyardClient::build_path(&format!("/sessions/{}", id), &[("project_id", pid)]);
             let traces: Vec<Trace> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -1150,7 +1218,7 @@ async fn run() -> tb_lf::error::Result<()> {
 
             println!(
                 "\n  {}",
-                "Run `tb-lf trace <id> --project <p>` to inspect a trace.".dimmed()
+                "Run `tb-backyard trace <id> --project <p>` to inspect a trace.".dimmed()
             );
         }
 
@@ -1171,7 +1239,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("environment", env),
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
-            let path = DevPortalClient::build_path("/observations", &params);
+            let path = BackyardClient::build_path("/observations", &params);
             let obs: Vec<Observation> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -1216,7 +1284,9 @@ async fn run() -> tb_lf::error::Result<()> {
 
         Commands::Observation { id } => {
             let project_id = project_id.ok_or_else(|| {
-                tb_lf::error::TbLfError::Config("--project required for observation fetch.".into())
+                tb_backyard::error::TbBackyardError::Config(
+                    "--project required for observation fetch.".into(),
+                )
             })?;
             let path = format!("/langfuse/observations/{}?project_id={}", id, project_id);
             let obs: serde_json::Value = client.get(&path, CacheTtl::Long).await?;
@@ -1240,7 +1310,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("per_page", Some(limit.to_string())),
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
-            let path = DevPortalClient::build_path("/scores", &params);
+            let path = BackyardClient::build_path("/scores", &params);
             let scores: Vec<Score> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -1290,7 +1360,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("object_id", object),
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
-            let path = DevPortalClient::build_path("/comments", &params);
+            let path = BackyardClient::build_path("/comments", &params);
             let comments: Vec<Comment> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -1330,7 +1400,7 @@ async fn run() -> tb_lf::error::Result<()> {
         Commands::Dashboard { time } => {
             let mut params: Vec<(&str, Option<String>)> = vec![("project_id", pid)];
             time.push_date_params_inclusive_or_exit(&mut params);
-            let path = DevPortalClient::build_path("/dashboard", &params);
+            let path = BackyardClient::build_path("/dashboard", &params);
             let dash: Dashboard = client.get(&path, CacheTtl::Medium).await?;
 
             if cli.json {
@@ -1393,11 +1463,11 @@ async fn run() -> tb_lf::error::Result<()> {
 
             println!(
                 "\n  {}",
-                "Run `tb-lf traces` to drill into individual traces.".dimmed()
+                "Run `tb-backyard traces` to drill into individual traces.".dimmed()
             );
             println!(
                 "  {}",
-                "Run `tb-lf daily-metrics` for daily trends.".dimmed()
+                "Run `tb-backyard daily-metrics` for daily trends.".dimmed()
             );
         }
 
@@ -1420,7 +1490,7 @@ async fn run() -> tb_lf::error::Result<()> {
             let mut params: Vec<(&str, Option<String>)> =
                 vec![("project_id", pid), ("environment", env)];
             effective_time.push_date_params_inclusive_or_exit(&mut params);
-            let path = DevPortalClient::build_path("/daily_metrics", &params);
+            let path = BackyardClient::build_path("/daily_metrics", &params);
             let metrics: Vec<DailyMetric> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -1466,7 +1536,7 @@ async fn run() -> tb_lf::error::Result<()> {
         } => {
             if let Some(tid) = trace_id {
                 // Per-trace detail
-                let path = DevPortalClient::build_path(
+                let path = BackyardClient::build_path(
                     &format!("/trace_metrics/{}", tid),
                     &[("project_id", pid)],
                 );
@@ -1606,7 +1676,7 @@ async fn run() -> tb_lf::error::Result<()> {
                     ("outcome", outcome),
                 ];
                 effective_time.push_date_params_inclusive_or_exit(&mut params);
-                let path = DevPortalClient::build_path("/trace_metrics", &params);
+                let path = BackyardClient::build_path("/trace_metrics", &params);
                 let resp: TraceMetricAggregateResponse = client.get(&path, CacheTtl::Short).await?;
 
                 if cli.json {
@@ -1700,7 +1770,7 @@ async fn run() -> tb_lf::error::Result<()> {
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
             pagination.push_params(&mut params);
-            let path = DevPortalClient::build_path("/queue_items", &params);
+            let path = BackyardClient::build_path("/queue_items", &params);
             let items: Vec<QueueItem> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -1756,7 +1826,7 @@ async fn run() -> tb_lf::error::Result<()> {
         }
 
         Commands::QueueStats => {
-            let path = DevPortalClient::build_path("/queue_items/stats", &[("project_id", pid)]);
+            let path = BackyardClient::build_path("/queue_items/stats", &[("project_id", pid)]);
             let stats: serde_json::Value = client.get(&path, CacheTtl::Short).await?;
             if cli.json {
                 println!("{}", output::render_json(&stats));
@@ -1787,10 +1857,8 @@ async fn run() -> tb_lf::error::Result<()> {
         }
 
         Commands::QueueItem { id } => {
-            let path = DevPortalClient::build_path(
-                &format!("/queue_items/{}", id),
-                &[("project_id", pid)],
-            );
+            let path =
+                BackyardClient::build_path(&format!("/queue_items/{}", id), &[("project_id", pid)]);
             let item: QueueItem = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -1857,7 +1925,11 @@ async fn run() -> tb_lf::error::Result<()> {
             if let Some(trace_id) = &item.trace_langfuse_id {
                 println!(
                     "\n  {}",
-                    format!("Run `tb-lf trace {}` to see the full trace.", trace_id).dimmed()
+                    format!(
+                        "Run `tb-backyard trace {}` to see the full trace.",
+                        trace_id
+                    )
+                    .dimmed()
                 );
             }
         }
@@ -1935,7 +2007,7 @@ async fn run() -> tb_lf::error::Result<()> {
                         ("page", Some(page.to_string())),
                     ];
                     time.push_date_params_inclusive_or_exit(&mut params);
-                    let path = DevPortalClient::build_path("/queue_items", &params);
+                    let path = BackyardClient::build_path("/queue_items", &params);
                     let batch: Vec<QueueItem> = client.get(&path, CacheTtl::Short).await?;
                     let batch_len = batch.len();
                     collected_ids.extend(batch.iter().map(|i| i.id));
@@ -2004,7 +2076,7 @@ async fn run() -> tb_lf::error::Result<()> {
 
         Commands::Teams { status } => {
             let params: Vec<(&str, Option<String>)> = vec![("project_id", pid), ("status", status)];
-            let path = DevPortalClient::build_path("/teams", &params);
+            let path = BackyardClient::build_path("/teams", &params);
             let resp: PaginatedResponse<Team> = client.get(&path, CacheTtl::Short).await?;
             let teams = resp.data;
 
@@ -2036,8 +2108,8 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("per_page", Some(limit.to_string())),
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
-            let path = DevPortalClient::build_path("/triage_runs", &params);
-            let resp: tb_lf::api::PaginatedResponse<TriageRun> =
+            let path = BackyardClient::build_path("/triage_runs", &params);
+            let resp: tb_backyard::api::PaginatedResponse<TriageRun> =
                 client.get(&path, CacheTtl::Short).await?;
             let runs = resp.data;
 
@@ -2089,7 +2161,7 @@ async fn run() -> tb_lf::error::Result<()> {
         }
 
         Commands::TriageRunsStats => {
-            let path = DevPortalClient::build_path("/triage_runs/stats", &[("project_id", pid)]);
+            let path = BackyardClient::build_path("/triage_runs/stats", &[("project_id", pid)]);
             let stats: serde_json::Value = client.get(&path, CacheTtl::Short).await?;
             if cli.json {
                 println!("{}", output::render_json(&stats));
@@ -2159,8 +2231,8 @@ async fn run() -> tb_lf::error::Result<()> {
                     ("per_page", Some(limit.to_string())),
                 ];
                 time.push_date_params_inclusive_or_exit(&mut params);
-                let path = DevPortalClient::build_path("/eval/runs", &params);
-                let resp: tb_lf::api::PaginatedResponse<EvalRun> =
+                let path = BackyardClient::build_path("/eval/runs", &params);
+                let resp: tb_backyard::api::PaginatedResponse<EvalRun> =
                     client.get(&path, CacheTtl::Short).await?;
                 let runs = resp.data;
 
@@ -2212,7 +2284,7 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             EvalAction::Run { id, failed, full } => {
-                let path = DevPortalClient::build_path(
+                let path = BackyardClient::build_path(
                     &format!("/eval/runs/{}", id),
                     &[("project_id", pid)],
                 );
@@ -2304,7 +2376,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 mode,
                 limit,
             } => {
-                let path = DevPortalClient::build_path(
+                let path = BackyardClient::build_path(
                     "/eval/runs/revisions",
                     &[
                         ("project_id", pid),
@@ -2357,7 +2429,7 @@ async fn run() -> tb_lf::error::Result<()> {
             }
 
             EvalAction::Suites { mode, branch } => {
-                let path = DevPortalClient::build_path(
+                let path = BackyardClient::build_path(
                     "/eval/coverage/suites",
                     &[("project_id", pid), ("mode", mode), ("branch", branch)],
                 );
@@ -2396,7 +2468,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 branch,
                 limit,
             } => {
-                let path = DevPortalClient::build_path(
+                let path = BackyardClient::build_path(
                     "/eval/coverage/cases",
                     &[
                         ("project_id", pid),
@@ -2455,7 +2527,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 mode,
                 branch,
             } => {
-                let path = DevPortalClient::build_path(
+                let path = BackyardClient::build_path(
                     "/eval/coverage/flaky",
                     &[
                         ("project_id", pid),
@@ -2513,12 +2585,12 @@ async fn run() -> tb_lf::error::Result<()> {
             time,
             pagination,
         } => {
-            // Try devportal search endpoint, fall back to traces with name filter
+            // Try backyard search endpoint, fall back to traces with name filter
             let mut params: Vec<(&str, Option<String>)> =
                 vec![("project_id", pid.clone()), ("q", Some(query.clone()))];
             time.push_date_params_inclusive_or_exit(&mut params);
             pagination.push_params(&mut params);
-            let path = DevPortalClient::build_path("/search", &params);
+            let path = BackyardClient::build_path("/search", &params);
 
             let result = client.get_raw(&path, CacheTtl::Short).await;
             match result {
@@ -2587,13 +2659,13 @@ async fn run() -> tb_lf::error::Result<()> {
                         println!("\n  {}", hint.dimmed());
                     }
                 }
-                Err(tb_lf::error::TbLfError::Api { status: 404, .. }) => {
+                Err(tb_backyard::error::TbBackyardError::Api { status: 404, .. }) => {
                     // Search endpoint not deployed — fall back to traces name filter
                     let mut params: Vec<(&str, Option<String>)> =
                         vec![("project_id", pid), ("name", Some(query.clone()))];
                     time.push_date_params_inclusive_or_exit(&mut params);
                     pagination.push_params(&mut params);
-                    let path = DevPortalClient::build_path("/traces", &params);
+                    let path = BackyardClient::build_path("/traces", &params);
                     let resp: PaginatedResponse<Trace> = client.get(&path, CacheTtl::Short).await?;
 
                     if cli.json {
@@ -2651,7 +2723,7 @@ async fn run() -> tb_lf::error::Result<()> {
         Commands::Names { time } => {
             let mut params: Vec<(&str, Option<String>)> = vec![("project_id", pid)];
             time.push_date_params_inclusive_or_exit(&mut params);
-            let path = DevPortalClient::build_path("/traces/names", &params);
+            let path = BackyardClient::build_path("/traces/names", &params);
             let names: Vec<String> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -2676,7 +2748,7 @@ async fn run() -> tb_lf::error::Result<()> {
         Commands::Tags { prefix, time } => {
             let mut params: Vec<(&str, Option<String>)> = vec![("project_id", pid)];
             time.push_date_params_inclusive_or_exit(&mut params);
-            let path = DevPortalClient::build_path("/traces/tags", &params);
+            let path = BackyardClient::build_path("/traces/tags", &params);
             let all_tags: Vec<String> = client.get(&path, CacheTtl::Short).await?;
 
             let tags: Vec<&String> = match &prefix {
@@ -2712,7 +2784,7 @@ async fn run() -> tb_lf::error::Result<()> {
             team,
             status,
         } => {
-            let path = DevPortalClient::build_path(
+            let path = BackyardClient::build_path(
                 "/features",
                 &[
                     ("project_id", pid),
@@ -2721,7 +2793,7 @@ async fn run() -> tb_lf::error::Result<()> {
                     ("status", status),
                 ],
             );
-            let resp: tb_lf::api::PaginatedResponse<Feature> =
+            let resp: tb_backyard::api::PaginatedResponse<Feature> =
                 client.get(&path, CacheTtl::Short).await?;
             let features = resp.data;
 
@@ -2764,7 +2836,7 @@ async fn run() -> tb_lf::error::Result<()> {
         }
 
         Commands::FeatureItems { id } => {
-            let path = DevPortalClient::build_path(
+            let path = BackyardClient::build_path(
                 &format!("/features/{}/queue_items", id),
                 &[("project_id", pid)],
             );
@@ -2808,9 +2880,12 @@ async fn run() -> tb_lf::error::Result<()> {
         Commands::Prime { mcp } => {
             if mcp {
                 // Minimal ~50 token output for hook injection
-                let mut parts = vec![format!("tb-lf v{}", tb_lf::VERSION)];
+                let mut parts = vec![format!("tb-backyard v{}", tb_backyard::VERSION)];
                 if let Ok(resp) = client
-                    .get::<tb_lf::api::PaginatedResponse<Project>>("/projects", CacheTtl::Long)
+                    .get::<tb_backyard::api::PaginatedResponse<Project>>(
+                        "/projects",
+                        CacheTtl::Long,
+                    )
                     .await
                 {
                     let names: Vec<&str> = resp.data.iter().map(|p| p.name.as_str()).collect();
@@ -2820,12 +2895,12 @@ async fn run() -> tb_lf::error::Result<()> {
                 return Ok(());
             }
 
-            println!("# tb-lf context\n");
+            println!("# tb-backyard context\n");
 
             // Projects
             println!("## Projects\n");
             match client
-                .get::<tb_lf::api::PaginatedResponse<Project>>("/projects", CacheTtl::Long)
+                .get::<tb_backyard::api::PaginatedResponse<Project>>("/projects", CacheTtl::Long)
                 .await
             {
                 Ok(resp) => {
@@ -2838,18 +2913,20 @@ async fn run() -> tb_lf::error::Result<()> {
 
             // Quick commands
             println!("\n## Quick commands\n");
-            println!("- `tb-lf traces --limit 10` — recent traces");
-            println!("- `tb-lf traces --triage flagged` — flagged traces");
-            println!("- `tb-lf dashboard` — KPI overview");
-            println!("- `tb-lf eval runs --limit 5` — recent eval runs");
-            println!("- `tb-lf queue --status pending_review` — pending triage items");
-            println!("- `tb-lf queue-update <id> --team <id>` — assign team to queue item");
-            println!("- `tb-lf queue-bulk-update --filter-* --set-* --dry-run` — bulk update");
-            println!("- `tb-lf teams` — list teams");
-            println!("- `tb-lf search <query>` — search traces");
-            println!("- `tb-lf trace <id> --project <p>` — full trace detail");
-            println!("- `tb-lf tags --prefix resource` — list tag values for filtering");
-            println!("- `tb-lf traces --tags resource:deal` — filter traces by Langfuse tag");
+            println!("- `tb-backyard traces --limit 10` — recent traces");
+            println!("- `tb-backyard traces --triage flagged` — flagged traces");
+            println!("- `tb-backyard dashboard` — KPI overview");
+            println!("- `tb-backyard eval runs --limit 5` — recent eval runs");
+            println!("- `tb-backyard queue --status pending_review` — pending triage items");
+            println!("- `tb-backyard queue-update <id> --team <id>` — assign team to queue item");
+            println!(
+                "- `tb-backyard queue-bulk-update --filter-* --set-* --dry-run` — bulk update"
+            );
+            println!("- `tb-backyard teams` — list teams");
+            println!("- `tb-backyard search <query>` — search traces");
+            println!("- `tb-backyard trace <id> --project <p>` — full trace detail");
+            println!("- `tb-backyard tags --prefix resource` — list tag values for filtering");
+            println!("- `tb-backyard traces --tags resource:deal` — filter traces by Langfuse tag");
 
             // Interpreting metrics
             println!("\n## Interpreting metrics\n");
@@ -2858,62 +2935,68 @@ async fn run() -> tb_lf::error::Result<()> {
             println!("- Triage: flagged=needs review, dismissed=noise, untouched=not yet triaged");
             println!("- Eval pass rate: >=0.90 healthy, <0.70 needs attention");
 
-            toolbox_core::version_check::print_update_hint("tb-lf", env!("CARGO_PKG_VERSION"));
+            toolbox_core::version_check::print_update_hint(
+                "tb-backyard",
+                env!("CARGO_PKG_VERSION"),
+            );
         }
 
         Commands::Human => {
-            println!("{}", "tb-lf — DevPortal AI Insights CLI".bold());
+            println!("{}", "tb-backyard — Backyard AI Insights CLI".bold());
             println!();
             println!("{}", "Setup".bold().underline());
-            println!("  1. Add to secrets.toml:");
-            println!("     [devportal]");
-            println!("     url = \"https://your-devportal.example.com\"");
-            println!("     token = \"your-bearer-token\"");
+            println!("  1. Easiest: export PRODUCTIVE_AUTH_TOKEN (set already if you use");
+            println!("     the Productive MCP) — tb-backyard authenticates with your");
+            println!("     Productive token against https://backyard.productive.io.");
+            println!("  2. Or pin a token in secrets.toml:");
+            println!("     [backyard]");
+            println!("     token = \"<productive-pat>\"");
             println!("     project = \"production\"");
-            println!("  2. Or: tb-lf config set url https://...");
-            println!("  3. Verify: tb-lf doctor");
+            println!("  3. Verify: tb-backyard doctor");
             println!();
             println!("{}", "Daily Use".bold().underline());
-            println!("  tb-lf dashboard                    Overview KPIs");
-            println!("  tb-lf traces --from 1d            Today's traces");
-            println!("  tb-lf traces --triage flagged      Flagged traces");
-            println!("  tb-lf daily-metrics --days 7       Weekly trends");
-            println!("  tb-lf trace-metrics --from 7d      Trace scoring aggregates");
-            println!("  tb-lf trace-metrics <id>           Per-trace scoring detail");
+            println!("  tb-backyard dashboard                    Overview KPIs");
+            println!("  tb-backyard traces --from 1d            Today's traces");
+            println!("  tb-backyard traces --triage flagged      Flagged traces");
+            println!("  tb-backyard daily-metrics --days 7       Weekly trends");
+            println!("  tb-backyard trace-metrics --from 7d      Trace scoring aggregates");
+            println!("  tb-backyard trace-metrics <id>           Per-trace scoring detail");
             println!();
             println!("{}", "Investigating Traces".bold().underline());
-            println!("  tb-lf traces --name <agent>        Filter by name");
-            println!("  tb-lf traces --tags <a,b>          Filter by Langfuse tags");
-            println!("  tb-lf names                        List distinct trace names");
-            println!("  tb-lf tags --prefix resource       List tag values to filter by");
-            println!("  tb-lf trace <id> --project <p>     Full trace detail");
-            println!("  tb-lf trace <id> --observations    With observations");
-            println!("  tb-lf scores --trace <id>          Scores for a trace");
-            println!("  tb-lf search <query>               Search across traces");
+            println!("  tb-backyard traces --name <agent>        Filter by name");
+            println!("  tb-backyard traces --tags <a,b>          Filter by Langfuse tags");
+            println!("  tb-backyard names                        List distinct trace names");
+            println!("  tb-backyard tags --prefix resource       List tag values to filter by");
+            println!("  tb-backyard trace <id> --project <p>     Full trace detail");
+            println!("  tb-backyard trace <id> --observations    With observations");
+            println!("  tb-backyard scores --trace <id>          Scores for a trace");
+            println!("  tb-backyard search <query>               Search across traces");
             println!();
             println!("{}", "Eval Runs".bold().underline());
-            println!("  tb-lf eval runs                    Recent eval runs");
-            println!("  tb-lf eval run <id>                Run detail + items");
-            println!("  tb-lf eval run <id> --failed       Failed items only");
-            println!("  tb-lf eval revisions               Score trends by commit");
-            println!("  tb-lf eval flaky                   Flaky test detection");
+            println!("  tb-backyard eval runs                    Recent eval runs");
+            println!("  tb-backyard eval run <id>                Run detail + items");
+            println!("  tb-backyard eval run <id> --failed       Failed items only");
+            println!("  tb-backyard eval revisions               Score trends by commit");
+            println!("  tb-backyard eval flaky                   Flaky test detection");
             println!();
             println!("{}", "Triage".bold().underline());
-            println!("  tb-lf queue                        Pending queue items");
-            println!("  tb-lf queue --status confirmed     Confirmed items");
-            println!("  tb-lf queue --team 25              Filter by team");
-            println!("  tb-lf queue --team unassigned      Unassigned items");
-            println!("  tb-lf queue-stats                  Queue breakdown");
-            println!("  tb-lf teams                        List teams");
-            println!("  tb-lf triage-runs                  Recent triage runs");
+            println!("  tb-backyard queue                        Pending queue items");
+            println!("  tb-backyard queue --status confirmed     Confirmed items");
+            println!("  tb-backyard queue --team 25              Filter by team");
+            println!("  tb-backyard queue --team unassigned      Unassigned items");
+            println!("  tb-backyard queue-stats                  Queue breakdown");
+            println!("  tb-backyard teams                        List teams");
+            println!("  tb-backyard triage-runs                  Recent triage runs");
             println!();
             println!("{}", "Queue Management".bold().underline());
-            println!("  tb-lf queue-update 42 --team 25    Assign team");
-            println!("  tb-lf queue-update 42 --no-team    Clear team");
-            println!("  tb-lf queue-update 42 --status confirmed");
-            println!("  tb-lf queue-bulk-update --filter-status pending_review --set-team 25");
-            println!("  tb-lf queue-bulk-update ... --dry-run  Preview first");
-            println!("  tb-lf queue-delete 42              Delete an item");
+            println!("  tb-backyard queue-update 42 --team 25    Assign team");
+            println!("  tb-backyard queue-update 42 --no-team    Clear team");
+            println!("  tb-backyard queue-update 42 --status confirmed");
+            println!(
+                "  tb-backyard queue-bulk-update --filter-status pending_review --set-team 25"
+            );
+            println!("  tb-backyard queue-bulk-update ... --dry-run  Preview first");
+            println!("  tb-backyard queue-delete 42              Delete an item");
             println!();
             println!("{}", "Tips".bold().underline());
             println!("  --json        Machine-readable output (pipe to jq)");
@@ -2927,7 +3010,7 @@ async fn run() -> tb_lf::error::Result<()> {
             let topics = [
                 (
                     "entities",
-                    "DevPortal tracks AI agent behavior through several entities:\n- Traces: A single agent invocation (user query → agent response)\n- Observations: Sub-steps within a trace (LLM calls, tool calls, spans)\n- Sessions: Groups of traces from the same user conversation\n- Scores: Numeric or categorical evaluations attached to traces\n- Comments: Human annotations on traces or observations",
+                    "Backyard tracks AI agent behavior through several entities:\n- Traces: A single agent invocation (user query → agent response)\n- Observations: Sub-steps within a trace (LLM calls, tool calls, spans)\n- Sessions: Groups of traces from the same user conversation\n- Scores: Numeric or categorical evaluations attached to traces\n- Comments: Human annotations on traces or observations",
                 ),
                 (
                     "relationships",
@@ -2963,7 +3046,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ),
                 (
                     "tags",
-                    "Langfuse tags annotate traces for filtering. ai-agent emits structured tags derived from the tools each run consumed:\n- resource:<type>: resource tools (describe_resource, query_resources, ...) tagged with the resource_type (e.g. resource:deal)\n- report:<type>: report tools (describe_report, query_report) tagged with the report_type\n- skill:<id>: one tag per skill loaded via load_skills\n- tool:<name>: allowlisted system tools (plan, compact_thread, fetch_web_page, read_file_from_url)\n- Object:<name>, Type:<name>: older ad-hoc tags from earlier instrumentation\nUse `tb-lf tags` to list distinct values, `tb-lf tags --prefix resource` to filter, and `tb-lf traces --tags resource:deal,tool:plan` to slice traces by them.",
+                    "Langfuse tags annotate traces for filtering. ai-agent emits structured tags derived from the tools each run consumed:\n- resource:<type>: resource tools (describe_resource, query_resources, ...) tagged with the resource_type (e.g. resource:deal)\n- report:<type>: report tools (describe_report, query_report) tagged with the report_type\n- skill:<id>: one tag per skill loaded via load_skills\n- tool:<name>: allowlisted system tools (plan, compact_thread, fetch_web_page, read_file_from_url)\n- Object:<name>, Type:<name>: older ad-hoc tags from earlier instrumentation\nUse `tb-backyard tags` to list distinct values, `tb-backyard tags --prefix resource` to filter, and `tb-backyard traces --tags resource:deal,tool:plan` to slice traces by them.",
                 ),
             ];
 
@@ -3001,7 +3084,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 }
                 println!(
                     "\n  {}",
-                    "Run `tb-lf explain <topic>` for details.".dimmed()
+                    "Run `tb-backyard explain <topic>` for details.".dimmed()
                 );
             }
         }
@@ -3019,7 +3102,7 @@ async fn run() -> tb_lf::error::Result<()> {
 
             // API connectivity
             print!("  {:<10} ", "API:");
-            let test_path = DevPortalClient::build_path(
+            let test_path = BackyardClient::build_path(
                 "/dashboard",
                 &[("project_id", project_id.map(|id| id.to_string()))],
             );
@@ -3041,11 +3124,14 @@ async fn run() -> tb_lf::error::Result<()> {
                 format!("{} B", bytes)
             };
             println!("  {:<10} {} files, {}", "Cache:", count, size_str);
-            toolbox_core::version_check::print_update_hint("tb-lf", env!("CARGO_PKG_VERSION"));
+            toolbox_core::version_check::print_update_hint(
+                "tb-backyard",
+                env!("CARGO_PKG_VERSION"),
+            );
         }
 
         Commands::Flags => {
-            let path = DevPortalClient::build_path("/flags", &[("project_id", pid)]);
+            let path = BackyardClient::build_path("/flags", &[("project_id", pid)]);
             let resp: serde_json::Value = client.get(&path, CacheTtl::Short).await?;
             let flags: Vec<FlagInfo> =
                 serde_json::from_value(resp["data"].clone()).unwrap_or_default();
@@ -3102,7 +3188,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("environment", env),
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
-            let path = DevPortalClient::build_path("/traces/flag_stats", &params);
+            let path = BackyardClient::build_path("/traces/flag_stats", &params);
             let resp: FlagStatsResponse = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -3155,7 +3241,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 ("detail", Some(detail.clone())),
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
-            let path = DevPortalClient::build_path("/traces/stratified_flag_stats", &params);
+            let path = BackyardClient::build_path("/traces/stratified_flag_stats", &params);
             let resp: StratifiedFlagStatsResponse = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -3304,7 +3390,7 @@ async fn run() -> tb_lf::error::Result<()> {
                 params.push(("ignore_flags", Some(ignore_flags.join(","))));
             }
             time.push_date_params_inclusive_or_exit(&mut params);
-            let path = DevPortalClient::build_path("/traces/env_cohort", &params);
+            let path = BackyardClient::build_path("/traces/env_cohort", &params);
             let resp: EnvCohortResponse = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -3438,7 +3524,7 @@ async fn run() -> tb_lf::error::Result<()> {
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
             pagination.push_params(&mut params);
-            let path = DevPortalClient::build_path("/traces", &params);
+            let path = BackyardClient::build_path("/traces", &params);
             let resp: PaginatedResponse<Trace> = client.get(&path, CacheTtl::Short).await?;
 
             if cli.json {
@@ -3533,6 +3619,37 @@ async fn run() -> tb_lf::error::Result<()> {
             },
         },
 
+        Commands::Friction { action } => match action {
+            FrictionAction::Submit {
+                body,
+                description,
+                severity,
+                category,
+                root_cause,
+                repo,
+                time_lost,
+            } => {
+                friction_submit(
+                    &client,
+                    body.as_deref(),
+                    description.as_deref(),
+                    &severity,
+                    category.as_deref(),
+                    &root_cause,
+                    repo.as_deref(),
+                    time_lost,
+                    cli.json,
+                )
+                .await?;
+            }
+            FrictionAction::List { repo, limit } => {
+                friction_list(&client, repo.as_deref(), limit, cli.json).await?;
+            }
+            FrictionAction::Report { repo } => {
+                friction_report(&client, repo.as_deref(), cli.json).await?;
+            }
+        },
+
         Commands::Config { .. } | Commands::Skill { .. } | Commands::Uninstall { .. } => {} // handled before client construction
     }
 
@@ -3540,16 +3657,16 @@ async fn run() -> tb_lf::error::Result<()> {
 }
 
 async fn share_upload(
-    client: &DevPortalClient,
+    client: &BackyardClient,
     files: Vec<std::path::PathBuf>,
     visibility: &str,
     title: Option<&str>,
     json: bool,
-) -> Result<(), tb_lf::error::TbLfError> {
+) -> Result<(), tb_backyard::error::TbBackyardError> {
     use reqwest::multipart;
 
     if !["private", "unlisted"].contains(&visibility) {
-        return Err(tb_lf::error::TbLfError::Other(format!(
+        return Err(tb_backyard::error::TbBackyardError::Other(format!(
             "invalid --visibility: expected `private` or `unlisted`, got `{}`",
             visibility
         )));
@@ -3562,7 +3679,7 @@ async fn share_upload(
 
     for path in &files {
         if !path.exists() {
-            return Err(tb_lf::error::TbLfError::Other(format!(
+            return Err(tb_backyard::error::TbBackyardError::Other(format!(
                 "file not found: {}",
                 path.display()
             )));
@@ -3571,22 +3688,32 @@ async fn share_upload(
             .file_name()
             .and_then(|n| n.to_str())
             .ok_or_else(|| {
-                tb_lf::error::TbLfError::Other(format!("invalid filename: {}", path.display()))
+                tb_backyard::error::TbBackyardError::Other(format!(
+                    "invalid filename: {}",
+                    path.display()
+                ))
             })?
             .to_string();
 
         let bytes = tokio::fs::read(path).await.map_err(|e| {
-            tb_lf::error::TbLfError::Other(format!("failed to read {}: {}", path.display(), e))
+            tb_backyard::error::TbBackyardError::Other(format!(
+                "failed to read {}: {}",
+                path.display(),
+                e
+            ))
         })?;
         let mime = mime_for_path(path);
         let part = multipart::Part::bytes(bytes)
             .file_name(filename)
             .mime_str(&mime)
-            .map_err(|e| tb_lf::error::TbLfError::Other(format!("invalid mime: {}", e)))?;
+            .map_err(|e| {
+                tb_backyard::error::TbBackyardError::Other(format!("invalid mime: {}", e))
+            })?;
         form = form.part("files[]", part);
     }
 
-    let resp: tb_lf::types::ShareResponse = client.post_multipart("/spa_api/shares", form).await?;
+    let resp: tb_backyard::types::ShareResponse =
+        client.post_multipart("/spa_api/shares", form).await?;
 
     if json {
         println!("{}", output::render_json(&resp));
@@ -3612,20 +3739,21 @@ async fn share_upload(
 /// so any matching row is by definition owned by the caller. Returns the
 /// summary so the caller can read `id` + `visibility`.
 async fn resolve_own_share_by_target(
-    client: &DevPortalClient,
+    client: &BackyardClient,
     target: &str,
-) -> Result<tb_lf::types::ShareSummary, tb_lf::error::TbLfError> {
-    let token =
-        tb_lf::share_alias::parse_share_target(target).map_err(tb_lf::error::TbLfError::Other)?;
+) -> Result<tb_backyard::types::ShareSummary, tb_backyard::error::TbBackyardError> {
+    let token = tb_backyard::share_alias::parse_share_target(target)
+        .map_err(tb_backyard::error::TbBackyardError::Other)?;
 
-    let shares: Vec<tb_lf::types::ShareSummary> = client.devportal_get("/spa_api/shares").await?;
+    let shares: Vec<tb_backyard::types::ShareSummary> =
+        client.backyard_get("/spa_api/shares").await?;
 
     shares
         .into_iter()
         .find(|s| s.token == token)
         .ok_or_else(|| {
-            tb_lf::error::TbLfError::Other(format!(
-                "no share with token `{}` owned by the current user — run `tb-lf share upload …` first, or copy a token from `tb-lf share alias list`",
+            tb_backyard::error::TbBackyardError::Other(format!(
+                "no share with token `{}` owned by the current user — run `tb-backyard share upload …` first, or copy a token from `tb-backyard share alias list`",
                 token
             ))
         })
@@ -3634,11 +3762,11 @@ async fn resolve_own_share_by_target(
 /// INV-5 gate. Returns Ok(()) if the caller should proceed; Err with a
 /// user-facing message if the opt-in failed.
 fn check_unlisted_opt_in(
-    gate: tb_lf::share_alias::OptInGate,
+    gate: tb_backyard::share_alias::OptInGate,
     force: bool,
-) -> Result<(), tb_lf::error::TbLfError> {
+) -> Result<(), tb_backyard::error::TbBackyardError> {
     use std::io::{BufRead, IsTerminal, Write};
-    use tb_lf::share_alias::OptInGate;
+    use tb_backyard::share_alias::OptInGate;
 
     match gate {
         OptInGate::None => Ok(()),
@@ -3656,28 +3784,27 @@ fn check_unlisted_opt_in(
             let stdin_tty = std::io::stdin().is_terminal();
             let stderr_tty = std::io::stderr().is_terminal();
             if !(stdin_tty && stderr_tty) {
-                return Err(tb_lf::error::TbLfError::Other(format!(
+                return Err(tb_backyard::error::TbBackyardError::Other(format!(
                     "{}\n\nNot a TTY — pass --force to confirm this opt-in non-interactively.",
-                    tb_lf::share_alias::UNLISTED_OPT_IN_COPY
+                    tb_backyard::share_alias::UNLISTED_OPT_IN_COPY
                 )));
             }
             eprintln!(
                 "{} {}",
                 "warn:".yellow().bold(),
-                tb_lf::share_alias::UNLISTED_OPT_IN_COPY
+                tb_backyard::share_alias::UNLISTED_OPT_IN_COPY
             );
             eprint!("Proceed? [y/N]: ");
             std::io::stderr().flush().ok();
             let mut line = String::new();
-            std::io::stdin()
-                .lock()
-                .read_line(&mut line)
-                .map_err(|e| tb_lf::error::TbLfError::Other(format!("read failed: {}", e)))?;
+            std::io::stdin().lock().read_line(&mut line).map_err(|e| {
+                tb_backyard::error::TbBackyardError::Other(format!("read failed: {}", e))
+            })?;
             let answer = line.trim().to_lowercase();
             if answer == "y" || answer == "yes" {
                 Ok(())
             } else {
-                Err(tb_lf::error::TbLfError::Other(
+                Err(tb_backyard::error::TbBackyardError::Other(
                     "aborted: did not confirm unlisted opt-in".into(),
                 ))
             }
@@ -3701,13 +3828,13 @@ fn alias_url(base: &str, user_id: u64, slug: &str) -> String {
 }
 
 async fn share_alias_set(
-    client: &DevPortalClient,
+    client: &BackyardClient,
     raw_slug: &str,
     target: &str,
     force: bool,
     json: bool,
-) -> Result<(), tb_lf::error::TbLfError> {
-    let normalized = tb_lf::share_alias::normalize_slug(raw_slug);
+) -> Result<(), tb_backyard::error::TbBackyardError> {
+    let normalized = tb_backyard::share_alias::normalize_slug(raw_slug);
     if normalized != raw_slug {
         eprintln!(
             "{} normalized slug `{}` → `{}`",
@@ -3716,13 +3843,14 @@ async fn share_alias_set(
             normalized
         );
     }
-    tb_lf::share_alias::validate_slug(&normalized).map_err(tb_lf::error::TbLfError::Other)?;
+    tb_backyard::share_alias::validate_slug(&normalized)
+        .map_err(tb_backyard::error::TbBackyardError::Other)?;
 
     let new_target = resolve_own_share_by_target(client, target).await?;
     let becomes_unlisted = new_target.visibility == "unlisted";
 
-    let existing: Vec<tb_lf::types::ShareAlias> =
-        client.devportal_get("/spa_api/share_aliases").await?;
+    let existing: Vec<tb_backyard::types::ShareAlias> =
+        client.backyard_get("/spa_api/share_aliases").await?;
     let existing_alias = existing.iter().find(|a| a.slug == normalized);
 
     let was_unlisted = existing_alias
@@ -3730,17 +3858,17 @@ async fn share_alias_set(
         .map(|v| v == "unlisted")
         .unwrap_or(false);
 
-    let gate = tb_lf::share_alias::opt_in_gate(was_unlisted, becomes_unlisted);
+    let gate = tb_backyard::share_alias::opt_in_gate(was_unlisted, becomes_unlisted);
     check_unlisted_opt_in(gate, force)?;
 
-    let result: tb_lf::types::ShareAlias = match existing_alias {
+    let result: tb_backyard::types::ShareAlias = match existing_alias {
         None => {
             let payload = ShareAliasCreatePayload {
                 slug: &normalized,
                 share_id: new_target.id,
             };
             client
-                .devportal_post_json("/spa_api/share_aliases", &payload)
+                .backyard_post_json("/spa_api/share_aliases", &payload)
                 .await?
         }
         Some(existing) => {
@@ -3751,7 +3879,7 @@ async fn share_alias_set(
                 share_id: new_target.id,
             };
             let path = format!("/spa_api/share_aliases/{}", existing.id);
-            client.devportal_patch_json(&path, &payload).await?
+            client.backyard_patch_json(&path, &payload).await?
         }
     };
 
@@ -3760,7 +3888,7 @@ async fn share_alias_set(
         return Ok(());
     }
 
-    let url = alias_url(client.devportal_url(), result.user_id, &result.slug);
+    let url = alias_url(client.backyard_url(), result.user_id, &result.slug);
     let verb = if existing_alias.is_some() {
         "Alias repointed"
     } else {
@@ -3782,11 +3910,11 @@ async fn share_alias_set(
 }
 
 async fn share_alias_list(
-    client: &DevPortalClient,
+    client: &BackyardClient,
     json: bool,
-) -> Result<(), tb_lf::error::TbLfError> {
-    let rows: Vec<tb_lf::types::ShareAlias> =
-        client.devportal_get("/spa_api/share_aliases").await?;
+) -> Result<(), tb_backyard::error::TbBackyardError> {
+    let rows: Vec<tb_backyard::types::ShareAlias> =
+        client.backyard_get("/spa_api/share_aliases").await?;
 
     if json {
         println!("{}", output::render_json(&rows));
@@ -3796,12 +3924,13 @@ async fn share_alias_list(
     if rows.is_empty() {
         println!(
             "{}",
-            "No aliases yet. Create one with `tb-lf share alias set <slug> <token>`.".dimmed()
+            "No aliases yet. Create one with `tb-backyard share alias set <slug> <token>`."
+                .dimmed()
         );
         return Ok(());
     }
 
-    let base = client.devportal_url();
+    let base = client.backyard_url();
     println!("{}\n", format!("Aliases ({})", rows.len()).bold());
     for row in &rows {
         let url = alias_url(base, row.user_id, &row.slug);
@@ -3827,20 +3956,20 @@ async fn share_alias_list(
 }
 
 async fn share_alias_rm(
-    client: &DevPortalClient,
+    client: &BackyardClient,
     slug: &str,
     json: bool,
-) -> Result<(), tb_lf::error::TbLfError> {
-    let normalized = tb_lf::share_alias::normalize_slug(slug);
+) -> Result<(), tb_backyard::error::TbBackyardError> {
+    let normalized = tb_backyard::share_alias::normalize_slug(slug);
 
-    let rows: Vec<tb_lf::types::ShareAlias> =
-        client.devportal_get("/spa_api/share_aliases").await?;
+    let rows: Vec<tb_backyard::types::ShareAlias> =
+        client.backyard_get("/spa_api/share_aliases").await?;
     let target = rows.iter().find(|a| a.slug == normalized).ok_or_else(|| {
-        tb_lf::error::TbLfError::Other(format!("no alias with slug `{}`", normalized))
+        tb_backyard::error::TbBackyardError::Other(format!("no alias with slug `{}`", normalized))
     })?;
 
     let path = format!("/spa_api/share_aliases/{}", target.id);
-    client.devportal_delete(&path).await?;
+    client.backyard_delete(&path).await?;
 
     if json {
         let payload = serde_json::json!({ "deleted": true, "slug": normalized });
@@ -3853,8 +3982,8 @@ async fn share_alias_rm(
 
 // --- Share CRUD (sister surface to `share alias`) ---
 
-use tb_lf::share::SHARE_ESCALATION_COPY;
-use tb_lf::share::{ShareVisibilityChange, share_url, visibility_change};
+use tb_backyard::share::SHARE_ESCALATION_COPY;
+use tb_backyard::share::{ShareVisibilityChange, share_url, visibility_change};
 
 #[derive(serde::Serialize)]
 struct ShareUpdatePayload<'a> {
@@ -3870,8 +3999,12 @@ struct ShareUpdateInner<'a> {
     visibility: Option<&'a str>,
 }
 
-async fn share_list(client: &DevPortalClient, json: bool) -> Result<(), tb_lf::error::TbLfError> {
-    let rows: Vec<tb_lf::types::ShareSummary> = client.devportal_get("/spa_api/shares").await?;
+async fn share_list(
+    client: &BackyardClient,
+    json: bool,
+) -> Result<(), tb_backyard::error::TbBackyardError> {
+    let rows: Vec<tb_backyard::types::ShareSummary> =
+        client.backyard_get("/spa_api/shares").await?;
 
     if json {
         println!("{}", output::render_json(&rows));
@@ -3881,12 +4014,12 @@ async fn share_list(client: &DevPortalClient, json: bool) -> Result<(), tb_lf::e
     if rows.is_empty() {
         println!(
             "{}",
-            "No shares yet. Upload one with `tb-lf share upload <files…>`.".dimmed()
+            "No shares yet. Upload one with `tb-backyard share upload <files…>`.".dimmed()
         );
         return Ok(());
     }
 
-    let base = client.devportal_url();
+    let base = client.backyard_url();
     println!("{}\n", format!("Shares ({})", rows.len()).bold());
     for row in &rows {
         let url = share_url(base, &row.token);
@@ -3905,22 +4038,22 @@ async fn share_list(client: &DevPortalClient, json: bool) -> Result<(), tb_lf::e
 }
 
 async fn share_update(
-    client: &DevPortalClient,
+    client: &BackyardClient,
     target: &str,
     new_title: Option<&str>,
     new_visibility: Option<&str>,
     force: bool,
     json: bool,
-) -> Result<(), tb_lf::error::TbLfError> {
+) -> Result<(), tb_backyard::error::TbBackyardError> {
     if new_title.is_none() && new_visibility.is_none() {
-        return Err(tb_lf::error::TbLfError::Other(
+        return Err(tb_backyard::error::TbBackyardError::Other(
             "nothing to update — pass --title and/or --visibility".into(),
         ));
     }
     if let Some(v) = new_visibility
         && !["private", "unlisted"].contains(&v)
     {
-        return Err(tb_lf::error::TbLfError::Other(format!(
+        return Err(tb_backyard::error::TbBackyardError::Other(format!(
             "invalid --visibility: expected `private` or `unlisted`, got `{}`",
             v
         )));
@@ -3940,7 +4073,8 @@ async fn share_update(
         },
     };
     let path = format!("/spa_api/shares/{}", share.id);
-    let updated: tb_lf::types::ShareSummary = client.devportal_patch_json(&path, &payload).await?;
+    let updated: tb_backyard::types::ShareSummary =
+        client.backyard_patch_json(&path, &payload).await?;
 
     if json {
         println!("{}", output::render_json(&updated));
@@ -3951,7 +4085,7 @@ async fn share_update(
     println!(
         "  {} {}",
         "URL:".dimmed(),
-        share_url(client.devportal_url(), &updated.token).bold()
+        share_url(client.backyard_url(), &updated.token).bold()
     );
     if let Some(t) = &updated.title {
         println!("  {} {}", "Title:".dimmed(), t);
@@ -3968,13 +4102,13 @@ async fn share_update(
 }
 
 async fn share_rm(
-    client: &DevPortalClient,
+    client: &BackyardClient,
     target: &str,
     json: bool,
-) -> Result<(), tb_lf::error::TbLfError> {
+) -> Result<(), tb_backyard::error::TbBackyardError> {
     let share = resolve_own_share_by_target(client, target).await?;
     let path = format!("/spa_api/shares/{}", share.id);
-    client.devportal_delete(&path).await?;
+    client.backyard_delete(&path).await?;
 
     if json {
         let payload = serde_json::json!({ "deleted": true, "token": share.token });
@@ -3990,10 +4124,182 @@ async fn share_rm(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn friction_submit(
+    client: &BackyardClient,
+    body: Option<&std::path::Path>,
+    description: Option<&str>,
+    severity: &str,
+    category: Option<&str>,
+    root_cause: &str,
+    repo: Option<&str>,
+    time_lost: Option<i64>,
+    json: bool,
+) -> Result<(), tb_backyard::error::TbBackyardError> {
+    use tb_backyard::error::TbBackyardError;
+    use tb_backyard::friction;
+
+    let payload = if let Some(desc) = description {
+        friction::build_quick_payload(desc, category, severity, root_cause, repo, time_lost)
+    } else {
+        let raw = match body {
+            Some(path) => std::fs::read_to_string(path)
+                .map_err(|e| TbBackyardError::Other(format!("reading {}: {e}", path.display())))?,
+            None => {
+                use std::io::Read;
+                let mut buf = String::new();
+                std::io::stdin()
+                    .read_to_string(&mut buf)
+                    .map_err(|e| TbBackyardError::Other(format!("reading stdin: {e}")))?;
+                buf
+            }
+        };
+        if raw.trim().is_empty() {
+            return Err(TbBackyardError::Other(
+                "no payload — pass --description for quick mode, or pipe a feedback_entry JSON object".into(),
+            ));
+        }
+        friction::wrap_payload(serde_json::from_str(&raw)?)
+    };
+
+    let resp: serde_json::Value = client.post("/feedback_entries", &payload).await?;
+
+    if json {
+        println!("{}", output::render_json(&resp));
+        return Ok(());
+    }
+    match friction::extract_id(&resp) {
+        Some(id) => println!("{} (id: {})", "Feedback logged".green(), id),
+        None => println!("{}", "Feedback logged".green()),
+    }
+    Ok(())
+}
+
+async fn friction_list(
+    client: &BackyardClient,
+    repo: Option<&str>,
+    limit: u32,
+    json: bool,
+) -> Result<(), tb_backyard::error::TbBackyardError> {
+    let path = BackyardClient::build_path(
+        "/feedback_entries",
+        &[
+            ("repo", repo.map(str::to_string)),
+            ("per_page", Some(limit.to_string())),
+        ],
+    );
+    let resp: PaginatedResponse<FrictionEntry> = client.get(&path, CacheTtl::Short).await?;
+
+    if json {
+        println!("{}", output::render_json(&resp.data));
+        return Ok(());
+    }
+    if resp.data.is_empty() {
+        println!(
+            "{}",
+            output::empty_hint(
+                "friction entries",
+                "Log one with `tb-backyard friction submit`."
+            )
+        );
+        return Ok(());
+    }
+
+    println!(
+        "{}\n",
+        format!(
+            "Friction entries ({} of {})",
+            resp.data.len(),
+            resp.meta.total
+        )
+        .bold()
+    );
+    for e in &resp.data {
+        let summary = e.summary.as_deref().unwrap_or("(no summary)");
+        println!("  {} {}", format!("#{}", e.id).dimmed(), summary.bold());
+        let mut meta = vec![
+            e.category.as_deref().unwrap_or("—").to_string(),
+            e.severity.as_deref().unwrap_or("—").to_string(),
+            e.resolution_status.as_deref().unwrap_or("—").to_string(),
+        ];
+        if let Some(r) = &e.repo {
+            meta.push(r.clone());
+        }
+        if let Some(t) = e.time_lost_minutes
+            && t > 0
+        {
+            meta.push(format!("{t}m lost"));
+        }
+        println!("    {} {}", "›".dimmed(), meta.join(" · ").dimmed());
+    }
+    Ok(())
+}
+
+async fn friction_report(
+    client: &BackyardClient,
+    repo: Option<&str>,
+    json: bool,
+) -> Result<(), tb_backyard::error::TbBackyardError> {
+    let path = BackyardClient::build_path(
+        "/feedback_entries/stats",
+        &[("repo", repo.map(str::to_string))],
+    );
+    let stats: serde_json::Value = client.get(&path, CacheTtl::Short).await?;
+
+    if json {
+        println!("{}", output::render_json(&stats));
+        return Ok(());
+    }
+
+    let scope = repo.unwrap_or("all repos");
+    println!("{}\n", format!("Friction Report — {scope}").bold());
+    let total = stats
+        .get("total")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0);
+    let lost = stats
+        .get("total_time_lost_minutes")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0);
+    println!("  {} {}", "Total:".dimmed(), total);
+    println!("  {} {}h {}m", "Time lost:".dimmed(), lost / 60, lost % 60);
+
+    for (key, label) in [
+        ("by_category", "By category"),
+        ("by_severity", "By severity"),
+        ("by_root_cause", "By root cause"),
+        ("by_resolution_status", "By resolution"),
+        ("top_affected_areas", "Top affected areas"),
+    ] {
+        print_friction_breakdown(&stats, key, label);
+    }
+    Ok(())
+}
+
+/// Render a `{ label: count }` map from the stats payload as a sorted list,
+/// skipping non-object or empty entries (the stats endpoint returns many).
+fn print_friction_breakdown(stats: &serde_json::Value, key: &str, label: &str) {
+    let Some(obj) = stats.get(key).and_then(serde_json::Value::as_object) else {
+        return;
+    };
+    if obj.is_empty() {
+        return;
+    }
+    let mut rows: Vec<(&String, i64)> = obj
+        .iter()
+        .map(|(k, v)| (k, v.as_i64().unwrap_or(0)))
+        .collect();
+    rows.sort_by_key(|r| std::cmp::Reverse(r.1));
+    println!("\n  {}", label.bold());
+    for (k, n) in rows {
+        println!("    {n:>4}  {k}");
+    }
+}
+
 /// Sister of `check_unlisted_opt_in` for the share `private → unlisted`
 /// escalation. Same TTY/--force shape; different copy (the share URL was
 /// always known, the change is who can view without logging in).
-fn check_visibility_escalation(force: bool) -> Result<(), tb_lf::error::TbLfError> {
+fn check_visibility_escalation(force: bool) -> Result<(), tb_backyard::error::TbBackyardError> {
     use std::io::{BufRead, IsTerminal, Write};
 
     if force {
@@ -4002,7 +4308,7 @@ fn check_visibility_escalation(force: bool) -> Result<(), tb_lf::error::TbLfErro
     let stdin_tty = std::io::stdin().is_terminal();
     let stderr_tty = std::io::stderr().is_terminal();
     if !(stdin_tty && stderr_tty) {
-        return Err(tb_lf::error::TbLfError::Other(format!(
+        return Err(tb_backyard::error::TbBackyardError::Other(format!(
             "{}\n\nNot a TTY — pass --force to confirm this escalation non-interactively.",
             SHARE_ESCALATION_COPY
         )));
@@ -4014,12 +4320,12 @@ fn check_visibility_escalation(force: bool) -> Result<(), tb_lf::error::TbLfErro
     std::io::stdin()
         .lock()
         .read_line(&mut line)
-        .map_err(|e| tb_lf::error::TbLfError::Other(format!("read failed: {}", e)))?;
+        .map_err(|e| tb_backyard::error::TbBackyardError::Other(format!("read failed: {}", e)))?;
     let answer = line.trim().to_lowercase();
     if answer == "y" || answer == "yes" {
         Ok(())
     } else {
-        Err(tb_lf::error::TbLfError::Other(
+        Err(tb_backyard::error::TbBackyardError::Other(
             "aborted: did not confirm visibility escalation".into(),
         ))
     }
@@ -4049,14 +4355,14 @@ fn mime_for_path(path: &std::path::Path) -> String {
     .to_string()
 }
 
-fn build_lf_project_options(projects: &[tb_lf::types::Project]) -> Vec<String> {
+fn build_lf_project_options(projects: &[tb_backyard::types::Project]) -> Vec<String> {
     projects
         .iter()
         .map(|p| format!("{} (id: {})", p.name, p.id))
         .collect()
 }
 
-fn resolve_lf_project_name(selected: &str, projects: &[tb_lf::types::Project]) -> String {
+fn resolve_lf_project_name(selected: &str, projects: &[tb_backyard::types::Project]) -> String {
     projects
         .iter()
         .find(|p| selected == format!("{} (id: {})", p.name, p.id))
@@ -4066,7 +4372,7 @@ fn resolve_lf_project_name(selected: &str, projects: &[tb_lf::types::Project]) -
 
 fn find_lf_project_starting_cursor(
     existing_project: Option<&str>,
-    projects: &[tb_lf::types::Project],
+    projects: &[tb_backyard::types::Project],
 ) -> usize {
     existing_project
         .and_then(|name| {
@@ -4077,7 +4383,7 @@ fn find_lf_project_starting_cursor(
         .unwrap_or(0)
 }
 
-async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()> {
+async fn handle_config(action: Option<&ConfigAction>) -> tb_backyard::error::Result<()> {
     use toolbox_core::prompt::PromptResult;
 
     match action {
@@ -4092,9 +4398,9 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
             let default_url = existing
                 .as_ref()
                 .map(|c| c.url.as_str())
-                .unwrap_or("https://devportal.productive.io/");
+                .unwrap_or("https://backyard.productive.io/");
             let url = match toolbox_core::prompt::prompt_text(
-                "DevPortal URL:",
+                "Backyard URL:",
                 url.as_deref(),
                 default_url,
             ) {
@@ -4103,7 +4409,7 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
                     println!("Cancelled.");
                     return Ok(());
                 }
-                Err(e) => return Err(tb_lf::error::TbLfError::Config(e)),
+                Err(e) => return Err(tb_backyard::error::TbBackyardError::Config(e)),
             };
 
             // Resolve token
@@ -4117,18 +4423,18 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
                     println!("Cancelled.");
                     return Ok(());
                 }
-                Err(e) => return Err(tb_lf::error::TbLfError::Config(e)),
+                Err(e) => return Err(tb_backyard::error::TbBackyardError::Config(e)),
             };
 
             // Validate by making a test API call
-            let config = tb_lf::config::Config {
+            let config = tb_backyard::config::Config {
                 url: url.clone(),
                 token: token.clone(),
                 project: None,
             };
-            let client = tb_lf::api::DevPortalClient::new(&config, true)?;
-            let resp: tb_lf::api::PaginatedResponse<tb_lf::types::Project> = client
-                .get("/projects", tb_lf::cache::CacheTtl::Short)
+            let client = tb_backyard::api::BackyardClient::new(&config, true)?;
+            let resp: tb_backyard::api::PaginatedResponse<tb_backyard::types::Project> = client
+                .get("/projects", tb_backyard::cache::CacheTtl::Short)
                 .await?;
             println!("Connected! Found {} projects.", resp.data.len());
 
@@ -4164,21 +4470,24 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
                         println!("Cancelled.");
                         return Ok(());
                     }
-                    Err(e) => return Err(tb_lf::error::TbLfError::Config(e)),
+                    Err(e) => return Err(tb_backyard::error::TbBackyardError::Config(e)),
                 }
             } else {
                 None
             };
 
-            let config = tb_lf::config::Config {
+            let config = tb_backyard::config::Config {
                 url,
                 token,
                 project,
             };
-            toolbox_core::config::save_config(&tb_lf::config::Config::config_path()?, &config)?;
+            toolbox_core::config::save_config(
+                &tb_backyard::config::Config::config_path()?,
+                &config,
+            )?;
             println!(
                 "Config saved to {}",
-                tb_lf::config::Config::config_path()?.display()
+                tb_backyard::config::Config::config_path()?.display()
             );
 
             if let Some(ref p) = config.project {
@@ -4187,7 +4496,7 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
         }
         None | Some(ConfigAction::Show) => {
             let config = Config::load()?;
-            println!("{}", "DevPortal Configuration".bold());
+            println!("{}", "Backyard Configuration".bold());
             println!("  URL:     {}", config.url);
             println!("  Token:   {}", config.masked_token());
             println!(
@@ -4199,13 +4508,15 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
             // Interactive project selection when key=project and no value
             if key == "project" && value.is_none() {
                 let config = Config::load()?;
-                let client = tb_lf::api::DevPortalClient::new(&config, true)?;
-                let resp: tb_lf::api::PaginatedResponse<tb_lf::types::Project> = client
-                    .get("/projects", tb_lf::cache::CacheTtl::Short)
+                let client = tb_backyard::api::BackyardClient::new(&config, true)?;
+                let resp: tb_backyard::api::PaginatedResponse<tb_backyard::types::Project> = client
+                    .get("/projects", tb_backyard::cache::CacheTtl::Short)
                     .await?;
 
                 if resp.data.is_empty() {
-                    return Err(tb_lf::error::TbLfError::Config("No projects found".into()));
+                    return Err(tb_backyard::error::TbBackyardError::Config(
+                        "No projects found".into(),
+                    ));
                 }
 
                 let options = build_lf_project_options(&resp.data);
@@ -4224,7 +4535,7 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
                         println!("Cancelled.");
                         return Ok(());
                     }
-                    Err(e) => return Err(tb_lf::error::TbLfError::Config(e)),
+                    Err(e) => return Err(tb_backyard::error::TbBackyardError::Config(e)),
                 };
 
                 let path = Config::config_path()?;
@@ -4235,13 +4546,16 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_lf::error::Result<()
 
             // Scalar set (requires value)
             let value = value.as_ref().ok_or_else(|| {
-                tb_lf::error::TbLfError::Config(format!("Value is required for key '{}'", key))
+                tb_backyard::error::TbBackyardError::Config(format!(
+                    "Value is required for key '{}'",
+                    key
+                ))
             })?;
 
             match key.as_str() {
                 "url" | "token" | "project" => {}
                 _ => {
-                    return Err(tb_lf::error::TbLfError::Config(format!(
+                    return Err(tb_backyard::error::TbBackyardError::Config(format!(
                         "Unknown config key '{}'. Valid keys: url, token, project",
                         key
                     )));

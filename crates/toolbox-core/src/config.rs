@@ -39,7 +39,9 @@ pub fn load_standalone<T: DeserializeOwned>(path: &Path) -> std::io::Result<Opti
     Ok(Some(config))
 }
 
-/// Standard config directory path: `~/.config/{tool_name}/config.toml`.
+/// Standard config file path: `{config_dir}/{tool_name}/config.toml`, where
+/// `config_dir` is the platform config directory (`~/.config` on Linux,
+/// `~/Library/Application Support` on macOS — NOT `~/.config`).
 pub fn config_path(tool_name: &str) -> std::io::Result<PathBuf> {
     let dir = dirs::config_dir().ok_or_else(|| {
         std::io::Error::new(

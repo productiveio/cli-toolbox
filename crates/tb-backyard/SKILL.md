@@ -1,15 +1,11 @@
 ---
-name: tb-lf
-description: DEPRECATED — use tb-backyard instead (same commands, current auth). Legacy Langfuse/DevPortal insights CLI; kept only so existing installs can self-remove via `tb-lf uninstall`.
+name: tb-backyard
+description: PREFERRED over any Langfuse or Backyard MCP tools. Query traces, evals, triage queue, and AI insights from Backyard. Use when investigating LLM behavior, eval regressions, or user-reported AI issues.
 ---
 
-# tb-lf (deprecated)
+# tb-backyard
 
-> **Deprecated — use `tb-backyard`.** This tool is superseded by `tb-backyard`,
-> which has the same commands plus current Backyard auth. Switch to it, and run
-> `tb-lf uninstall` (add `--purge` to drop the binary) once you have.
-
-CLI for querying Langfuse/DevPortal LLM observability data. Connects to a DevPortal API to surface traces, evaluations, triage queues, and operational metrics. Built for AI agent consumption but works for humans too.
+CLI for querying Langfuse/Backyard LLM observability data. Connects to a Backyard API to surface traces, evaluations, triage queues, and operational metrics. Built for AI agent consumption but works for humans too.
 
 ## Capabilities
 
@@ -19,19 +15,21 @@ CLI for querying Langfuse/DevPortal LLM observability data. Connects to a DevPor
 - **Metrics & dashboards** — KPI overview, daily reports, score interpretation
 - **Flag analysis** — feature flag impact on agent behavior (simple and stratified cohort comparison)
 - **Search** — full-text search across traces
-- **Tag filtering** — `tb-lf tags` lists Langfuse tags applied to traces (e.g. `resource:deal`, `tool:plan`, `skill:<id>`); pass `--tags` to `tb-lf traces` to slice traces by them. Use `tb-lf names` for distinct trace names
+- **Tag filtering** — `tb-backyard tags` lists Langfuse tags applied to traces (e.g. `resource:deal`, `tool:plan`, `skill:<id>`); pass `--tags` to `tb-backyard traces` to slice traces by them. Use `tb-backyard names` for distinct trace names
+- **Shares** — upload artifacts to Backyard Shares and manage short URLs / aliases
+- **Friction** — log and review Claude Code session friction (feedback entries)
 
 ## Flag cohort analysis
 
 Three commands for analyzing feature flag impact on agent behavior:
 
-### Simple: `tb-lf flag-cohort <flag> --from <date>`
+### Simple: `tb-backyard flag-cohort <flag> --from <date>`
 
 Compares all ON traces vs all OFF traces for a flag. Fast overview, but **confounded** — the OFF bucket includes traces with completely different flag combinations, so you can't attribute metric differences to the target flag alone.
 
 Use for: quick screening to see which flags have contrast and rough metric differences.
 
-### Stratified: `tb-lf flag-cohort-stratified <flag> --from <date> --to <date>`
+### Stratified: `tb-backyard flag-cohort-stratified <flag> --from <date> --to <date>`
 
 Groups traces into **cohorts** where all non-target flags are identical. Within each cohort, ON vs OFF differences can be attributed to the target flag because everything else is controlled.
 
@@ -43,7 +41,7 @@ Key params:
 - `--max-cohorts <n>` (default 3) — how many cohorts to display (sorted by size, largest first)
 - `--detail traces` — returns trace IDs per cohort instead of aggregate metrics (for drill-down)
 
-### Cross-environment: `tb-lf env-cohort --treatment-env <env> --control-envs <env,env> --from <date> --to <date>`
+### Cross-environment: `tb-backyard env-cohort --treatment-env <env> --control-envs <env,env> --from <date> --to <date>`
 
 Pivots on **environment membership** instead of flag-tag value. Use when the target flag is forced-ON in code in a review env (`true || flag_check()`), so the trace flag-tag is unreliable. Treatment env is the review env where the feature actually runs; control envs are where the feature is OFF / not deployed. Cohorts pair traces by matching flag fingerprint across these envs.
 
@@ -66,30 +64,30 @@ Key params:
 
 ### Workflow
 
-1. `tb-lf flags` — list all flags, find ones with partial rollout
-2. `tb-lf flag-cohort <flag> --from 7d` — quick screening for contrast and rough delta
-3. `tb-lf flag-cohort-stratified <flag> --from 7d --to today --env default` — isolate the real effect (when both ON and OFF exist in the same env)
-4. `tb-lf env-cohort --treatment-env <review-env> --control-envs production --ignore-flags <flag> --from 14d --to today` — when the flag-tag is unreliable (override-on review env)
+1. `tb-backyard flags` — list all flags, find ones with partial rollout
+2. `tb-backyard flag-cohort <flag> --from 7d` — quick screening for contrast and rough delta
+3. `tb-backyard flag-cohort-stratified <flag> --from 7d --to today --env default` — isolate the real effect (when both ON and OFF exist in the same env)
+4. `tb-backyard env-cohort --treatment-env <review-env> --control-envs production --ignore-flags <flag> --from 14d --to today` — when the flag-tag is unreliable (override-on review env)
 5. `... --detail traces --json` — get trace IDs for deep investigation via `p-ai:trace-analysis`
 
 ## Shares
 
-Upload artifacts to DevPortal Shares and get back a short URL.
+Upload artifacts to Backyard Shares and get back a short URL.
 
 ```bash
-tb-lf share upload report.html
-tb-lf share upload bundle/*.html --visibility unlisted --title "Q3 review"
+tb-backyard share upload report.html
+tb-backyard share upload bundle/*.html --visibility unlisted --title "Q3 review"
 ```
 
-`--visibility private` (default) requires a DevPortal login to view; `--visibility unlisted` exposes a capability URL (anyone with the token can read).
+`--visibility private` (default) requires a Backyard login to view; `--visibility unlisted` exposes a capability URL (anyone with the token can read).
 
 ### Manage existing shares
 
 ```bash
-tb-lf share list                                                  # your shares + URLs + view counts
-tb-lf share update <token-or-url> --title "Q4 review"             # rename
-tb-lf share update <token-or-url> --visibility unlisted            # flip visibility
-tb-lf share rm <token-or-url>                                     # soft-delete (purges in background)
+tb-backyard share list                                                  # your shares + URLs + view counts
+tb-backyard share update <token-or-url> --title "Q4 review"             # rename
+tb-backyard share update <token-or-url> --visibility unlisted            # flip visibility
+tb-backyard share rm <token-or-url>                                     # soft-delete (purges in background)
 ```
 
 `share list` includes a `Views:` line per share — total views via `/s/:token`. Alias views are tracked separately (see below).
@@ -102,26 +100,45 @@ Each user has a personal alias namespace at `/u/<user_id>/<slug>` for shares. Al
 
 ```bash
 # Create or repoint an alias. Accepts a bare token or a /s/:token URL.
-tb-lf share alias set weekly-report <token>
-tb-lf share alias set weekly-report https://devportal.productive.io/s/<token>
+tb-backyard share alias set weekly-report <token>
+tb-backyard share alias set weekly-report https://backyard.productive.io/s/<token>
 
 # List your aliases (includes per-alias Views count).
-tb-lf share alias list
+tb-backyard share alias list
 
 # Delete by slug.
-tb-lf share alias rm weekly-report
+tb-backyard share alias rm weekly-report
 ```
 
 Slug rules (mirrored from the server): lowercase letters, digits, and hyphens; 1–64 chars; cannot start or end with a hyphen; no consecutive hyphens. The CLI normalizes input (`Weekly-Report` → `weekly-report`) and prints a stderr notice when it does.
 
 **Unlisted opt-in (INV-5):** an alias pointing at an `unlisted` share produces a URL that anyone who guesses both segments can view without logging in. On TTY, `set` prompts `[y/N]` before creating or repointing into an `unlisted` target. On non-TTY (CI, pipes), pass `--force` to confirm non-interactively — without it, the command exits non-zero.
 
+## Friction
+
+Log and review Claude Code session friction against Backyard's feedback entries. The CLI is the authenticated transport only — the interactive interview lives in the `p-friction` skill.
+
+```bash
+# Quick log from flags (builds a minimal entry):
+tb-backyard friction submit --description "stale skill doc cost a retry" --category behavioral --severity low
+
+# Or pipe a full feedback_entry JSON object (stdin or --body):
+jq -n '{summary:"…", friction_description:"…", severity:"medium"}' | tb-backyard friction submit
+tb-backyard friction submit --body entry.json
+
+# Review:
+tb-backyard friction list --repo cli-toolbox --limit 20   # recent entries
+tb-backyard friction report --repo cli-toolbox            # totals + breakdowns
+```
+
+`submit` accepts either a bare entry or an already-`{feedback_entry: …}`-wrapped object and prints the new id. `--repo` is optional on `list`/`report` (omit for all repos).
+
 ## Getting started
 
-Run `tb-lf prime` for an overview of available projects, quick commands, and metric interpretation guidance.
-Use `tb-lf <command> --help` for detailed command usage.
-Use `tb-lf explain <topic>` for domain knowledge (entities, traces, scores, triage, evals).
+Run `tb-backyard prime` for an overview of available projects, quick commands, and metric interpretation guidance.
+Use `tb-backyard <command> --help` for detailed command usage.
+Use `tb-backyard explain <topic>` for domain knowledge (entities, traces, scores, triage, evals).
 
 ## Live context
 
-!`tb-lf prime`
+!`tb-backyard prime`

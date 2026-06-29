@@ -818,6 +818,30 @@ pub struct ShareAliasTarget {
     pub visibility: Option<String>,
 }
 
+/// A friction (feedback) entry row from `GET /spa_api/ai/feedback_entries`.
+/// Only the fields the CLI displays are modeled; the server returns ~80 more
+/// that serde drops.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FrictionEntry {
+    pub id: i64,
+    #[serde(default)]
+    pub repo: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub severity: Option<String>,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub root_cause: Option<String>,
+    #[serde(default)]
+    pub time_lost_minutes: Option<i64>,
+    #[serde(default)]
+    pub resolution_status: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -929,7 +953,7 @@ mod tests {
 
     #[test]
     fn deserialize_eval_run_detail() {
-        // Mirrors devportal SpaApi::Ai::Eval::RunsController#run_json (include_items: true).
+        // Mirrors backyard SpaApi::Ai::Eval::RunsController#run_json (include_items: true).
         // conversation_log is a JSON array of {role, content}; metadata/scores are JSON; score is stringified.
         let payload = json!({
             "id": 60,
@@ -1001,7 +1025,7 @@ mod tests {
 
     #[test]
     fn deserialize_eval_cases_paginated() {
-        // Mirrors devportal SpaApi::Ai::Eval::CoverageController#cases — { data: [...], meta: {...} }
+        // Mirrors backyard SpaApi::Ai::Eval::CoverageController#cases — { data: [...], meta: {...} }
         use crate::api::PaginatedResponse;
         let payload = json!({
             "data": [

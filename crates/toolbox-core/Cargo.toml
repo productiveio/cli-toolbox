@@ -27,3 +27,6 @@ reqwest.workspace = true
 colored.workspace = true
 dirs = "6"
 inquire = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true

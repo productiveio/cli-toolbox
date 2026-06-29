@@ -1,14 +1,14 @@
 [package]
-name = "tb-lf"
-version = "0.9.0"
+name = "tb-backyard"
+version = "0.1.0"
 edition = "2024"
-description = "[DEPRECATED — use tb-backyard] Langfuse insights CLI"
+description = "Productive Backyard CLI — AI insights, evals, and document shares"
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "tb-lf"
+name = "tb-backyard"
 path = "src/main.rs"
 
 [lib]
@@ -25,3 +25,4 @@ toml.workspace = true
 chrono.workspace = true
 colored.workspace = true
 thiserror.workspace = true
+base64 = "0.22"

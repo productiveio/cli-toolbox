@@ -45,6 +45,7 @@ thiserror = "2.0"
 # Internal
 toolbox-core = { path = "crates/toolbox-core" }
 tb-lf = { path = "crates/tb-lf" }
+tb-backyard = { path = "crates/tb-backyard" }
 tb-sem = { path = "crates/tb-sem" }
 tb-prod = { path = "crates/tb-prod" }
 tb-bug = { path = "crates/tb-bug" }
