@@ -114,6 +114,19 @@ pub fn docker(config: &Config, project_root: &Path, services: &[String]) -> Resu
         ));
     }
 
+    // --- AWS preflight (ensure SSO session + resolve AWS_CALLER_EMAIL) ---
+    let mut aws_svcs: Vec<&crate::config::ServiceConfig> = Vec::new();
+    for svc_name in services {
+        let svc = &config.services[svc_name];
+        aws_svcs.push(svc);
+        if let Some(companion) = &svc.companion
+            && let Some(comp) = config.services.get(companion)
+        {
+            aws_svcs.push(comp);
+        }
+    }
+    let aws_env = crate::aws::preflight(aws_svcs)?;
+
     // --- Auto-start infra if needed ---
     let infra_needed = services
         .iter()
@@ -130,7 +143,7 @@ pub fn docker(config: &Config, project_root: &Path, services: &[String]) -> Resu
 
     // --- Capture env vars ---
     println!("{}", "Capturing environment...".blue());
-    capture_env(project_root)?;
+    capture_env(project_root, &aws_env)?;
 
     // --- Generate Procfile ---
     println!("{}", "Generating Procfile...".blue());
@@ -199,7 +212,11 @@ pub fn docker(config: &Config, project_root: &Path, services: &[String]) -> Resu
 }
 
 /// Capture host environment variables to .env.session file.
-fn capture_env(project_root: &Path) -> Result<()> {
+/// `extra` holds tb-devctl-resolved vars (e.g. AWS_CALLER_EMAIL) appended verbatim.
+fn capture_env(
+    project_root: &Path,
+    extra: &std::collections::BTreeMap<String, String>,
+) -> Result<()> {
     let env_dir = project_root.join(".docker-sessions/.dev");
     std::fs::create_dir_all(&env_dir)?;
     let env_file = env_dir.join(".env.session");
@@ -240,6 +257,11 @@ fn capture_env(project_root: &Path) -> Result<()> {
         {
             lines.push(format!("{}={}", var, val));
         }
+    }
+
+    // tb-devctl-resolved vars (e.g. AWS_CALLER_EMAIL from the SSO identity)
+    for (key, val) in extra {
+        lines.push(format!("{}={}", key, val));
     }
 
     std::fs::write(&env_file, lines.join("\n") + "\n")?;

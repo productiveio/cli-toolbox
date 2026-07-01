@@ -66,6 +66,13 @@ pub struct ServiceConfig {
     pub companion: Option<String>,
     #[serde(default)]
     pub requires: Vec<String>,
+    /// Ensure a valid AWS SSO session before init/start (runs `aws sso login` if expired).
+    #[serde(default)]
+    pub needs_aws: bool,
+    /// Resolve and inject `AWS_CALLER_EMAIL` (from the SSO identity) into the service env.
+    /// Implies `needs_aws`.
+    #[serde(default)]
+    pub needs_aws_caller_email: bool,
     #[serde(default)]
     pub init: Vec<String>,
     #[serde(default)]
@@ -148,5 +155,32 @@ infra = ["mysql", "redis"]
         assert_eq!(config.services.len(), 1);
         assert_eq!(config.services["api"].port, Some(3000));
         assert_eq!(config.services["api"].infra, vec!["mysql", "redis"]);
+        // AWS flags default to false when omitted
+        assert!(!config.services["api"].needs_aws);
+        assert!(!config.services["api"].needs_aws_caller_email);
+    }
+
+    #[test]
+    fn parse_aws_flags() {
+        let toml_str = r#"
+[infra]
+compose_file = "docker/infra-compose.yml"
+compose_project = "productive-infra"
+
+[docker]
+compose_file = "docker/dev-compose.yml"
+compose_project = "productive-dev"
+container = "productive-dev-workspace"
+
+[services.ai-agent]
+repo = "ai-agent"
+cmd = "pnpm run dev:server"
+needs_aws = true
+needs_aws_caller_email = true
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        let svc = &config.services["ai-agent"];
+        assert!(svc.needs_aws);
+        assert!(svc.needs_aws_caller_email);
     }
 }
