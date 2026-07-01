@@ -115,15 +115,19 @@ pub fn start(
         }
     }
 
+    // AWS preflight — ensure SSO session (+ AWS_CALLER_EMAIL) if the service needs it
+    let aws_env = crate::aws::preflight([svc])?;
+
     // Auto-start infra if needed
     if !svc.infra.is_empty() && !health::infra_is_running(config, project_root) {
         println!("{}", "Starting infrastructure...".blue());
         crate::commands::infra::up(config, project_root)?;
     }
 
-    // Merge shared + local-specific env vars (local overrides shared)
+    // Merge shared + local-specific env vars, then AWS-resolved vars (most authoritative)
     let mut merged_env = svc.env.clone();
     merged_env.extend(svc.env_local.iter().map(|(k, v)| (k.clone(), v.clone())));
+    merged_env.extend(aws_env);
 
     // Run start steps (git pull, deps, migrate)
     if !svc.start.is_empty() {

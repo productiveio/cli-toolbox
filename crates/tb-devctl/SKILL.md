@@ -73,6 +73,9 @@ tb-devctl init api                         # Secrets, schema, seeding
   `tb-devctl logs <service>` for the error, `tb-devctl restart <service>` to recover.
 - **Start fails on a port conflict** — `start` checks ports first; find the holder with
   `lsof -i :<port> -sTCP:LISTEN`.
+- **`start`/`init` prompts for AWS login** — services that declare `needs_aws` in
+  `tb-devctl.toml` get a valid AWS SSO session ensured first; `aws sso login` runs
+  interactively when the session is expired.
 
 ## Getting started
 
