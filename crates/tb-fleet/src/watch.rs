@@ -20,7 +20,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 use serde::{Deserialize, Serialize};
 
 use crate::backend;
-use crate::discovery::{Backend, Session, claude_home, discover};
+use crate::discovery::{Session, claude_home, discover, enrich_iterm_tabs};
 use crate::error::{Error, Result};
 use crate::notify::notify;
 use crate::render::{ago, home_rel};
@@ -75,7 +75,8 @@ fn now_ms() -> i64 {
 
 /// One supervision pass: update `state`, fire notifications, return (rows, new events).
 fn tick(state: &mut State, stuck_secs: i64) -> (Vec<Session>, Vec<Ev>) {
-    let rows = discover();
+    let mut rows = discover();
+    enrich_iterm_tabs(&mut rows);
     let mut evs = Vec::new();
     let time = chrono::Local::now().format("%H:%M:%S").to_string();
     let mut push = |icon: &'static str, msg: String| {
@@ -254,14 +255,6 @@ fn run_tui(interval_secs: u64, stuck_secs: i64) -> Result<()> {
     Ok(())
 }
 
-fn backend_color(b: Backend) -> Color {
-    match b {
-        Backend::Iterm => Color::Cyan,
-        Backend::Tmux => Color::Magenta,
-        Backend::Unknown => Color::DarkGray,
-    }
-}
-
 fn ui(
     f: &mut ratatui::Frame,
     rows: &[Session],
@@ -319,12 +312,12 @@ fn ui(
         let title: String = title.split_whitespace().collect::<Vec<_>>().join(" ");
         let selected = idx == sel;
         let caret = if selected { "▸ " } else { "  " };
+        let tabname: String = r.tab.as_deref().unwrap_or("-").chars().take(16).collect();
         let head = format!(
-            "{caret}{dot} {:<11}{:<8}{:>4}  {:<6}",
+            "{caret}{dot} {:<11}{:<8}{:>4}  {tabname:<16}",
             r.label(),
             state_txt,
             ago(r.updated_at),
-            r.backend.label(),
         );
         let mut spans = vec![
             Span::styled(
@@ -343,10 +336,7 @@ fn ui(
                 format!("{:>4}  ", ago(r.updated_at)),
                 Style::default().fg(Color::DarkGray),
             ),
-            Span::styled(
-                format!("{:<6}", r.backend.label()),
-                Style::default().fg(backend_color(r.backend)),
-            ),
+            Span::styled(format!("{tabname:<16}"), Style::default().fg(Color::Cyan)),
             Span::styled(where_.clone(), Style::default().fg(Color::Blue)),
         ];
         let used = head.chars().count() + where_.chars().count() + 3;

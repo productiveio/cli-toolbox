@@ -43,6 +43,8 @@ pub struct Session {
     pub backend: Backend,
     /// Backend-specific control handle: iTerm session GUID or tmux pane id.
     pub handle: Option<String>,
+    /// Terminal tab name: iTerm tab title or tmux window name.
+    pub tab: Option<String>,
     pub title: Option<String>,
 }
 
@@ -110,6 +112,16 @@ pub fn discover() -> Vec<Session> {
         // ps returns non-zero for a dead pid, so this doubles as a liveness check.
         let Some(tty) = tty_of(pid) else { continue };
         let (backend, handle) = backend_of(pid, Some(tty.as_str()), &panes);
+        // tmux tab (window name) is free from the panes query; iTerm tab titles are
+        // filled lazily by enrich_iterm_tabs (one AppleScript call) only for display.
+        let tab = if backend == Backend::Tmux {
+            panes
+                .get(&format!("/dev/{tty}"))
+                .map(|(_, _, window)| window.clone())
+                .filter(|w| !w.is_empty())
+        } else {
+            None
+        };
         let title = match (reg.session_id.as_deref(), reg.cwd.as_deref()) {
             (Some(sid), Some(cwd)) => title_for(cwd, sid),
             _ => None,
@@ -122,6 +134,7 @@ pub fn discover() -> Vec<Session> {
             tty: Some(tty),
             backend,
             handle,
+            tab,
             session_id: reg.session_id,
             name: reg.name,
             cwd: reg.cwd,
@@ -191,12 +204,12 @@ fn env_of(pid: i64) -> String {
 fn backend_of(
     pid: i64,
     tty: Option<&str>,
-    panes: &HashMap<String, (String, String)>,
+    panes: &HashMap<String, (String, String, String)>,
 ) -> (Backend, Option<String>) {
     let env = env_of(pid);
     if env.starts_with("TMUX=") || env.contains(" TMUX=") {
         let handle = tty.and_then(|t| {
-            panes.get(&format!("/dev/{t}")).map(|(target, pane_id)| {
+            panes.get(&format!("/dev/{t}")).map(|(target, pane_id, _)| {
                 if pane_id.is_empty() {
                     target.clone()
                 } else {
@@ -216,15 +229,15 @@ fn backend_of(
     (Backend::Unknown, None)
 }
 
-/// pane_tty -> (target, pane_id) for every tmux pane, empty if tmux isn't running.
-fn tmux_panes() -> HashMap<String, (String, String)> {
+/// pane_tty -> (target, pane_id, window_name) for every tmux pane, empty if tmux isn't running.
+fn tmux_panes() -> HashMap<String, (String, String, String)> {
     let mut map = HashMap::new();
     let Ok(out) = Command::new("tmux")
         .args([
             "list-panes",
             "-a",
             "-F",
-            "#{pane_tty}\t#{session_name}:#{window_index}.#{pane_index}\t#{pane_id}",
+            "#{pane_tty}\t#{session_name}:#{window_index}.#{pane_index}\t#{pane_id}\t#{window_name}",
         ])
         .output()
     else {
@@ -235,10 +248,62 @@ fn tmux_panes() -> HashMap<String, (String, String)> {
         if let (Some(ptty), Some(target), Some(pane_id)) =
             (parts.next(), parts.next(), parts.next())
         {
-            map.insert(ptty.to_string(), (target.to_string(), pane_id.to_string()));
+            let window = parts.next().unwrap_or("").to_string();
+            map.insert(
+                ptty.to_string(),
+                (target.to_string(), pane_id.to_string(), window),
+            );
         }
     }
     map
+}
+
+/// Fill iTerm sessions' `tab` with their tab title via a single AppleScript call.
+/// Kept out of `discover()` so one-shot commands (peek/send) don't pay for it.
+pub fn enrich_iterm_tabs(rows: &mut [Session]) {
+    if !rows
+        .iter()
+        .any(|r| r.backend == Backend::Iterm && r.tab.is_none())
+    {
+        return;
+    }
+    let script = r#"tell application "iTerm2"
+  set out to ""
+  repeat with w in windows
+    repeat with t in tabs of w
+      set tt to ""
+      try
+        set tt to title of t
+      end try
+      repeat with s in sessions of t
+        set out to out & (id of s) & tab & tt & linefeed
+      end repeat
+    end repeat
+  end repeat
+  return out
+end tell"#;
+    let Ok(out) = Command::new("osascript").arg("-e").arg(script).output() else {
+        return;
+    };
+    if !out.status.success() {
+        return;
+    }
+    let mut names = HashMap::new();
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        if let Some((id, name)) = line.split_once('\t') {
+            let name = name.trim();
+            if !name.is_empty() {
+                names.insert(id.to_string(), name.to_string());
+            }
+        }
+    }
+    for r in rows.iter_mut() {
+        if r.backend == Backend::Iterm
+            && let Some(name) = r.handle.as_deref().and_then(|g| names.get(g))
+        {
+            r.tab = Some(name.clone());
+        }
+    }
 }
 
 // --- transcript title --------------------------------------------------------
