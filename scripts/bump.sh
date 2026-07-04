@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VALID_TOOLS="tb-sem tb-bug tb-lf tb-devctl tb-session tb-pr tb-prod tb-backyard"
+VALID_TOOLS="tb-sem tb-bug tb-lf tb-devctl tb-session tb-pr tb-prod tb-backyard tb-fleet"
 
 usage() {
   echo "Usage: $0 <tool> <version>"

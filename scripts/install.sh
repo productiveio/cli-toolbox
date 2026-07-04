@@ -5,7 +5,7 @@ REPO="productiveio/cli-toolbox"
 # tb-lf is DEPRECATED (superseded by tb-backyard) but kept installable so
 # existing users get the release that can self-uninstall (`tb-lf uninstall`).
 # Remove it from this list once it has propagated.
-ALL_TOOLS="tb-sem tb-bug tb-backyard tb-lf tb-devctl tb-session tb-pr"
+ALL_TOOLS="tb-sem tb-bug tb-backyard tb-lf tb-devctl tb-session tb-pr tb-fleet"
 INSTALL_DIR="$HOME/.local/bin"
 
 # --- Flags ---
