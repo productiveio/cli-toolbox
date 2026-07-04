@@ -111,6 +111,68 @@ end run"#
     }
 }
 
+/// Bring a session's terminal to the front (its iTerm tab, or its tmux window/pane).
+pub fn focus(s: &Session) -> Result<()> {
+    let handle = require_handle(s)?;
+    match s.backend {
+        Backend::Iterm => {
+            osa(
+                r#"on run argv
+  set theId to item 1 of argv
+  tell application "iTerm2"
+    activate
+    repeat with w in windows
+      repeat with t in tabs of w
+        repeat with s in sessions of t
+          if (id of s) is theId then
+            select w
+            select t
+            select s
+            return
+          end if
+        end repeat
+      end repeat
+    end repeat
+  end tell
+  error "session not found"
+end run"#,
+                &[handle],
+            )?;
+            Ok(())
+        }
+        Backend::Tmux => {
+            // Resolve the pane's window, select both; switch the client too if we're in tmux.
+            let win = Command::new("tmux")
+                .args([
+                    "display-message",
+                    "-p",
+                    "-t",
+                    handle,
+                    "#{session_name}:#{window_index}",
+                ])
+                .output()?;
+            let win = String::from_utf8_lossy(&win.stdout).trim().to_string();
+            if !win.is_empty() {
+                Command::new("tmux")
+                    .args(["select-window", "-t", &win])
+                    .status()?;
+                if std::env::var_os("TMUX").is_some()
+                    && let Some(session) = win.split(':').next()
+                {
+                    Command::new("tmux")
+                        .args(["switch-client", "-t", session])
+                        .status()?;
+                }
+            }
+            Command::new("tmux")
+                .args(["select-pane", "-t", handle])
+                .status()?;
+            Ok(())
+        }
+        Backend::Unknown => require_handle(s).map(|_| ()),
+    }
+}
+
 /// Shell-quote a value for a single-quoted context.
 fn shq(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))

@@ -25,7 +25,7 @@ A firstmate-style orchestrator for the many Claude Code sessions the user runs i
 2. **Resolve loose targets from `list` first** ("the ai-agent one", "the stuck one") — run `list`, match by cwd/title/status, then act on the resolved name.
 3. **`spawn` defaults:** always pass an explicit `--dir` for the repo the user means. Backend defaults to iTerm (or tmux inside tmux); only pass `--backend` when asked.
 4. **Reporting:** after `list`/`peek`, summarize in plain language — who's working, who's idle, who needs the user — rather than dumping raw output. Lead with anything that needs a decision.
-5. **`watch`** is a long-running loop (live TUI + macOS notifications on finished/stuck). Don't run it inline; tell the user to run it in a spare terminal tab. `--quiet` = notifications only, backgroundable.
+5. **`watch`** is a long-running loop (live TUI + macOS notifications on finished/stuck). Don't run it inline; tell the user to run it in a spare terminal tab. The TUI is interactive: ↑/↓ (or j/k) select a session, Enter jumps focus to that session's tab/pane. `--quiet` = notifications only, backgroundable.
 
 ## Notes
 

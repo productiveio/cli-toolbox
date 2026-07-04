@@ -47,6 +47,14 @@ pub struct Session {
 }
 
 impl Session {
+    /// Stable identity key: sessionId if known, else pid. Used to track a session
+    /// across polls even as the sorted order shifts.
+    pub fn key(&self) -> String {
+        self.session_id
+            .clone()
+            .unwrap_or_else(|| self.pid.to_string())
+    }
+
     /// Short human label: derived name, else short sessionId, else pid.
     pub fn label(&self) -> String {
         self.name

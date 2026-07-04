@@ -88,7 +88,7 @@ fn tick(state: &mut State, stuck_secs: i64) -> (Vec<Session>, Vec<Ev>) {
 
     let mut seen = std::collections::HashSet::new();
     for r in &rows {
-        let key = r.session_id.clone().unwrap_or_else(|| r.pid.to_string());
+        let key = r.key();
         seen.insert(key.clone());
         let prev = state.get(&key).cloned().unwrap_or_default();
         let label = r.label();
@@ -192,6 +192,8 @@ fn run_tui(interval_secs: u64, stuck_secs: i64) -> Result<()> {
     let mut log: Vec<Ev> = Vec::new();
     let mut rows: Vec<Session> = Vec::new();
     let mut last_poll: Option<Instant> = None;
+    // Track selection by session key, not index, so it stays put as rows re-sort.
+    let mut selected: Option<String> = None;
     let interval = Duration::from_secs(interval_secs);
 
     loop {
@@ -205,9 +207,16 @@ fn run_tui(interval_secs: u64, stuck_secs: i64) -> Result<()> {
             log.truncate(EVENT_CAP);
             last_poll = Some(Instant::now());
         }
+        if selected.is_none() && !rows.is_empty() {
+            selected = Some(rows[0].key());
+        }
+        let sel = selected
+            .as_ref()
+            .and_then(|k| rows.iter().position(|r| &r.key() == k))
+            .unwrap_or(0);
 
         terminal
-            .draw(|f| ui(f, &rows, &log, interval_secs, stuck_secs))
+            .draw(|f| ui(f, &rows, &log, sel, interval_secs, stuck_secs))
             .map_err(Error::Io)?;
 
         if event::poll(Duration::from_millis(250)).map_err(Error::Io)?
@@ -218,6 +227,26 @@ fn run_tui(interval_secs: u64, stuck_secs: i64) -> Result<()> {
                 KeyCode::Char('q') | KeyCode::Esc => break,
                 KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => break,
                 KeyCode::Char('r') => last_poll = None, // force refresh
+                KeyCode::Up | KeyCode::Char('k') if !rows.is_empty() => {
+                    selected = Some(rows[sel.saturating_sub(1)].key());
+                }
+                KeyCode::Down | KeyCode::Char('j') if !rows.is_empty() => {
+                    selected = Some(rows[(sel + 1).min(rows.len() - 1)].key());
+                }
+                KeyCode::Enter => {
+                    if let Some(r) = rows.get(sel)
+                        && let Err(e) = backend::focus(r)
+                    {
+                        log.insert(
+                            0,
+                            Ev {
+                                icon: "✕",
+                                time: chrono::Local::now().format("%H:%M:%S").to_string(),
+                                msg: format!("focus failed: {e}"),
+                            },
+                        );
+                    }
+                }
                 _ => {}
             }
         }
@@ -233,7 +262,14 @@ fn backend_color(b: Backend) -> Color {
     }
 }
 
-fn ui(f: &mut ratatui::Frame, rows: &[Session], log: &[Ev], interval_secs: u64, stuck_secs: i64) {
+fn ui(
+    f: &mut ratatui::Frame,
+    rows: &[Session],
+    log: &[Ev],
+    sel: usize,
+    interval_secs: u64,
+    stuck_secs: i64,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -262,14 +298,17 @@ fn ui(f: &mut ratatui::Frame, rows: &[Session], log: &[Ev], interval_secs: u64, 
             ),
             Style::default().fg(Color::DarkGray),
         ),
-        Span::styled("· q quit · r refresh", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            "· ↑↓/jk select · ⏎ focus · q quit · r refresh",
+            Style::default().fg(Color::DarkGray),
+        ),
     ]);
     f.render_widget(Paragraph::new(header), chunks[0]);
 
     // Sessions
     let width = chunks[1].width.saturating_sub(4) as usize;
     let mut lines: Vec<Line> = Vec::new();
-    for r in rows {
+    for (idx, r) in rows.iter().enumerate() {
         let (dot, state_txt, state_style) = match r.status.as_str() {
             "busy" => ("●", "working", Style::default().fg(Color::Green)),
             "idle" => ("○", "idle   ", Style::default().fg(Color::DarkGray)),
@@ -278,14 +317,22 @@ fn ui(f: &mut ratatui::Frame, rows: &[Session], log: &[Ev], interval_secs: u64, 
         let where_ = r.cwd.as_deref().map(home_rel).unwrap_or_else(|| "?".into());
         let title = r.title.as_deref().unwrap_or("(no prompt)");
         let title: String = title.split_whitespace().collect::<Vec<_>>().join(" ");
+        let selected = idx == sel;
+        let caret = if selected { "▸ " } else { "  " };
         let head = format!(
-            "{dot} {:<11}{:<8}{:>4}  {:<6}",
+            "{caret}{dot} {:<11}{:<8}{:>4}  {:<6}",
             r.label(),
             state_txt,
             ago(r.updated_at),
             r.backend.label(),
         );
         let mut spans = vec![
+            Span::styled(
+                caret.to_string(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(format!("{dot} "), state_style),
             Span::styled(
                 format!("{:<11}", r.label()),
@@ -310,6 +357,12 @@ fn ui(f: &mut ratatui::Frame, rows: &[Session], log: &[Ev], interval_secs: u64, 
                 format!("  {t}"),
                 Style::default().fg(Color::Gray),
             ));
+        }
+        // Highlight the selected row with a subtle background across every span.
+        if selected {
+            for sp in &mut spans {
+                sp.style = sp.style.bg(Color::Indexed(236));
+            }
         }
         lines.push(Line::from(spans));
     }
