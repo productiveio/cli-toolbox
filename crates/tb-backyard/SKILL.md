@@ -137,7 +137,7 @@ tb-backyard friction report --repo cli-toolbox            # totals + breakdowns
 
 Run `tb-backyard prime` for an overview of available projects, quick commands, and metric interpretation guidance.
 Use `tb-backyard <command> --help` for detailed command usage.
-Use `tb-backyard explain <topic>` for domain knowledge (entities, traces, scores, triage, evals).
+Use `tb-backyard explain <topic>` for domain knowledge (traces, observations, metrics, scores, sentiment, triage, sync, and more).
 
 ## Live context
 
