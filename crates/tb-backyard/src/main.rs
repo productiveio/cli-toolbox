@@ -415,7 +415,7 @@ enum Commands {
         after_help = "Examples:\n  tb-backyard explain traces\n  tb-backyard explain evaluations\n  tb-backyard explain --json"
     )]
     Explain {
-        /// Topic: entities, relationships, traces, scores, observations, sessions, evaluations, triage, features
+        /// Topic: entities, relationships, traces, observations, metrics, scores, sentiment, triage, features, sessions, evaluations, sync, tags
         topic: Option<String>,
     },
     /// Configuration management
@@ -2931,9 +2931,12 @@ async fn run() -> tb_backyard::error::Result<()> {
             // Interpreting metrics
             println!("\n## Interpreting metrics\n");
             println!("- Scores: >=0.80 good (green), >=0.50 ok (yellow), <0.50 bad (red)");
-            println!("- Satisfaction: user thumbs up/down feedback");
+            println!("- Satisfaction: user thumbs up/down — <1% coverage, read it as a floor");
             println!("- Triage: flagged=needs review, dismissed=noise, untouched=not yet triaged");
             println!("- Eval pass rate: >=0.90 healthy, <0.70 needs attention");
+            println!(
+                "- Data model: `tb-backyard explain <topic>` — traces, observations, metrics, sentiment, triage, sync (trace_origin, typed tool errors, valence/arousal, io bytes)"
+            );
 
             toolbox_core::version_check::print_update_hint(
                 "tb-backyard",
@@ -3010,39 +3013,51 @@ async fn run() -> tb_backyard::error::Result<()> {
             let topics = [
                 (
                     "entities",
-                    "Backyard tracks AI agent behavior through several entities:\n- Traces: A single agent invocation (user query → agent response)\n- Observations: Sub-steps within a trace (LLM calls, tool calls, spans)\n- Sessions: Groups of traces from the same user conversation\n- Scores: Numeric or categorical evaluations attached to traces\n- Comments: Human annotations on traces or observations",
+                    "Backyard mirrors AI agent behavior from Langfuse through these entities:\n- Traces: one agent invocation (user query → agent response); carries trace_origin, custom_agent_id, triage_status\n- Observations: sub-steps within a trace (LLM generations, tool calls, spans)\n- Sessions: traces from the same user conversation\n- Scores: thumbs feedback attached to traces (see `explain scores`)\n- Trace metrics: derived per-trace rollups — outcome, cost, tokens, io bytes, sentiment, tool_breakdown (see `explain metrics`)\nComment and dataset syncs were removed in 2026-07; scores still carry a comment field. Full interpretation rules: backyard knowledge/ai-observability/reading-the-data.md.",
                 ),
                 (
                     "relationships",
-                    "Entity relationships:\n- A Session contains multiple Traces\n- A Trace contains multiple Observations and Scores\n- Queue Items reference Traces (triage results)\n- Eval Items reference Traces (eval run results)\n- Features group Queue Items by product feature",
+                    "Entity relationships:\n- A Session contains multiple Traces\n- A Trace has multiple Observations and Scores, and one trace-metrics row\n- Queue Items (triage results) reference Traces\n- Eval Items reference Traces (eval run results)\n- Features and Teams route Queue Items (product feature + owning team)",
                 ),
                 (
                     "traces",
-                    "Traces represent a single AI agent invocation:\n- langfuse_id: Unique identifier from Langfuse\n- name: Agent/workflow name (e.g., \"customer-support-agent\")\n- cost_usd: Total LLM cost for this invocation\n- latency_ms: End-to-end duration\n- triage_status: flagged/dismissed/untouched\n- user_query: The user's input\n- agent_response: The agent's output",
-                ),
-                (
-                    "scores",
-                    "Scores are evaluations attached to traces:\n- value: Numeric score (0.0-1.0 typical)\n- source: EVAL (automated), API (programmatic), ANNOTATION (human)\n- Thresholds: >=0.80 good, >=0.50 ok, <0.50 bad\n- Common scores: correctness, helpfulness, safety, relevance",
+                    "Traces represent a single AI agent invocation:\n- langfuse_id: unique identifier from Langfuse\n- name: agent/workflow name; only `agent-generation` traces get classified\n- trace_origin: where it came from — slack, ai_assistant, automation, ai-api. NULL means the producer didn't stamp it, never \"unknown\".\n- custom_agent_id: whose instructions ran (NULL = stock agent); orthogonal to origin\n- triage_status: flagged or dismissed by the classifier; NULL = not yet classified. Write-once, never reverted.\n- timestamp: when the invocation happened — NOT created_at, which is the last sync/upsert time\nCost, latency, tokens and outcome live on the trace-metrics row (see `explain metrics`).\nScope prod analyses to project 1 (Production); eval traffic is a separate Langfuse project, never a trace_origin value.",
                 ),
                 (
                     "observations",
-                    "Observations are sub-steps within a trace:\n- Types: GENERATION (LLM call), SPAN (logical grouping), EVENT (point-in-time)\n- Track: model, tokens, cost, latency per step\n- Useful for debugging which step in an agent pipeline failed or was slow",
+                    "Observations are sub-steps within a trace:\n- Types: GENERATION (LLM call), SPAN (logical grouping), EVENT (point-in-time)\n- name on tool observations is an enriched key (e.g. query_resources:tasks, perform_action:skill:automation-builder:…) shared with the Prometheus code_path label\n- level + status_message carry the typed tool-error contract:\n    level=WARNING → expected failure (input_validation, permission_denied, feature_unavailable, not_found, size_limit, parse_failure)\n    level=ERROR   → alertable system failure (external_failure, rate_limited, unexpected)\n    status_message = the error kind. Filtering level=ERROR alone misses all expected-failure friction.\n- Token usage (input/output tokens, plus cached_input_tokens and reasoning_output_tokens + their costs) lives only on GENERATION rows; TOOL/SPAN report zero\n- input_bytes / output_bytes: the raw io payload size, sized on any observation carrying io (not tool-only)\n- start_time: when the step ran (created_at is the last sync time)",
                 ),
                 (
-                    "sessions",
-                    "Sessions group traces from the same user conversation:\n- session_id: Identifier linking traces together\n- trace_count: Number of turns in the conversation\n- total_cost_usd: Aggregate cost across all traces\n- user_satisfied: Whether user gave positive feedback",
+                    "metrics",
+                    "Trace-metrics are derived per-trace rollups (one row per trace), built after classification:\n- outcome: what triage CONCLUDED, not whether the agent completed the task. dismissed→successful; otherwise the queue category maps everything_ok→successful, bug→error, feature_request→unsuccessful, unknown→neutral. NULL until classified. \"95% successful\" means \"95% of classified turns weren't flaggable\".\n- cost, latency, token totals (incl. cached + reasoning), and io byte rollups (total_tool_input_bytes/output_bytes sum TOOL rows only)\n- tool_breakdown: per-tool call counts + errors, keyed by the enriched observation name\n- tool_error_count: use this for \"did a tool fail\". has_errors is DEPRECATED (provably identical) — don't depend on it.\n- has_retry_pattern: the agent looped (two consecutive same-name tool calls under one parent), NOT that the user retried\n- compaction_count: number of compact_thread tool calls (proxy for a long conversation)\n- valence / arousal / failure_modes: see `explain sentiment`",
                 ),
                 (
-                    "evaluations",
-                    "Eval runs test agent behavior systematically:\n- Runs execute test suites against the agent\n- Items are individual test cases with pass/fail/score\n- Revisions track score trends across git commits\n- Coverage shows which suites/cases exist and their reliability\n- Flaky detection identifies inconsistent test cases",
+                    "scores",
+                    "Scores are feedback attached to traces. The one that matters in production is `User satisfied`:\n- 1.0 = thumbs-up, 0.0 = thumbs-down, absent = no click (>99% of traces)\n- Coverage is <1% — read satisfaction as a FLOOR, not a rate\n- A thumbs-down programmatically forces the trace into the triage queue and overrides an `everything_ok` verdict to `unknown`\nEval runs also attach automated scores (pass/fail/numeric) — see `explain evaluations`.",
+                ),
+                (
+                    "sentiment",
+                    "The triage classifier emits affect + failure modes onto the trace-metrics row:\n- valence (Russell circumplex): -2 strong_negative … +2 strong_positive. 0 is NEVER stored — NULL means no detectable affect signal (the normal state for transactional B2B), not neutral.\n- arousal: 0 low … 2 high; NULL whenever valence is NULL.\n- Affect is emitted ONLY on dialogue origins (ai_assistant, slack); automation and ai-api skip it by design.\n- failure_modes: JSON array from Higashinaka's 16-label dialogue-breakdown taxonomy (wrong_information, ignore_request, lack_of_information, self_contradiction, unclear_intention, …). Emitted on every classified trace, negative-only. Currently a poor fit on automation traces — the taxonomy was built on chat corpora.\n- There is no \"confused\" bucket — confusion surfaces as failure modes (unclear_intention, lack_of_information), not affect.\nOutcome and sentiment are orthogonal: a satisfied user can sit on outcome=error, a frustrated one on outcome=successful.",
                 ),
                 (
                     "triage",
-                    "Triage automates trace review:\n- Triage runs scan recent traces using AI classification\n- Queue items are the results: flagged or dismissed\n- Categories: bug, feature_request, unknown\n- Confidence: high, medium, low\n- Status: pending_review → confirmed/dismissed by human",
+                    "Triage classifies traces with an LLM on a ~2h delay (CLASSIFICATION_DELAY lets thumb scores arrive and sessions end):\n- Verdict category: everything_ok, bug, feature_request, unknown\n    everything_ok → trace dismissed, no queue item\n    bug / feature_request / unknown → trace flagged, a queue item is created\n- Queue item status: pending_review → confirmed / dismissed by a human\n- Confidence: high / medium / low; bug and feature_request also get a product feature + owning team\n- A thumbs-down always queues the trace and rewrites everything_ok → unknown\nThe classifier also emits sentiment + failure modes (see `explain sentiment`). Only `agent-generation` traces are classified — ai-api traffic (litellm-acompletion, …) is not.",
                 ),
                 (
                     "features",
-                    "Features group related queue items:\n- Track which product features generate user feedback\n- Categories and teams help route items\n- Queue item count shows volume per feature",
+                    "Features group related queue items:\n- Track which product features generate user feedback\n- Features map to owning Teams for routing\n- Queue item counts show confirmed bug/FR volume per feature",
+                ),
+                (
+                    "sessions",
+                    "Sessions group traces from the same user conversation:\n- session_id: Identifier linking traces together\n- trace_count: Number of turns in the conversation\n- total_cost_usd: Aggregate cost across all traces\n- Session health: the honest headline is \"sessions with ≥1 flagged trace\" (join traces on session_id); sentiment is per-trace, not per-session",
+                ),
+                (
+                    "evaluations",
+                    "Eval runs test agent behavior systematically:\n- Runs execute test suites against the agent\n- Items are individual test cases with pass/fail/score\n- Revisions track score trends across git commits\n- Coverage shows which suites/cases exist and their reliability\n- Flaky detection identifies inconsistent test cases\nEval traffic lives in a separate Langfuse project (not Production) — that project boundary is the only eval-vs-real discriminator.",
+                ),
+                (
+                    "sync",
+                    "Backyard mirrors Langfuse on a schedule — know this before reading timestamps:\n- Hot path: every ~15 min, a windowed incremental sync (with a 30-min lookback overlap) of traces, observations, scores.\n- Deep sweep: daily 04:10 UTC, re-syncs a 48h window to repair late-finalizing records, and Bugsnag-warns on any it finds that the hot path missed.\n- created_at / updated_at on mirror rows are LAST-UPSERT times, not occurrence times — the sweep rewrites them. Use `timestamp` (traces) / `start_time` (observations) for when things actually happened.\n- Scope prod analyses to project 1 (Production). Development, Endtoend (evals), and Mirror are separate projects.",
                 ),
                 (
                     "tags",
