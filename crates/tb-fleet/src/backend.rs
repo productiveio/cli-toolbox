@@ -178,11 +178,11 @@ fn shq(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
-fn claude_command(dir: &str, prompt: &str) -> String {
+fn launch_command(dir: &str, prompt: &str, launcher: &str) -> String {
     let run = if prompt.is_empty() {
-        "claude".to_string()
+        launcher.to_string()
     } else {
-        format!("claude {}", shq(prompt))
+        format!("{launcher} {}", shq(prompt))
     };
     format!("cd {} && {run}", shq(dir))
 }
@@ -194,10 +194,16 @@ pub fn spawn(
     prompt: &str,
     name: Option<&str>,
     window: bool,
+    launcher: &str,
 ) -> Result<String> {
-    let line = claude_command(dir, prompt);
+    let line = launch_command(dir, prompt, launcher);
     match backend {
         Backend::Iterm => {
+            // A fresh tab's shell is still sourcing the login profile (which on
+            // this stack loads secrets), so a single `write text` — text plus its
+            // implicit newline in one chunk — can land before the prompt is ready
+            // and never submit. Type without a newline, let the shell settle, then
+            // send a bare Enter, the same reliable two-write dance `send` uses.
             osa(
                 r#"on run argv
   set theCmd to item 1 of argv
@@ -209,7 +215,12 @@ pub fn spawn(
     else
       tell current window to create tab with default profile
     end if
-    tell (current session of current tab of current window) to write text theCmd
+    tell (current session of current tab of current window)
+      delay 0.5
+      write text theCmd without newline
+      delay 0.3
+      write text ""
+    end tell
   end tell
 end run"#,
                 &[&line, if window { "1" } else { "0" }],
@@ -242,11 +253,11 @@ end run"#,
                 ])
                 .output()?;
             let win = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            // Window already opened in `dir`; just run claude in it.
+            // Window already opened in `dir`; just run the launcher in it.
             let run = if prompt.is_empty() {
-                "claude".to_string()
+                launcher.to_string()
             } else {
-                format!("claude {}", shq(prompt))
+                format!("{launcher} {}", shq(prompt))
             };
             Command::new("tmux")
                 .args(["send-keys", "-t", &win, "-l", &run])
@@ -270,10 +281,12 @@ mod tests {
     fn quoting_and_command() {
         assert_eq!(shq("a b"), "'a b'");
         assert_eq!(shq("it's"), r"'it'\''s'");
-        assert_eq!(claude_command("/tmp", ""), "cd '/tmp' && claude");
+        assert_eq!(launch_command("/tmp", "", "claude"), "cd '/tmp' && claude");
         assert_eq!(
-            claude_command("/tmp", "hi there"),
+            launch_command("/tmp", "hi there", "claude"),
             "cd '/tmp' && claude 'hi there'"
         );
+        // A custom launcher (e.g. the user's `cc` wrapper) replaces `claude`.
+        assert_eq!(launch_command("/tmp", "hi", "cc"), "cd '/tmp' && cc 'hi'");
     }
 }

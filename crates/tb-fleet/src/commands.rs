@@ -1,11 +1,38 @@
 //! One function per CLI verb. `watch` lives in its own module.
 
 use colored::Colorize;
+use serde::Deserialize;
 
 use crate::backend;
 use crate::discovery::{self, Backend};
 use crate::error::{Error, Result};
 use crate::render::{home_rel, plain_table, tail};
+
+#[derive(Deserialize)]
+struct FleetConfig {
+    /// The command that launches Claude Code (defaults to `claude`).
+    command: Option<String>,
+}
+
+/// Resolve the command used to launch Claude in a spawned session. Hosts differ:
+/// some invoke `claude`, others a wrapper/alias like `cc`. Precedence:
+/// `TB_FLEET_CMD` env var → `command` in the tool's config.toml → `claude`.
+fn resolve_launcher() -> String {
+    if let Ok(cmd) = std::env::var("TB_FLEET_CMD") {
+        let cmd = cmd.trim();
+        if !cmd.is_empty() {
+            return cmd.to_string();
+        }
+    }
+    if let Ok(path) = toolbox_core::config::config_path("tb-fleet")
+        && let Ok(Some(cfg)) = toolbox_core::config::load_standalone::<FleetConfig>(&path)
+        && let Some(cmd) = cfg.command
+        && !cmd.trim().is_empty()
+    {
+        return cmd.trim().to_string();
+    }
+    "claude".to_string()
+}
 
 fn term_width() -> usize {
     crossterm::terminal::size()
@@ -76,7 +103,15 @@ pub fn spawn(
         }
     });
     let prompt = prompt.unwrap_or_default();
-    let desc = backend::spawn(backend_kind, &dir, &prompt, name.as_deref(), window)?;
+    let launcher = resolve_launcher();
+    let desc = backend::spawn(
+        backend_kind,
+        &dir,
+        &prompt,
+        name.as_deref(),
+        window,
+        &launcher,
+    )?;
     if prompt.is_empty() {
         println!("{desc} in {}", home_rel(&dir));
     } else {
