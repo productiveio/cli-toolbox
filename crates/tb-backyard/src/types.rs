@@ -72,6 +72,8 @@ pub struct Trace {
     #[serde(default)]
     pub user_id: Option<String>,
     #[serde(default)]
+    pub organization_id: Option<String>,
+    #[serde(default)]
     pub session_id: Option<String>,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
@@ -1052,5 +1054,22 @@ mod tests {
             Some("timesheet-submission")
         );
         assert_eq!(resp.data[0].pass_rate, Some(1.0));
+    }
+
+    #[test]
+    fn deserialize_trace_reads_organization_id() {
+        // Guards the cross-repo field-name contract with backyard's traces serializer.
+        let with_org: Trace = serde_json::from_value(json!({
+            "id": 1, "langfuse_id": "lf-1", "timestamp": "2026-07-14T00:00:00Z",
+            "organization_id": "109"
+        }))
+        .unwrap();
+        assert_eq!(with_org.organization_id.as_deref(), Some("109"));
+
+        let without: Trace = serde_json::from_value(json!({
+            "id": 2, "langfuse_id": "lf-2", "timestamp": "2026-07-14T00:00:00Z"
+        }))
+        .unwrap();
+        assert_eq!(without.organization_id, None);
     }
 }

@@ -1005,15 +1005,21 @@ async fn run() -> tb_backyard::error::Result<()> {
                     Some("dismissed") => " dismissed".dimmed().to_string(),
                     _ => String::new(),
                 };
+                let org_str = t
+                    .organization_id
+                    .as_deref()
+                    .map(|o| format!("  org:{}", o).dimmed().to_string())
+                    .unwrap_or_default();
                 let time = output::relative_time(&t.timestamp);
 
                 println!(
-                    "  {} {}  {}  {}  {}{}",
+                    "  {} {}  {}  {}  {}{}{}",
                     t.langfuse_id.dimmed(),
                     output::truncate(name, 40).bold(),
                     cost,
                     latency,
                     time.dimmed(),
+                    org_str,
                     triage_str,
                 );
                 if let Some(q) = &t.user_query {
