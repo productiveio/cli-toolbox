@@ -77,20 +77,26 @@ Upload artifacts to Backyard Shares and get back a short URL.
 ```bash
 tb-backyard share upload report.html
 tb-backyard share upload bundle/*.html --visibility unlisted --title "Q3 review"
+tb-backyard share upload report.html --expires-in 7d                     # auto-expire after a window
 ```
 
-`--visibility private` (default) requires a Backyard login to view; `--visibility unlisted` exposes a capability URL (anyone with the token can read).
+`--visibility private` (default) requires a Backyard login to view; `--visibility unlisted` exposes a capability URL (anyone with the token can read). `--expires-in <dur>` sets an expiry relative to now — `m`/`h`/`d`/`w` units (`30m`, `24h`, `7d`, `2w`); omit for never.
 
 ### Manage existing shares
 
 ```bash
-tb-backyard share list                                                  # your shares + URLs + view counts
+tb-backyard share list                                                  # your shares + URLs + state + views
 tb-backyard share update <token-or-url> --title "Q4 review"             # rename
 tb-backyard share update <token-or-url> --visibility unlisted            # flip visibility
+tb-backyard share download <token-or-url> --output ~/Downloads          # download a single-file share
+tb-backyard share publish <token-or-url>                                # go live now (clears stale expiry)
+tb-backyard share unpublish <token-or-url>                              # back to draft (stops serving)
 tb-backyard share rm <token-or-url>                                     # soft-delete (purges in background)
 ```
 
-`share list` includes a `Views:` line per share — total views via `/s/:token`. Alias views are tracked separately (see below).
+`share list` includes a `State:` line (`draft`/`scheduled`/`live`/`expired`, plus expiry when set) and a `Views:` line per share — total views via `/s/:token`. Alias views are tracked separately (see below).
+
+`share download` fetches single-file shares only (a bundle is browsable at its URL). `--output` takes a directory (keeps the share's filename) or a file path (renames); default is the cwd. Pass `--force` to overwrite. As the share owner you can download your own shares in any state (draft/expired included). `publish`/`unpublish` toggle the M6 publish window; a share created without `--expires-in` never expires.
 
 `<token-or-url>` accepts either a bare token (`AbCdE…`) or a `/s/:token` URL (full or bare). Flipping a share `private → unlisted` is an exposure escalation — on TTY the CLI prompts `[y/N]` with the same copy as the SPA EditShareSheet's AlertDialog; on non-TTY pass `--force`. `unlisted → private` saves silently and emits a one-line "non-logged-in viewers will lose access" notice.
 

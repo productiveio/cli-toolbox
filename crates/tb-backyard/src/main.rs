@@ -575,10 +575,39 @@ enum ShareAction {
         /// Optional title shown on the bundle index page
         #[arg(long)]
         title: Option<String>,
+        /// Auto-expire after a duration from now (e.g. 30m, 24h, 7d, 2w). Default: never
+        #[arg(long)]
+        expires_in: Option<String>,
     },
     /// List your shares
     #[command(after_help = "Example:\n  tb-backyard share list")]
     List,
+    /// Download a single-file share to disk (token-or-URL target)
+    #[command(
+        after_help = "<share-target> accepts a bare token OR a /s/:token URL.\nDownloads only single-file shares — open the URL to browse a bundle.\n\nExamples:\n  tb-backyard share download <token>\n  tb-backyard share download https://backyard.productive.io/s/<token> --output ~/Downloads\n  tb-backyard share download <token> --output report.html --force"
+    )]
+    Download {
+        /// Target: bare token or `https://backyard.productive.io/s/<token>` URL
+        target: String,
+        /// Destination path — a directory keeps the share's filename, a file path renames. Default: cwd
+        #[arg(long)]
+        output: Option<std::path::PathBuf>,
+        /// Overwrite the destination if it already exists
+        #[arg(long)]
+        force: bool,
+    },
+    /// Publish a share now (goes live; clears any stale expiry) — token-or-URL target
+    #[command(after_help = "Example:\n  tb-backyard share publish <token>")]
+    Publish {
+        /// Target: bare token or `https://backyard.productive.io/s/<token>` URL
+        target: String,
+    },
+    /// Unpublish a share (back to draft; stops serving) — token-or-URL target
+    #[command(after_help = "Example:\n  tb-backyard share unpublish <token>")]
+    Unpublish {
+        /// Target: bare token or `https://backyard.productive.io/s/<token>` URL
+        target: String,
+    },
     /// Update a share's title and/or visibility (token-or-URL target)
     #[command(
         after_help = "<share-target> accepts a bare token OR a /s/:token URL.\nFlipping `private` → `unlisted` prompts on TTY; pass --force on non-TTY."
@@ -3598,11 +3627,33 @@ async fn run() -> tb_backyard::error::Result<()> {
                 files,
                 visibility,
                 title,
+                expires_in,
             } => {
-                share_upload(&client, files, &visibility, title.as_deref(), cli.json).await?;
+                share_upload(
+                    &client,
+                    files,
+                    &visibility,
+                    title.as_deref(),
+                    expires_in.as_deref(),
+                    cli.json,
+                )
+                .await?;
             }
             ShareAction::List => {
                 share_list(&client, cli.json).await?;
+            }
+            ShareAction::Download {
+                target,
+                output,
+                force,
+            } => {
+                share_download(&client, &target, output, force, cli.json).await?;
+            }
+            ShareAction::Publish { target } => {
+                share_set_published(&client, &target, true, cli.json).await?;
+            }
+            ShareAction::Unpublish { target } => {
+                share_set_published(&client, &target, false, cli.json).await?;
             }
             ShareAction::Update {
                 target,
@@ -3682,6 +3733,7 @@ async fn share_upload(
     files: Vec<std::path::PathBuf>,
     visibility: &str,
     title: Option<&str>,
+    expires_in: Option<&str>,
     json: bool,
 ) -> Result<(), tb_backyard::error::TbBackyardError> {
     use reqwest::multipart;
@@ -3696,6 +3748,12 @@ async fn share_upload(
     let mut form = multipart::Form::new().text("visibility", visibility.to_string());
     if let Some(t) = title {
         form = form.text("title", t.to_string());
+    }
+    if let Some(spec) = expires_in {
+        let dur = tb_backyard::share::parse_expires_in(spec)
+            .map_err(tb_backyard::error::TbBackyardError::Other)?;
+        let expires_at = (chrono::Utc::now() + dur).to_rfc3339();
+        form = form.text("expires_at", expires_at);
     }
 
     for path in &files {
@@ -3747,6 +3805,9 @@ async fn share_upload(
         println!("  {} {}", "Title:".dimmed(), t);
     }
     println!("  {} {}", "Visibility:".dimmed(), resp.visibility);
+    if let Some(exp) = &resp.expires_at {
+        println!("  {} {}", "Expires:".dimmed(), exp);
+    }
     println!("  {} {}", "Files:".dimmed(), resp.files.len());
     for f in &resp.files {
         println!("    {} {}", "-".dimmed(), f.filename);
@@ -4053,6 +4114,19 @@ async fn share_list(
             row.token,
             format!("[{}]", row.visibility).dimmed()
         );
+        if let Some(state) = &row.state {
+            let colored = match state.as_str() {
+                "live" => state.green(),
+                "expired" => state.red(),
+                _ => state.yellow(), // draft / scheduled
+            };
+            let expiry = row
+                .expires_at
+                .as_deref()
+                .map(|e| format!("  expires {}", e).dimmed().to_string())
+                .unwrap_or_default();
+            println!("    {} {}{}", "State:".dimmed(), colored, expiry);
+        }
         println!("    {} {}", "Views:".dimmed(), row.views_count);
     }
     Ok(())
@@ -4142,6 +4216,107 @@ async fn share_rm(
         "{} blobs purge in the background; the URL stops resolving immediately.",
         "note:".dimmed()
     );
+    Ok(())
+}
+
+async fn share_download(
+    client: &BackyardClient,
+    target: &str,
+    output: Option<std::path::PathBuf>,
+    force: bool,
+    json: bool,
+) -> Result<(), tb_backyard::error::TbBackyardError> {
+    use tb_backyard::error::TbBackyardError;
+
+    let share = resolve_own_share_by_target(client, target).await?;
+
+    // The shares index exposes only `first_filename`, so a bundle can't be
+    // enumerated CLI-side — browsing it belongs in the viewer UI.
+    if share.files_count != 1 {
+        return Err(TbBackyardError::Other(format!(
+            "`{}` is a {}-file bundle — CLI download supports single-file shares only. Open {} to browse it.",
+            share.token,
+            share.files_count,
+            share_url(client.backyard_url(), &share.token)
+        )));
+    }
+    let filename = share
+        .first_filename
+        .as_deref()
+        .ok_or_else(|| TbBackyardError::Other("share has no file to download".into()))?;
+
+    let output_is_dir = output.as_ref().map(|p| p.is_dir()).unwrap_or(false);
+    let dest = tb_backyard::share::download_dest(output, output_is_dir, filename);
+    if dest.exists() && !force {
+        return Err(TbBackyardError::Other(format!(
+            "{} already exists — pass --force to overwrite",
+            dest.display()
+        )));
+    }
+
+    let bytes = client.download_share_file(&share.token, filename).await?;
+    tokio::fs::write(&dest, &bytes).await?;
+
+    if json {
+        let payload = serde_json::json!({
+            "token": share.token,
+            "filename": filename,
+            "path": dest.display().to_string(),
+            "bytes": bytes.len(),
+        });
+        println!("{}", output::render_json(&payload));
+        return Ok(());
+    }
+
+    println!("{}\n", "Downloaded".bold());
+    println!("  {} {}", "File:".dimmed(), filename);
+    println!(
+        "  {} {}",
+        "Path:".dimmed(),
+        dest.display().to_string().bold()
+    );
+    println!("  {} {} bytes", "Size:".dimmed(), bytes.len());
+    Ok(())
+}
+
+async fn share_set_published(
+    client: &BackyardClient,
+    target: &str,
+    publish: bool,
+    json: bool,
+) -> Result<(), tb_backyard::error::TbBackyardError> {
+    let share = resolve_own_share_by_target(client, target).await?;
+
+    // Setting `published_at` drives the M6 window: `now` goes live (the server
+    // auto-clears a stale expiry), `null` drops back to draft.
+    let published_at = if publish {
+        serde_json::Value::String(chrono::Utc::now().to_rfc3339())
+    } else {
+        serde_json::Value::Null
+    };
+    let payload = serde_json::json!({ "share": { "published_at": published_at } });
+    let path = format!("/spa_api/shares/{}", share.id);
+    let updated: tb_backyard::types::ShareSummary =
+        client.backyard_patch_json(&path, &payload).await?;
+
+    if json {
+        println!("{}", output::render_json(&updated));
+        return Ok(());
+    }
+
+    let verb = if publish { "Published" } else { "Unpublished" };
+    println!("{}\n", verb.bold());
+    println!(
+        "  {} {}",
+        "URL:".dimmed(),
+        share_url(client.backyard_url(), &updated.token).bold()
+    );
+    if let Some(state) = &updated.state {
+        println!("  {} {}", "State:".dimmed(), state);
+    }
+    if let Some(exp) = &updated.expires_at {
+        println!("  {} {}", "Expires:".dimmed(), exp);
+    }
     Ok(())
 }
 

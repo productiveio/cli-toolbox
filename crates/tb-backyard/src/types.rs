@@ -771,6 +771,10 @@ pub struct ShareResponse {
     pub visibility: String,
     pub url: String,
     pub files: Vec<ShareResponseFile>,
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -791,6 +795,16 @@ pub struct ShareSummary {
     pub visibility: String,
     #[serde(default)]
     pub views_count: u64,
+    #[serde(default)]
+    pub files_count: u64,
+    #[serde(default)]
+    pub first_filename: Option<String>,
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default)]
+    pub published_at: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
 }
 
 /// Alias row returned by `GET/POST/PATCH /spa_api/share_aliases`.

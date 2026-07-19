@@ -41,6 +41,53 @@ pub fn visibility_change(current: &str, new: Option<&str>) -> ShareVisibilityCha
     }
 }
 
+/// Parse a forward duration (`30m`, `24h`, `7d`, `2w`) for `share upload
+/// --expires-in` into a `chrono::Duration` the caller adds to `now`.
+/// Deliberately not toolbox-core's `--from` parser: that one is past-oriented
+/// and date-granular, while expiry needs a future window with sub-day precision.
+pub fn parse_expires_in(input: &str) -> Result<chrono::Duration, String> {
+    let invalid = || {
+        format!(
+            "invalid --expires-in `{}` — expected a positive number followed by m, h, d, or w (e.g. 30m, 24h, 7d, 2w)",
+            input
+        )
+    };
+    let s = input.trim();
+    let unit = s.chars().last().ok_or_else(invalid)?;
+    let unit_secs: i64 = match unit {
+        'm' => 60,
+        'h' => 3600,
+        'd' => 86_400,
+        'w' => 604_800,
+        _ => return Err(invalid()),
+    };
+    let n: i64 = s[..s.len() - unit.len_utf8()]
+        .parse()
+        .map_err(|_| invalid())?;
+    if n <= 0 {
+        return Err(invalid());
+    }
+    let secs = n
+        .checked_mul(unit_secs)
+        .ok_or_else(|| format!("--expires-in `{}` is too large", input))?;
+    Ok(chrono::Duration::seconds(secs))
+}
+
+/// Resolve where `share download` writes the fetched file. A directory
+/// `--output` keeps the share's own filename inside it; a non-directory path
+/// is used verbatim; no `--output` writes `filename` into the cwd.
+pub fn download_dest(
+    output: Option<std::path::PathBuf>,
+    output_is_dir: bool,
+    filename: &str,
+) -> std::path::PathBuf {
+    match output {
+        Some(dir) if output_is_dir => dir.join(filename),
+        Some(path) => path,
+        None => std::path::PathBuf::from(filename),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,6 +140,39 @@ mod tests {
         assert_eq!(
             visibility_change("unlisted", Some("private")),
             ShareVisibilityChange::DeEscalation
+        );
+    }
+
+    #[test]
+    fn parse_expires_in_units_and_errors() {
+        use chrono::Duration;
+        assert_eq!(parse_expires_in("30m").unwrap(), Duration::minutes(30));
+        assert_eq!(parse_expires_in("24h").unwrap(), Duration::hours(24));
+        assert_eq!(parse_expires_in("7d").unwrap(), Duration::days(7));
+        assert_eq!(parse_expires_in(" 2w ").unwrap(), Duration::weeks(2));
+
+        for bad in ["", "d", "7", "7x", "-3d", "0h", "1.5d", "7dd"] {
+            assert!(parse_expires_in(bad).is_err(), "expected `{bad}` to error");
+        }
+    }
+
+    #[test]
+    fn download_dest_resolution() {
+        use std::path::PathBuf;
+        // Directory output keeps the share's filename.
+        assert_eq!(
+            download_dest(Some(PathBuf::from("/tmp/out")), true, "report.html"),
+            PathBuf::from("/tmp/out/report.html")
+        );
+        // File output is used verbatim.
+        assert_eq!(
+            download_dest(Some(PathBuf::from("renamed.html")), false, "report.html"),
+            PathBuf::from("renamed.html")
+        );
+        // No output → cwd + filename.
+        assert_eq!(
+            download_dest(None, false, "report.html"),
+            PathBuf::from("report.html")
         );
     }
 }
