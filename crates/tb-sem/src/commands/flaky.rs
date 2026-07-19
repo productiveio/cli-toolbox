@@ -63,7 +63,7 @@ pub async fn run(
 
         if !json {
             let time = output::epoch_to_local(wf.created_at.seconds, &tz);
-            eprint!("\r  Checking run {} ({})...", time, &wf.initial_ppl_id);
+            eprint!("\r  Checking run {} ({})...", time, wf.initial_ppl_id);
         }
 
         let events = client.get_job_logs(&job.job_id).await?;

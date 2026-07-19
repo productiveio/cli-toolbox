@@ -51,7 +51,7 @@ pub async fn run(client: &SemaphoreClient, pipeline_id: &str, json: bool) -> Res
     };
 
     if !json {
-        eprintln!("Fetching logs for job: {} ({})", job.name, &job.job_id);
+        eprintln!("Fetching logs for job: {} ({})", job.name, job.job_id);
     }
 
     let events = client.get_job_logs(&job.job_id).await?;

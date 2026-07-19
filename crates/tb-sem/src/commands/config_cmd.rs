@@ -130,7 +130,7 @@ pub async fn init(token: Option<&str>, org_id: Option<&str>) -> Result<()> {
     eprintln!("Config saved to {}", path.display());
     eprintln!("\nProjects:");
     for (name, proj) in &config.projects {
-        eprintln!("  {:<20} {}", name, &proj.id);
+        eprintln!("  {:<20} {}", name, proj.id);
     }
 
     Ok(())
@@ -144,7 +144,7 @@ pub fn show() -> Result<()> {
     println!("Timezone: {}", config.timezone);
     println!("\nProjects:");
     for (name, proj) in &config.projects {
-        println!("  {:<20} {}", name, &proj.id);
+        println!("  {:<20} {}", name, proj.id);
     }
 
     Ok(())

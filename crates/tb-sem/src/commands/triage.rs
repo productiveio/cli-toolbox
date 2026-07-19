@@ -307,7 +307,7 @@ pub async fn run(
         println!("\n=== TRIAGE REPORT ===\n");
         println!(
             "Pipeline: {} | {} | {}",
-            &result.pipeline_id, result.time_window, result.branch
+            result.pipeline_id, result.time_window, result.branch
         );
         println!("Result:   {} ({})", result.result, result.run_type);
         println!(

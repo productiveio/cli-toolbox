@@ -77,7 +77,7 @@ async fn run_bulk(client: &ProductiveClient, resource: &ResourceDef, items: &[Va
         if !errors.is_empty() {
             json_error::exit_with_error_details(
                 "validation_error",
-                &format!("Item {}: {}", i, &errors[0]),
+                &format!("Item {}: {}", i, errors[0]),
                 Some(serde_json::json!({"item_index": i, "errors": errors})),
             );
         }
