@@ -25,7 +25,7 @@ pub async fn run(config: &Config) -> Result<()> {
                 } else {
                     "NOT FOUND"
                 };
-                println!("  {:<20} {} ({})", name, &proj_config.id, status);
+                println!("  {:<20} {} ({})", name, proj_config.id, status);
             }
         }
         Err(e) => {

@@ -94,7 +94,7 @@ pub async fn run(
         if !result.jobs.is_empty() {
             println!("\nJOBS:");
             for j in &result.jobs {
-                println!("  {:<24} {:<8}  {}", j.name, j.result, &j.job_id);
+                println!("  {:<24} {:<8}  {}", j.name, j.result, j.job_id);
             }
         }
     }

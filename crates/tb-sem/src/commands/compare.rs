@@ -118,11 +118,11 @@ pub async fn run(
     } else {
         println!(
             "RUN 1: {} {} -- {} passed, {} failed",
-            &result.run1.pipeline_id, result.run1.time, result.run1.passed, result.run1.failed
+            result.run1.pipeline_id, result.run1.time, result.run1.passed, result.run1.failed
         );
         println!(
             "RUN 2: {} {} -- {} passed, {} failed\n",
-            &result.run2.pipeline_id, result.run2.time, result.run2.passed, result.run2.failed
+            result.run2.pipeline_id, result.run2.time, result.run2.passed, result.run2.failed
         );
 
         println!("NEW FAILURES ({}):", result.new_failures.len());

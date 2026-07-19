@@ -215,6 +215,65 @@ impl BackyardClient {
         Ok(())
     }
 
+    /// Download a single shared file's bytes. Hits the viewer route
+    /// `/s/:token/:filename` with the CLI's auth header; the server 302s to a
+    /// short-lived presigned URL on a cookie-less origin (INV-1), which we then
+    /// fetch without our auth header (redirects don't leak `X-Auth-Token` to
+    /// S3). A same-app redirect to `/sign_in` means the auth/publish gate
+    /// bounced us, not a servable file.
+    pub async fn download_share_file(&self, token: &str, filename: &str) -> Result<Vec<u8>> {
+        let mut url = reqwest::Url::parse(&self.backyard_url)
+            .map_err(|e| TbBackyardError::Other(format!("invalid backyard url: {e}")))?;
+        url.path_segments_mut()
+            .map_err(|_| TbBackyardError::Other("backyard url cannot be a base".into()))?
+            .pop_if_empty()
+            .extend(["s", token, filename]);
+
+        let no_redirect = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
+        let resp = no_redirect
+            .get(url.clone())
+            .header("X-Auth-Token", &self.token)
+            .send()
+            .await?;
+        let status = resp.status();
+
+        if status.is_redirection() {
+            let location = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| {
+                    TbBackyardError::Other("share redirect had no Location header".into())
+                })?
+                .to_string();
+
+            let is_sign_in = reqwest::Url::parse(&location)
+                .map(|u| u.path() == "/sign_in")
+                .unwrap_or_else(|_| location.starts_with("/sign_in"));
+            if is_sign_in {
+                return Err(TbBackyardError::Other(
+                    "not authorized to download this share — check your token (`tb-backyard config show`) and that the share is published".into(),
+                ));
+            }
+
+            let dl = self.client.get(&location).send().await?;
+            if !dl.status().is_success() {
+                let s = dl.status().as_u16();
+                return Err(api_error(s, dl.text().await.unwrap_or_default()));
+            }
+            Ok(dl.bytes().await?.to_vec())
+        } else if status.is_success() {
+            Ok(resp.bytes().await?.to_vec())
+        } else {
+            Err(api_error(
+                status.as_u16(),
+                resp.text().await.unwrap_or_default(),
+            ))
+        }
+    }
+
     pub fn cache(&self) -> &Cache {
         &self.cache
     }
