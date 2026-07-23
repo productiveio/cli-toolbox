@@ -6,6 +6,7 @@
 //! the value it adds — these branches are where the bugs live.
 
 use tb_backyard::share_alias::{OptInGate, opt_in_gate, parse_share_target};
+use tb_backyard::types::ShareViewMetadata;
 
 // --- INV-5 opt-in gate (full transition matrix) ---
 
@@ -102,4 +103,26 @@ fn rejects_token_with_path_separator() {
 #[test]
 fn trims_outer_whitespace() {
     assert_eq!(parse_share_target("  AbCdE_xy  ").unwrap(), "AbCdE_xy");
+}
+
+// --- Viewer-route metadata (`share download` resolution) ---
+
+#[test]
+fn view_metadata_parses_and_reads_first_filename() {
+    let meta: ShareViewMetadata = serde_json::from_str(
+        r#"{"token":"abc","title":"T","visibility":"unlisted","state":"live","files_count":1,"files":[{"filename":"report.html"}]}"#,
+    )
+    .unwrap();
+    assert_eq!(meta.token, "abc");
+    assert_eq!(meta.files_count, 1);
+    assert_eq!(meta.first_filename(), Some("report.html"));
+}
+
+#[test]
+fn view_metadata_first_filename_is_none_for_empty_files() {
+    let meta: ShareViewMetadata = serde_json::from_str(
+        r#"{"token":"abc","visibility":"private","files_count":0,"files":[]}"#,
+    )
+    .unwrap();
+    assert_eq!(meta.first_filename(), None);
 }
