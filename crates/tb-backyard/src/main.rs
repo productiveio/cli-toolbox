@@ -3841,6 +3841,19 @@ async fn resolve_own_share_by_target(
         })
 }
 
+/// Resolve a `<share-target>` (bare token or `/s/:token` URL) to view-gated
+/// metadata. Unlike `resolve_own_share_by_target`, this succeeds for any share
+/// the caller can view — the read commands (download) align with the browser
+/// view, not with ownership.
+async fn resolve_viewable_share_by_target(
+    client: &BackyardClient,
+    target: &str,
+) -> Result<tb_backyard::types::ShareViewMetadata, tb_backyard::error::TbBackyardError> {
+    let token = tb_backyard::share_alias::parse_share_target(target)
+        .map_err(tb_backyard::error::TbBackyardError::Other)?;
+    client.get_share_metadata(&token).await
+}
+
 /// INV-5 gate. Returns Ok(()) if the caller should proceed; Err with a
 /// user-facing message if the opt-in failed.
 fn check_unlisted_opt_in(
@@ -4228,10 +4241,10 @@ async fn share_download(
 ) -> Result<(), tb_backyard::error::TbBackyardError> {
     use tb_backyard::error::TbBackyardError;
 
-    let share = resolve_own_share_by_target(client, target).await?;
+    // Download is a read: resolve via the view gate, so any share the caller
+    // can see is downloadable — not only shares they own.
+    let share = resolve_viewable_share_by_target(client, target).await?;
 
-    // The shares index exposes only `first_filename`, so a bundle can't be
-    // enumerated CLI-side — browsing it belongs in the viewer UI.
     if share.files_count != 1 {
         return Err(TbBackyardError::Other(format!(
             "`{}` is a {}-file bundle — CLI download supports single-file shares only. Open {} to browse it.",
@@ -4241,8 +4254,7 @@ async fn share_download(
         )));
     }
     let filename = share
-        .first_filename
-        .as_deref()
+        .first_filename()
         .ok_or_else(|| TbBackyardError::Other("share has no file to download".into()))?;
 
     let output_is_dir = output.as_ref().map(|p| p.is_dir()).unwrap_or(false);

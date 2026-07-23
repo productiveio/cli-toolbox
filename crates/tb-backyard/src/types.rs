@@ -807,6 +807,37 @@ pub struct ShareSummary {
     pub expires_at: Option<String>,
 }
 
+/// View-gated share metadata from the viewer route (`GET /s/:token` with
+/// `Accept: application/json`). Unlike `ShareSummary` — which comes from the
+/// owner-scoped `/spa_api/shares` index — this resolves for any share the
+/// caller can *view*, so `share download` works on team-readable shares the
+/// caller doesn't own. Same visibility gate as the browser view.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ShareViewMetadata {
+    pub token: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub visibility: String,
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default)]
+    pub files_count: u64,
+    #[serde(default)]
+    pub files: Vec<ShareViewFile>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ShareViewFile {
+    pub filename: String,
+}
+
+impl ShareViewMetadata {
+    pub fn first_filename(&self) -> Option<&str> {
+        self.files.first().map(|f| f.filename.as_str())
+    }
+}
+
 /// Alias row returned by `GET/POST/PATCH /spa_api/share_aliases`.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ShareAlias {

@@ -96,7 +96,7 @@ tb-backyard share rm <token-or-url>                                     # soft-d
 
 `share list` includes a `State:` line (`draft`/`scheduled`/`live`/`expired`, plus expiry when set) and a `Views:` line per share — total views via `/s/:token`. Alias views are tracked separately (see below).
 
-`share download` fetches single-file shares only (a bundle is browsable at its URL). `--output` takes a directory (keeps the share's filename) or a file path (renames); default is the cwd. Pass `--force` to overwrite. As the share owner you can download your own shares in any state (draft/expired included). `publish`/`unpublish` toggle the M6 publish window; a share created without `--expires-in` never expires.
+`share download` fetches single-file shares only (a bundle is browsable at its URL). `--output` takes a directory (keeps the share's filename) or a file path (renames); default is the cwd. Pass `--force` to overwrite. Download is gated by the same visibility rules as the browser view: any share you can open at its URL is downloadable, not just your own. As the share owner you additionally get your own shares in any state (draft/expired included). `publish`/`unpublish` toggle the M6 publish window; a share created without `--expires-in` never expires.
 
 `<token-or-url>` accepts either a bare token (`AbCdE…`) or a `/s/:token` URL (full or bare). Flipping a share `private → unlisted` is an exposure escalation — on TTY the CLI prompts `[y/N]` with the same copy as the SPA EditShareSheet's AlertDialog; on non-TTY pass `--force`. `unlisted → private` saves silently and emits a one-line "non-logged-in viewers will lose access" notice.
 

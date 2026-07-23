@@ -274,6 +274,52 @@ impl BackyardClient {
         }
     }
 
+    /// Resolve view-gated metadata for a share the caller can *see* (not just
+    /// own). Hits the viewer route `/s/:token` with `Accept: application/json`
+    /// and the CLI's auth header — the server applies the same visibility gate
+    /// as the browser view. A redirect to `/sign_in` means the gate bounced us
+    /// (bad token, or a private share this user can't view); a 404 means
+    /// draft/deleted/unknown; a 410 means expired.
+    pub async fn get_share_metadata(&self, token: &str) -> Result<crate::types::ShareViewMetadata> {
+        let mut url = reqwest::Url::parse(&self.backyard_url)
+            .map_err(|e| TbBackyardError::Other(format!("invalid backyard url: {e}")))?;
+        url.path_segments_mut()
+            .map_err(|_| TbBackyardError::Other("backyard url cannot be a base".into()))?
+            .pop_if_empty()
+            .extend(["s", token]);
+
+        let no_redirect = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
+        let resp = no_redirect
+            .get(url)
+            .header("X-Auth-Token", &self.token)
+            .header("Accept", "application/json")
+            .send()
+            .await?;
+        let status = resp.status();
+
+        if status.is_redirection() {
+            return Err(TbBackyardError::Other(format!(
+                "not authorized to view share `{}` — check your token (`tb-backyard config show`) and that the share is published",
+                token
+            )));
+        }
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(TbBackyardError::Other(format!(
+                "no share `{}` you can view — it may be a draft, deleted, or the token may be wrong",
+                token
+            )));
+        }
+        if !status.is_success() {
+            return Err(api_error(
+                status.as_u16(),
+                resp.text().await.unwrap_or_default(),
+            ));
+        }
+        Ok(serde_json::from_str(&resp.text().await?)?)
+    }
+
     pub fn cache(&self) -> &Cache {
         &self.cache
     }
