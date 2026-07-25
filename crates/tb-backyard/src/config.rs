@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 use crate::api::{BackyardClient, PaginatedResponse};
@@ -38,15 +37,10 @@ impl Config {
             }
         };
 
-        // 3. Token: BACKYARD_TOKEN override → PRODUCTIVE_AUTH_TOKEN envelope →
-        //    config file. Backyard accepts a Productive PAT via X-Auth-Token.
-        //
-        // TECH DEBT — remove when the secrets-inventory-system lands (brain:
-        // idea/secrets-inventory-system). Both env vars are a stopgap, and
-        // PRODUCTIVE_AUTH_TOKEN is a base64 envelope we crack for the inner PAT
-        // even though that envelope form is itself being deprecated. Once the
-        // inventory exposes a raw secret source, source the PAT from there and
-        // drop `resolve_env_token` + `decode_pat_envelope`.
+        // 3. Token: PRODUCTIVE_AUTH_TOKEN (a raw Productive PAT) overrides the
+        //    config-file token. Backyard authenticates with the Productive PAT
+        //    via X-Auth-Token; the env var is a fallback for testing against a
+        //    token or host other than the configured one.
         let env_token = Self::resolve_env_token();
 
         // A config file is optional: an env-supplied token is enough to run
@@ -63,7 +57,7 @@ impl Config {
                     .map(|p| p.display().to_string())
                     .unwrap_or_else(|_| "the config file".into());
                 return Err(TbBackyardError::Config(format!(
-                    "No config found. Set PRODUCTIVE_AUTH_TOKEN or BACKYARD_TOKEN, run `tb-backyard config init --token <TOKEN>`, or create {cfg}",
+                    "No config found. Set PRODUCTIVE_AUTH_TOKEN, run `tb-backyard config init --token <TOKEN>`, or create {cfg}",
                 )));
             }
         };
@@ -84,20 +78,14 @@ impl Config {
         Ok(config)
     }
 
-    /// Resolve the auth token from the environment. Prefers an explicit raw
-    /// `BACKYARD_TOKEN`, then the inner PAT decoded from the
-    /// `PRODUCTIVE_AUTH_TOKEN` base64 envelope. Returns None if neither yields
-    /// a usable token (caller falls back to the config file).
+    /// Resolve the auth token from the environment: the raw Productive PAT in
+    /// `PRODUCTIVE_AUTH_TOKEN`. Returns None when unset or empty, so the caller
+    /// falls back to the config file.
     fn resolve_env_token() -> Option<String> {
-        if let Ok(t) = std::env::var("BACKYARD_TOKEN")
-            && !t.is_empty()
-        {
-            return Some(t);
-        }
-        if let Ok(raw) = std::env::var("PRODUCTIVE_AUTH_TOKEN") {
-            return decode_pat_envelope(&raw);
-        }
-        None
+        std::env::var("PRODUCTIVE_AUTH_TOKEN")
+            .ok()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
     }
 
     pub fn config_path() -> Result<PathBuf> {
@@ -112,23 +100,6 @@ impl Config {
     pub fn masked_token(&self) -> String {
         toolbox_core::config::masked_token(&self.token)
     }
-}
-
-/// `PRODUCTIVE_AUTH_TOKEN` is a base64-encoded JSON envelope
-/// (`{organization_id, person_id, user_id, user_email, personal_access_token}`);
-/// the real credential is the inner `personal_access_token`. Returns None when
-/// the value isn't a decodable envelope, so the caller can fall through to
-/// other token sources.
-fn decode_pat_envelope(raw: &str) -> Option<String> {
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(raw.trim())
-        .ok()?;
-    let envelope: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    envelope
-        .get("personal_access_token")?
-        .as_str()
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
 }
 
 /// Resolve `--project` flag to a numeric project ID.
@@ -180,39 +151,5 @@ pub async fn resolve_project(
                 names.join("\n"),
             )))
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn envelope(json: &str) -> String {
-        base64::engine::general_purpose::STANDARD.encode(json)
-    }
-
-    #[test]
-    fn decode_pat_envelope_extracts_inner_token() {
-        let raw =
-            envelope(r#"{"organization_id":"1","personal_access_token":"abc123","user_id":"2"}"#);
-        assert_eq!(decode_pat_envelope(&raw).as_deref(), Some("abc123"));
-        // Tolerates surrounding whitespace (env vars sometimes carry a newline).
-        assert_eq!(
-            decode_pat_envelope(&format!("  {raw}\n")).as_deref(),
-            Some("abc123")
-        );
-    }
-
-    #[test]
-    fn decode_pat_envelope_rejects_non_envelope() {
-        // Not base64 at all.
-        assert_eq!(decode_pat_envelope("not-a-token"), None);
-        // Valid base64, but the JSON has no personal_access_token.
-        assert_eq!(decode_pat_envelope(&envelope(r#"{"user_id":"1"}"#)), None);
-        // Present but empty → treated as absent so the caller falls through.
-        assert_eq!(
-            decode_pat_envelope(&envelope(r#"{"personal_access_token":""}"#)),
-            None
-        );
     }
 }
