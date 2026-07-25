@@ -57,7 +57,7 @@ Grab your token from:
 
 - **tb-sem** — [Semaphore CI](https://semaphoreci.com) → click your avatar → Profile Settings → API Token
 - **tb-bug** — [Bugsnag](https://app.bugsnag.com) → Settings → My account → Personal auth tokens
-- **tb-backyard** — uses your Productive token automatically via `PRODUCTIVE_AUTH_TOKEN` (already set if you use the Productive MCP / `load-secrets`), against `backyard.productive.io`. No manual token step; override with `BACKYARD_TOKEN` or `tb-backyard config init`.
+- **tb-backyard** — uses your Productive token automatically via `PRODUCTIVE_AUTH_TOKEN` (already set if you use the Productive MCP / `load-secrets`), against `backyard.productive.io`. No manual token step; override with `tb-backyard config init`.
 
 Config files live in your platform config dir — `~/.config/tb-<tool>/config.toml` on Linux, `~/Library/Application Support/tb-<tool>/config.toml` on macOS. Run `tb-<tool> doctor` to verify connectivity.
 
