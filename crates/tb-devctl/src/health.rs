@@ -217,7 +217,7 @@ fn check_ruby(repo_path: Option<&std::path::Path>) -> RequirementStatus {
     };
 
     if manager.is_none() && !command_exists("ruby") {
-        return fail("no version manager found (install rvm or rbenv)");
+        return fail("no version manager found (run: brew install rbenv)");
     }
 
     let version_check =
@@ -226,6 +226,7 @@ fn check_ruby(repo_path: Option<&std::path::Path>) -> RequirementStatus {
         version_check,
         manager,
         manager.is_some() || command_exists("ruby"),
+        "ruby",
     )
 }
 
@@ -251,11 +252,11 @@ fn check_node(repo_path: Option<&std::path::Path>) -> RequirementStatus {
 
     // n detected as the only tool → hard fail
     if manager.is_none() && command_exists("n") {
-        return fail("n is not supported (install nvm or fnm for multi-version)");
+        return fail("n is not supported (run: brew install fnm)");
     }
 
     if manager.is_none() && !command_exists("node") {
-        return fail("no version manager found (install nvm or fnm)");
+        return fail("no version manager found (run: brew install fnm)");
     }
 
     let version_check = repo_path.and_then(|p| {
@@ -266,6 +267,7 @@ fn check_node(repo_path: Option<&std::path::Path>) -> RequirementStatus {
         version_check,
         manager,
         manager.is_some() || command_exists("node"),
+        "node",
     )
 }
 
@@ -283,12 +285,12 @@ fn check_python(repo_path: Option<&std::path::Path>) -> RequirementStatus {
     };
 
     if manager.is_none() && !command_exists("python3") {
-        return fail("not found");
+        return fail("not found (run: brew install pyenv)");
     }
 
     let version_check =
         repo_path.and_then(|p| check_runtime_version(p, ".python-version", manager, "python3"));
-    runtime_result(version_check, manager, true)
+    runtime_result(version_check, manager, true, "python3")
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +337,7 @@ fn runtime_result(
     version_check: Option<(String, bool)>,
     manager: Option<&str>,
     fallback_ok: bool,
+    runtime: &str,
 ) -> RequirementStatus {
     match version_check {
         Some((_version, true)) => RequirementStatus {
@@ -343,17 +346,38 @@ fn runtime_result(
         },
         Some((version, false)) => RequirementStatus {
             ok: false,
-            detail: Some(format!(
-                "{} not installed ({})",
-                version,
-                manager.unwrap_or("no version manager")
-            )),
+            detail: Some(match version_install_hint(runtime, manager, &version) {
+                Some(hint) => format!("{} not installed (run: {})", version, hint),
+                None => format!(
+                    "{} not installed ({})",
+                    version,
+                    manager.unwrap_or("no version manager")
+                ),
+            }),
         },
         None => RequirementStatus {
             ok: fallback_ok,
             detail: None,
         },
     }
+}
+
+/// The command that installs a specific pinned version, given the detected
+/// version manager. `None` when we can't map it to a concrete command.
+fn version_install_hint(runtime: &str, manager: Option<&str>, version: &str) -> Option<String> {
+    let cmd = match (runtime, manager?) {
+        ("ruby", "rbenv") => format!("rbenv install {}", version),
+        ("ruby", "rvm") => format!("rvm install {}", version),
+        ("ruby", "asdf") => format!("asdf install ruby {}", version),
+        ("node", "fnm") => format!("fnm install {}", version),
+        ("node", "nvm") => format!("nvm install {}", version),
+        ("node", "volta") => format!("volta install node@{}", version),
+        ("node", "asdf") => format!("asdf install nodejs {}", version),
+        ("python3", "pyenv") => format!("pyenv install {}", version),
+        ("python3", "asdf") => format!("asdf install python {}", version),
+        _ => return None,
+    };
+    Some(cmd)
 }
 
 fn fail(detail: &str) -> RequirementStatus {
@@ -398,7 +422,19 @@ fn check_command(cmd: &str) -> RequirementStatus {
             detail: None,
         }
     } else {
-        fail("not found")
+        match command_install_hint(cmd) {
+            Some(hint) => fail(&format!("not found (run: {})", hint)),
+            None => fail("not found"),
+        }
+    }
+}
+
+/// Install hint for a plain command requirement. `None` for tools we can't
+/// map to a single reliable install command.
+fn command_install_hint(cmd: &str) -> Option<&'static str> {
+    match cmd {
+        "pnpm" => Some("corepack enable && corepack prepare pnpm@latest --activate"),
+        _ => None,
     }
 }
 
@@ -543,5 +579,43 @@ pub fn port_owner(port: u16) -> Option<(u32, String)> {
         Some((pid, cmd))
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_install_hint_is_manager_aware() {
+        assert_eq!(
+            version_install_hint("ruby", Some("rbenv"), "3.4.7").as_deref(),
+            Some("rbenv install 3.4.7")
+        );
+        assert_eq!(
+            version_install_hint("node", Some("fnm"), "22.14.0").as_deref(),
+            Some("fnm install 22.14.0")
+        );
+        assert_eq!(
+            version_install_hint("node", Some("volta"), "22.14.0").as_deref(),
+            Some("volta install node@22.14.0")
+        );
+        assert_eq!(
+            version_install_hint("python3", Some("asdf"), "3.12").as_deref(),
+            Some("asdf install python 3.12")
+        );
+        // No manager, or a manager/runtime pair we can't map → no hint.
+        assert_eq!(version_install_hint("ruby", None, "3.4.7"), None);
+        assert_eq!(version_install_hint("node", Some("rbenv"), "22.14.0"), None);
+    }
+
+    #[test]
+    fn command_install_hint_covers_known_tools_only() {
+        assert_eq!(
+            command_install_hint("pnpm"),
+            Some("corepack enable && corepack prepare pnpm@latest --activate")
+        );
+        assert_eq!(command_install_hint("watchman"), None);
+        assert_eq!(command_install_hint("secrets-manager"), None);
     }
 }
