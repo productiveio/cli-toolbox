@@ -178,20 +178,37 @@ fn shq(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
-fn launch_command(dir: &str, prompt: &str, launcher: &str) -> String {
-    let run = if prompt.is_empty() {
-        launcher.to_string()
-    } else {
-        format!("{launcher} {}", shq(prompt))
-    };
-    format!("cd {} && {run}", shq(dir))
+/// How the first prompt reaches the spawned session.
+#[derive(Clone, Copy)]
+pub enum Prompt<'a> {
+    /// Start Claude with no prompt.
+    None,
+    /// A short one-liner, quoted straight onto the command line.
+    Inline(&'a str),
+    /// A file whose contents become the prompt. The command line only carries the
+    /// path — the shell expands it at launch, so a multi-line brief of any shape
+    /// survives AppleScript/send-keys untouched.
+    File(&'a str),
+}
+
+fn run_command(prompt: Prompt, launcher: &str) -> String {
+    match prompt {
+        Prompt::None => launcher.to_string(),
+        Prompt::Inline("") => launcher.to_string(),
+        Prompt::Inline(p) => format!("{launcher} {}", shq(p)),
+        Prompt::File(path) => format!("{launcher} \"$(cat {})\"", shq(path)),
+    }
+}
+
+fn launch_command(dir: &str, prompt: Prompt, launcher: &str) -> String {
+    format!("cd {} && {}", shq(dir), run_command(prompt, launcher))
 }
 
 /// Spawn a fresh session and return a human description of where it landed.
 pub fn spawn(
     backend: Backend,
     dir: &str,
-    prompt: &str,
+    prompt: Prompt,
     name: Option<&str>,
     window: bool,
     launcher: &str,
@@ -254,11 +271,7 @@ end run"#,
                 .output()?;
             let win = String::from_utf8_lossy(&out.stdout).trim().to_string();
             // Window already opened in `dir`; just run the launcher in it.
-            let run = if prompt.is_empty() {
-                launcher.to_string()
-            } else {
-                format!("{launcher} {}", shq(prompt))
-            };
+            let run = run_command(prompt, launcher);
             Command::new("tmux")
                 .args(["send-keys", "-t", &win, "-l", &run])
                 .status()?;
@@ -281,12 +294,31 @@ mod tests {
     fn quoting_and_command() {
         assert_eq!(shq("a b"), "'a b'");
         assert_eq!(shq("it's"), r"'it'\''s'");
-        assert_eq!(launch_command("/tmp", "", "claude"), "cd '/tmp' && claude");
         assert_eq!(
-            launch_command("/tmp", "hi there", "claude"),
+            launch_command("/tmp", Prompt::None, "claude"),
+            "cd '/tmp' && claude"
+        );
+        assert_eq!(
+            launch_command("/tmp", Prompt::Inline(""), "claude"),
+            "cd '/tmp' && claude"
+        );
+        assert_eq!(
+            launch_command("/tmp", Prompt::Inline("hi there"), "claude"),
             "cd '/tmp' && claude 'hi there'"
         );
         // A custom launcher (e.g. the user's `cc` wrapper) replaces `claude`.
-        assert_eq!(launch_command("/tmp", "hi", "cc"), "cd '/tmp' && cc 'hi'");
+        assert_eq!(
+            launch_command("/tmp", Prompt::Inline("hi"), "cc"),
+            "cd '/tmp' && cc 'hi'"
+        );
+    }
+
+    #[test]
+    fn prompt_file_expands_in_the_spawned_shell() {
+        // The brief's text must never reach the command line — only its path does.
+        assert_eq!(
+            launch_command("/tmp", Prompt::File("/tmp/a b.md"), "claude"),
+            r#"cd '/tmp' && claude "$(cat '/tmp/a b.md')""#
+        );
     }
 }

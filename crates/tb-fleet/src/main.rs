@@ -75,6 +75,30 @@ enum Commands {
         window: bool,
     },
 
+    /// Hand the current work off to a fresh session in another window
+    Handoff {
+        /// The brief for the new session (or use --file / stdin)
+        brief: Option<String>,
+        /// Read the brief from a file ("-" for stdin)
+        #[arg(long)]
+        file: Option<String>,
+        /// Working directory for the new session (defaults to the current directory)
+        #[arg(long)]
+        dir: Option<String>,
+        /// Backend to hand off into (defaults to iterm, or tmux when inside tmux)
+        #[arg(long, value_enum)]
+        backend: Option<BackendArg>,
+        /// tmux session name (tmux backend only)
+        #[arg(long)]
+        name: Option<String>,
+        /// Open a tab instead of a new window (iterm backend only)
+        #[arg(long)]
+        tab: bool,
+        /// Return immediately instead of waiting for the new session to register
+        #[arg(long)]
+        no_wait: bool,
+    },
+
     /// Live dashboard + macOS notifications on finished/stuck sessions
     Watch {
         /// Poll interval in seconds
@@ -122,6 +146,23 @@ fn main() {
             name,
             window,
         } => commands::spawn(prompt, dir, backend.map(Into::into), name, window),
+        Commands::Handoff {
+            brief,
+            file,
+            dir,
+            backend,
+            name,
+            tab,
+            no_wait,
+        } => commands::handoff(
+            brief,
+            file,
+            dir,
+            backend.map(Into::into),
+            name,
+            tab,
+            !no_wait,
+        ),
         Commands::Watch {
             interval,
             stuck,

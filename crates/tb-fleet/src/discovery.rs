@@ -171,7 +171,38 @@ pub fn resolve(target: &str) -> Result<Session, String> {
     }
 }
 
+/// The Claude session this process was launched from: the nearest ancestor pid
+/// that owns a registry entry (tb-fleet runs as claude -> shell -> us). `None`
+/// when invoked straight from a terminal.
+pub fn origin() -> Option<Session> {
+    let mut chain = Vec::new();
+    let mut pid = std::process::id() as i64;
+    for _ in 0..6 {
+        let Some(parent) = ppid_of(pid) else { break };
+        if parent <= 1 {
+            break;
+        }
+        chain.push(parent);
+        pid = parent;
+    }
+    let rows = discover();
+    chain
+        .into_iter()
+        .find_map(|p| rows.iter().find(|s| s.pid == p).cloned())
+}
+
 // --- process introspection ---------------------------------------------------
+
+fn ppid_of(pid: i64) -> Option<i64> {
+    let out = Command::new("ps")
+        .args(["-o", "ppid=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+}
 
 /// Returns the tty of a live process, `None` if the process is dead. A live
 /// process with no controlling tty yields `Some("")` collapsed to `None` here,
