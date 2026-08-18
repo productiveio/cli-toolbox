@@ -12,6 +12,7 @@ A firstmate-style orchestrator for the many Claude Code sessions the user runs i
 | Intent | Command |
 | --- | --- |
 | "what's running / my fleet" | `tb-fleet list` (add `--json` to parse) |
+| "open the fleet dashboard" | `tb-fleet` — bare, no subcommand; tell the user to run it, don't run it inline |
 | "peek at / what is X doing" | `tb-fleet peek <target> [--lines N]` |
 | "tell X to … / steer X" | `tb-fleet send <target> "<text>"` |
 | "rename X / call it …" | `tb-fleet rename <target> "<name>"` |
@@ -27,7 +28,7 @@ A firstmate-style orchestrator for the many Claude Code sessions the user runs i
 2. **Resolve loose targets from `list` first** ("the ai-agent one", "the stuck one") — run `list`, match by cwd/title/status, then act on the resolved name.
 3. **`spawn` defaults:** always pass an explicit `--dir` for the repo the user means. Backend defaults to iTerm (or tmux inside tmux); only pass `--backend` when asked.
 4. **Reporting:** after `list`/`peek`, summarize in plain language — who's working, who's idle, who needs the user — rather than dumping raw output. Lead with anything that needs a decision.
-5. **`watch`** is a long-running loop (live TUI + macOS notifications on finished/stuck). Don't run it inline; tell the user to run it in a spare terminal tab. The TUI is interactive: ↑/↓ (or j/k) select a session, Enter jumps focus to that session's tab/pane, `n` renames the selected one. `--quiet` = notifications only, backgroundable.
+5. **`watch`** (also what bare `tb-fleet` runs at a terminal) is a long-running loop (live TUI + macOS notifications on finished/stuck). Don't run it inline; tell the user to run it in a spare terminal tab. The TUI is interactive: ↑/↓ (or j/k) select a session, Enter jumps focus to that session's tab/pane, `n` renames the selected one. `--quiet` = notifications only, backgroundable.
 
 ## Handing work off ("take that to another terminal")
 
@@ -68,4 +69,5 @@ Renaming is cosmetic and instant — it changes the display name, never the sess
 - Discovery is authoritative: Claude's own `~/.claude/sessions/<pid>.json` registry gives precise session↔status and real busy/idle.
 - `send` types text and submits it (Enter) into the target — treat it like speaking for the user into another agent; that's why it's confirm-first.
 - "stuck" = a session idle past `--stuck` seconds while blocked on a permission/confirmation prompt.
+- Bare `tb-fleet` opens the dashboard on a terminal but falls back to a one-shot `list` when stdout is piped — so keep using `tb-fleet list` explicitly when you parse the output; never call it bare expecting to read stdout.
 - macOS + iTerm/tmux only.

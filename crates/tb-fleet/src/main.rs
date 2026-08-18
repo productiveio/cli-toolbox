@@ -1,3 +1,5 @@
+use std::io::IsTerminal;
+
 use clap::Parser;
 use colored::Colorize;
 
@@ -16,6 +18,10 @@ struct Cli {
     command: Option<Commands>,
 }
 
+/// Shared by the `watch` flags and the bare-`tb-fleet` default, so they can't drift.
+const DEFAULT_INTERVAL: u64 = 5;
+const DEFAULT_STUCK: i64 = 300;
+
 #[derive(Clone, Copy, clap::ValueEnum)]
 enum BackendArg {
     Iterm,
@@ -33,7 +39,7 @@ impl From<BackendArg> for Backend {
 
 #[derive(clap::Subcommand)]
 enum Commands {
-    /// List the live Claude sessions (default)
+    /// List the live Claude sessions
     List {
         /// Machine-readable output
         #[arg(long)]
@@ -113,13 +119,13 @@ enum Commands {
         no_wait: bool,
     },
 
-    /// Live dashboard + macOS notifications on finished/stuck sessions
+    /// Live dashboard + macOS notifications on finished/stuck sessions (default)
     Watch {
         /// Poll interval in seconds
-        #[arg(long, default_value_t = 5)]
+        #[arg(long, default_value_t = DEFAULT_INTERVAL)]
         interval: u64,
         /// Seconds a session must sit idle-on-a-prompt before it counts as stuck
-        #[arg(long, default_value_t = 300)]
+        #[arg(long, default_value_t = DEFAULT_STUCK)]
         stuck: i64,
         /// Notifications only, no TUI (backgroundable)
         #[arg(long)]
@@ -131,6 +137,20 @@ enum Commands {
         #[command(subcommand)]
         action: toolbox_core::skill::SkillAction,
     },
+}
+
+/// Bare `tb-fleet` opens the dashboard for a human at a terminal, but stays a
+/// one-shot `list` when stdout is piped — scripts and agents read that output.
+fn default_command() -> Commands {
+    if std::io::stdout().is_terminal() {
+        Commands::Watch {
+            interval: DEFAULT_INTERVAL,
+            stuck: DEFAULT_STUCK,
+            quiet: false,
+        }
+    } else {
+        Commands::List { json: false }
+    }
 }
 
 fn main() {
@@ -149,7 +169,7 @@ fn main() {
         return;
     }
 
-    let result = match cli.command.unwrap_or(Commands::List { json: false }) {
+    let result = match cli.command.unwrap_or_else(default_command) {
         Commands::List { json } => commands::list(json),
         Commands::Peek { target, lines } => commands::peek(&target, lines),
         Commands::Send { target, text } => commands::send(&target, &text),
