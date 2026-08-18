@@ -14,8 +14,9 @@ A firstmate-style orchestrator for the many Claude Code sessions the user runs i
 | "what's running / my fleet" | `tb-fleet list` (add `--json` to parse) |
 | "peek at / what is X doing" | `tb-fleet peek <target> [--lines N]` |
 | "tell X to … / steer X" | `tb-fleet send <target> "<text>"` |
-| "spawn / start a session to …" | `tb-fleet spawn "<prompt>" --dir <path> [--backend iterm\|tmux] [--name X] [--window]` |
-| "take this to another terminal" | `tb-fleet handoff --file <brief.md> --dir <path> [--tab] [--no-wait]` — see below |
+| "rename X / call it …" | `tb-fleet rename <target> "<name>"` |
+| "spawn / start a session to …" | `tb-fleet spawn "<prompt>" --dir <path> [--name <name>] [--backend iterm\|tmux] [--window]` |
+| "take this to another terminal" | `tb-fleet handoff --file <brief.md> --dir <path> [--name <name>] [--tab] [--no-wait]` — see below |
 | "watch / notify me / anyone stuck" | `tb-fleet watch [--interval 5] [--stuck 300] [--quiet]` |
 
 `<target>` = a session's derived name (e.g. `work-f9`), sessionId prefix, or pid — as shown by `list`.
@@ -26,7 +27,7 @@ A firstmate-style orchestrator for the many Claude Code sessions the user runs i
 2. **Resolve loose targets from `list` first** ("the ai-agent one", "the stuck one") — run `list`, match by cwd/title/status, then act on the resolved name.
 3. **`spawn` defaults:** always pass an explicit `--dir` for the repo the user means. Backend defaults to iTerm (or tmux inside tmux); only pass `--backend` when asked.
 4. **Reporting:** after `list`/`peek`, summarize in plain language — who's working, who's idle, who needs the user — rather than dumping raw output. Lead with anything that needs a decision.
-5. **`watch`** is a long-running loop (live TUI + macOS notifications on finished/stuck). Don't run it inline; tell the user to run it in a spare terminal tab. The TUI is interactive: ↑/↓ (or j/k) select a session, Enter jumps focus to that session's tab/pane. `--quiet` = notifications only, backgroundable.
+5. **`watch`** is a long-running loop (live TUI + macOS notifications on finished/stuck). Don't run it inline; tell the user to run it in a spare terminal tab. The TUI is interactive: ↑/↓ (or j/k) select a session, Enter jumps focus to that session's tab/pane, `n` renames the selected one. `--quiet` = notifications only, backgroundable.
 
 ## Handing work off ("take that to another terminal")
 
@@ -50,6 +51,17 @@ The phrase is the instruction: **do it, don't ask for confirmation.** Only ask w
 6. The receiving session is told how to `tb-fleet send` an update **back** to this one when it finishes. If such a message arrives, treat it as a report from the session you dispatched.
 
 Keep working on whatever the user kept here — the point of a handoff is that both threads run in parallel.
+
+## Session names
+
+Names are Claude's own, from its session registry — tb-fleet reads them, it doesn't invent them. By default a session is named after its cwd plus a short hash (`work-f9`), which is why five sessions in the same repo look alike. Four ways to fix that:
+
+- **At launch:** `spawn`/`handoff --name "<name>"` (passes `claude -n`), so it lands in the fleet already named. Name every session you spawn — one glance at `list` should say *which* piece of work it is, not which folder.
+- **From outside:** `tb-fleet rename <target> "<name>"` — sends `/rename` to that session and confirms the registry picked it up.
+- **In the `watch` TUI:** select a row, press `n`, type, ⏎ (esc cancels).
+- **Inside a session:** `/rename <name>` (or `/name`); with no argument Claude names the conversation from its own context.
+
+Renaming is cosmetic and instant — it changes the display name, never the sessionId, so `peek`/`send` targets keep working. Old names are kept by Claude under `formerNames`. Prefer short, task-shaped names (`cdc-spike`, `flag-cleanup`); long ones get truncated in the fleet views.
 
 ## Notes
 

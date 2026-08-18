@@ -52,6 +52,17 @@ pub fn tail(text: &str, n: usize, width: usize) -> String {
     slice[from..].join("\n")
 }
 
+/// Pad to `width`, or truncate with an ellipsis so a long name can't shove the
+/// columns behind it out of line. Names are user-chosen now, so assume nothing.
+pub fn column(text: &str, width: usize) -> String {
+    let n = text.chars().count();
+    if n <= width {
+        return format!("{text}{}", " ".repeat(width - n));
+    }
+    let keep: String = text.chars().take(width.saturating_sub(1)).collect();
+    format!("{keep}…")
+}
+
 pub fn plain_table(rows: &[Session]) -> String {
     let mut out = vec![
         format!(
@@ -71,7 +82,7 @@ pub fn plain_table(rows: &[Session]) -> String {
             "idle" => ("○".dimmed(), "idle".dimmed()),
             other => ("·".normal(), other.normal()),
         };
-        let label = format!("{:<9}", r.label());
+        let label = column(&r.label(), 12);
         let where_ = r.cwd.as_deref().map(home_rel).unwrap_or_else(|| "?".into());
         out.push(format!(
             "{dot} {} {:<7} {:>4}  {:<5} {}",
@@ -97,6 +108,13 @@ pub fn plain_table(rows: &[Session]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn columns_pad_and_truncate() {
+        assert_eq!(column("work-23", 9), "work-23  ");
+        assert_eq!(column("a-very-long-session-name", 9), "a-very-l…");
+        assert_eq!(column("exactly9c", 9), "exactly9c");
+    }
 
     #[test]
     fn age_and_tail() {

@@ -85,28 +85,81 @@ pub fn send(target: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn spawn(
-    prompt: Option<String>,
-    dir: Option<String>,
-    backend_arg: Option<Backend>,
-    name: Option<String>,
-    window: bool,
-) -> Result<()> {
-    let dir = dir.unwrap_or_else(|| {
-        std::env::current_dir()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| ".".into())
-    });
-    if !std::path::Path::new(&dir).exists() {
-        return Err(Error::Other(format!("dir does not exist: {dir}")));
-    }
-    let backend_kind = backend_arg.unwrap_or_else(|| {
-        if std::env::var_os("TMUX").is_some() {
-            Backend::Tmux
-        } else {
-            Backend::Iterm
+/// Rename a session by driving Claude's own `/rename` — the registry (and so
+/// every fleet view) picks the new name up on its next status write.
+pub fn rename(target: &str, name: &str) -> Result<()> {
+    let s = discovery::resolve(target).map_err(Error::Other)?;
+    let name = clean_name(name)?;
+    let was = s.label();
+    backend::send(&s, &format!("/rename {name}"))?;
+
+    // Confirm from the registry rather than trusting the keystrokes landed.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(500));
+        if let Some(now) = discovery::discover().iter().find(|r| r.key() == s.key())
+            && now.name.as_deref() == Some(name.as_str())
+        {
+            println!("{} → {}", was.dimmed(), name.bold());
+            return Ok(());
         }
-    });
+    }
+    println!(
+        "sent `/rename {name}` to {} — not reflected yet, check `tb-fleet list`",
+        was.bold()
+    );
+    Ok(())
+}
+
+/// A session name has to survive being typed into a TUI prompt as one line.
+fn clean_name(name: &str) -> Result<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(Error::Other("empty name".into()));
+    }
+    if name.contains(['\n', '\r']) {
+        return Err(Error::Other("name must be a single line".into()));
+    }
+    Ok(name.to_string())
+}
+
+/// Everything `spawn` and `handoff` share about *where* the new session lands.
+#[derive(Default)]
+pub struct SpawnOpts {
+    pub dir: Option<String>,
+    pub backend: Option<Backend>,
+    /// Claude display name for the new session (`claude -n`).
+    pub name: Option<String>,
+    pub tmux_session: Option<String>,
+    pub window: bool,
+}
+
+impl SpawnOpts {
+    /// Fill in the defaults that need the environment: cwd, and the backend we're
+    /// sitting in. Also validates, so a bad dir/name fails before anything opens.
+    fn resolve(&self) -> Result<(String, Backend, Option<String>)> {
+        let dir = self.dir.clone().unwrap_or_else(|| {
+            std::env::current_dir()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| ".".into())
+        });
+        if !Path::new(&dir).exists() {
+            return Err(Error::Other(format!("dir does not exist: {dir}")));
+        }
+        let backend = self.backend.unwrap_or_else(|| {
+            if std::env::var_os("TMUX").is_some() {
+                Backend::Tmux
+            } else {
+                Backend::Iterm
+            }
+        });
+        let name = self.name.as_deref().map(clean_name).transpose()?;
+        Ok((dir, backend, name))
+    }
+}
+
+pub fn spawn(prompt: Option<String>, opts: SpawnOpts) -> Result<()> {
+    let (dir, backend_kind, name) = opts.resolve()?;
     let prompt = prompt.unwrap_or_default();
     let launcher = resolve_launcher();
     let desc = backend::spawn(
@@ -114,7 +167,8 @@ pub fn spawn(
         &dir,
         Prompt::Inline(&prompt),
         name.as_deref(),
-        window,
+        opts.tmux_session.as_deref(),
+        opts.window,
         &launcher,
     )?;
     if prompt.is_empty() {
@@ -235,28 +289,11 @@ fn await_new_session(before: &HashSet<String>, dir: &str, timeout: Duration) -> 
 pub fn handoff(
     brief: Option<String>,
     file: Option<String>,
-    dir: Option<String>,
-    backend_arg: Option<Backend>,
-    name: Option<String>,
-    tab: bool,
+    opts: SpawnOpts,
     wait: bool,
 ) -> Result<()> {
     let brief = read_brief(brief, file)?;
-    let dir = dir.unwrap_or_else(|| {
-        std::env::current_dir()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| ".".into())
-    });
-    if !Path::new(&dir).exists() {
-        return Err(Error::Other(format!("dir does not exist: {dir}")));
-    }
-    let backend_kind = backend_arg.unwrap_or_else(|| {
-        if std::env::var_os("TMUX").is_some() {
-            Backend::Tmux
-        } else {
-            Backend::Iterm
-        }
-    });
+    let (dir, backend_kind, name) = opts.resolve()?;
 
     let from = discovery::origin();
     let now = chrono::Local::now();
@@ -282,8 +319,8 @@ pub fn handoff(
         &dir,
         Prompt::File(&path.display().to_string()),
         name.as_deref(),
-        // A handoff means "over there, out of my way" — a window unless told otherwise.
-        !tab,
+        opts.tmux_session.as_deref(),
+        opts.window,
         &launcher,
     )?;
     println!(

@@ -191,17 +191,27 @@ pub enum Prompt<'a> {
     File(&'a str),
 }
 
-fn run_command(prompt: Prompt, launcher: &str) -> String {
+/// `claude -n <name>` names the session up front, so it lands in the fleet with
+/// a name you chose instead of the cwd-derived default.
+fn with_name(launcher: &str, name: Option<&str>) -> String {
+    match name {
+        Some(n) => format!("{launcher} -n {}", shq(n)),
+        None => launcher.to_string(),
+    }
+}
+
+fn run_command(prompt: Prompt, name: Option<&str>, launcher: &str) -> String {
+    let launcher = with_name(launcher, name);
     match prompt {
-        Prompt::None => launcher.to_string(),
-        Prompt::Inline("") => launcher.to_string(),
+        Prompt::None => launcher,
+        Prompt::Inline("") => launcher,
         Prompt::Inline(p) => format!("{launcher} {}", shq(p)),
         Prompt::File(path) => format!("{launcher} \"$(cat {})\"", shq(path)),
     }
 }
 
-fn launch_command(dir: &str, prompt: Prompt, launcher: &str) -> String {
-    format!("cd {} && {}", shq(dir), run_command(prompt, launcher))
+fn launch_command(dir: &str, prompt: Prompt, name: Option<&str>, launcher: &str) -> String {
+    format!("cd {} && {}", shq(dir), run_command(prompt, name, launcher))
 }
 
 /// Spawn a fresh session and return a human description of where it landed.
@@ -210,10 +220,11 @@ pub fn spawn(
     dir: &str,
     prompt: Prompt,
     name: Option<&str>,
+    tmux_session: Option<&str>,
     window: bool,
     launcher: &str,
 ) -> Result<String> {
-    let line = launch_command(dir, prompt, launcher);
+    let line = launch_command(dir, prompt, name, launcher);
     match backend {
         Backend::Iterm => {
             // A fresh tab's shell is still sourcing the login profile (which on
@@ -248,7 +259,7 @@ end run"#,
             ))
         }
         Backend::Tmux => {
-            let session = name.unwrap_or("fleet");
+            let session = tmux_session.unwrap_or("fleet");
             let has = Command::new("tmux")
                 .args(["has-session", "-t", session])
                 .status()?;
@@ -271,7 +282,7 @@ end run"#,
                 .output()?;
             let win = String::from_utf8_lossy(&out.stdout).trim().to_string();
             // Window already opened in `dir`; just run the launcher in it.
-            let run = run_command(prompt, launcher);
+            let run = run_command(prompt, name, launcher);
             Command::new("tmux")
                 .args(["send-keys", "-t", &win, "-l", &run])
                 .status()?;
@@ -295,21 +306,34 @@ mod tests {
         assert_eq!(shq("a b"), "'a b'");
         assert_eq!(shq("it's"), r"'it'\''s'");
         assert_eq!(
-            launch_command("/tmp", Prompt::None, "claude"),
+            launch_command("/tmp", Prompt::None, None, "claude"),
             "cd '/tmp' && claude"
         );
         assert_eq!(
-            launch_command("/tmp", Prompt::Inline(""), "claude"),
+            launch_command("/tmp", Prompt::Inline(""), None, "claude"),
             "cd '/tmp' && claude"
         );
         assert_eq!(
-            launch_command("/tmp", Prompt::Inline("hi there"), "claude"),
+            launch_command("/tmp", Prompt::Inline("hi there"), None, "claude"),
             "cd '/tmp' && claude 'hi there'"
         );
         // A custom launcher (e.g. the user's `cc` wrapper) replaces `claude`.
         assert_eq!(
-            launch_command("/tmp", Prompt::Inline("hi"), "cc"),
+            launch_command("/tmp", Prompt::Inline("hi"), None, "cc"),
             "cd '/tmp' && cc 'hi'"
+        );
+    }
+
+    #[test]
+    fn session_name_goes_to_the_launcher_before_the_prompt() {
+        assert_eq!(
+            launch_command("/tmp", Prompt::Inline("go"), Some("cdc fix"), "claude"),
+            "cd '/tmp' && claude -n 'cdc fix' 'go'"
+        );
+        // Flags the user already configured stay ahead of ours.
+        assert_eq!(
+            launch_command("/tmp", Prompt::None, Some("probe"), "claude --resume"),
+            "cd '/tmp' && claude --resume -n 'probe'"
         );
     }
 
@@ -317,7 +341,7 @@ mod tests {
     fn prompt_file_expands_in_the_spawned_shell() {
         // The brief's text must never reach the command line — only its path does.
         assert_eq!(
-            launch_command("/tmp", Prompt::File("/tmp/a b.md"), "claude"),
+            launch_command("/tmp", Prompt::File("/tmp/a b.md"), None, "claude"),
             r#"cd '/tmp' && claude "$(cat '/tmp/a b.md')""#
         );
     }

@@ -57,6 +57,14 @@ enum Commands {
         text: String,
     },
 
+    /// Rename a session (drives Claude's own /rename)
+    Rename {
+        /// sessionId prefix, derived name, or pid
+        target: String,
+        /// The new display name
+        name: String,
+    },
+
     /// Spawn a new session in a fresh tab/pane
     Spawn {
         /// Initial prompt (optional)
@@ -67,9 +75,12 @@ enum Commands {
         /// Backend to spawn into (defaults to iterm, or tmux when inside tmux)
         #[arg(long, value_enum)]
         backend: Option<BackendArg>,
-        /// tmux session name (tmux backend only)
+        /// Display name for the new session (as shown by `list`/`watch`)
         #[arg(long)]
         name: Option<String>,
+        /// tmux session to open the window in (tmux backend only)
+        #[arg(long)]
+        tmux_session: Option<String>,
         /// Open a new window instead of a tab (iterm backend only)
         #[arg(long)]
         window: bool,
@@ -88,9 +99,12 @@ enum Commands {
         /// Backend to hand off into (defaults to iterm, or tmux when inside tmux)
         #[arg(long, value_enum)]
         backend: Option<BackendArg>,
-        /// tmux session name (tmux backend only)
+        /// Display name for the new session (as shown by `list`/`watch`)
         #[arg(long)]
         name: Option<String>,
+        /// tmux session to open the window in (tmux backend only)
+        #[arg(long)]
+        tmux_session: Option<String>,
         /// Open a tab instead of a new window (iterm backend only)
         #[arg(long)]
         tab: bool,
@@ -139,28 +153,44 @@ fn main() {
         Commands::List { json } => commands::list(json),
         Commands::Peek { target, lines } => commands::peek(&target, lines),
         Commands::Send { target, text } => commands::send(&target, &text),
+        Commands::Rename { target, name } => commands::rename(&target, &name),
         Commands::Spawn {
             prompt,
             dir,
             backend,
             name,
+            tmux_session,
             window,
-        } => commands::spawn(prompt, dir, backend.map(Into::into), name, window),
+        } => commands::spawn(
+            prompt,
+            commands::SpawnOpts {
+                dir,
+                backend: backend.map(Into::into),
+                name,
+                tmux_session,
+                window,
+            },
+        ),
         Commands::Handoff {
             brief,
             file,
             dir,
             backend,
             name,
+            tmux_session,
             tab,
             no_wait,
         } => commands::handoff(
             brief,
             file,
-            dir,
-            backend.map(Into::into),
-            name,
-            tab,
+            commands::SpawnOpts {
+                dir,
+                backend: backend.map(Into::into),
+                name,
+                tmux_session,
+                // A handoff means "over there, out of my way" — a window unless told otherwise.
+                window: !tab,
+            },
             !no_wait,
         ),
         Commands::Watch {

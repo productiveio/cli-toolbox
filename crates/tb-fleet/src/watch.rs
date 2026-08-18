@@ -23,7 +23,7 @@ use crate::backend;
 use crate::discovery::{Session, claude_home, discover, enrich_iterm_tabs};
 use crate::error::{Error, Result};
 use crate::notify::notify;
-use crate::render::{ago, home_rel};
+use crate::render::{ago, column, home_rel};
 
 const EVENT_CAP: usize = 20;
 
@@ -195,6 +195,8 @@ fn run_tui(interval_secs: u64, stuck_secs: i64) -> Result<()> {
     let mut last_poll: Option<Instant> = None;
     // Track selection by session key, not index, so it stays put as rows re-sort.
     let mut selected: Option<String> = None;
+    // Some(buffer) while typing a new name for the selected session.
+    let mut renaming: Option<String> = None;
     let interval = Duration::from_secs(interval_secs);
 
     loop {
@@ -217,15 +219,65 @@ fn run_tui(interval_secs: u64, stuck_secs: i64) -> Result<()> {
             .unwrap_or(0);
 
         terminal
-            .draw(|f| ui(f, &rows, &log, sel, interval_secs, stuck_secs))
+            .draw(|f| {
+                ui(
+                    f,
+                    &rows,
+                    &log,
+                    sel,
+                    interval_secs,
+                    stuck_secs,
+                    renaming.as_deref(),
+                )
+            })
             .map_err(Error::Io)?;
 
         if event::poll(Duration::from_millis(250)).map_err(Error::Io)?
             && let Event::Key(k) = event::read().map_err(Error::Io)?
             && k.kind != KeyEventKind::Release
         {
+            // Renaming swallows every key until it's applied or cancelled.
+            if let Some(buf) = renaming.as_mut() {
+                match k.code {
+                    KeyCode::Esc => renaming = None,
+                    KeyCode::Backspace => {
+                        buf.pop();
+                    }
+                    KeyCode::Enter => {
+                        let name = buf.trim().to_string();
+                        let ev = match (rows.get(sel), name.is_empty()) {
+                            (_, true) => None,
+                            (Some(r), false) => {
+                                Some(match backend::send(r, &format!("/rename {name}")) {
+                                    Ok(()) => ("✎", format!("{} → {name}", r.label())),
+                                    Err(e) => ("✕", format!("rename failed: {e}")),
+                                })
+                            }
+                            (None, _) => None,
+                        };
+                        if let Some((icon, msg)) = ev {
+                            log.insert(
+                                0,
+                                Ev {
+                                    icon,
+                                    time: chrono::Local::now().format("%H:%M:%S").to_string(),
+                                    msg,
+                                },
+                            );
+                            log.truncate(EVENT_CAP);
+                            // Claude writes the new name on its next status update.
+                            last_poll = Some(Instant::now() - interval + Duration::from_secs(2));
+                        }
+                        renaming = None;
+                    }
+                    KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) => buf.push(c),
+                    _ => {}
+                }
+                continue;
+            }
             match k.code {
                 KeyCode::Char('q') | KeyCode::Esc => break,
+                KeyCode::Char('n') if !rows.is_empty() => renaming = Some(String::new()),
                 KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => break,
                 KeyCode::Char('r') => last_poll = None, // force refresh
                 KeyCode::Up | KeyCode::Char('k') if !rows.is_empty() => {
@@ -262,6 +314,7 @@ fn ui(
     sel: usize,
     interval_secs: u64,
     stuck_secs: i64,
+    renaming: Option<&str>,
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -271,6 +324,32 @@ fn ui(
             Constraint::Length(10),
         ])
         .split(f.area());
+
+    // While renaming, the header line becomes the input field.
+    if let Some(buf) = renaming {
+        let who = rows.get(sel).map(Session::label).unwrap_or_default();
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    format!("  rename {who} → "),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("{buf}▏"),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "  ⏎ apply · esc cancel",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ])),
+            chunks[0],
+        );
+    }
 
     let busy = rows.iter().filter(|r| r.status == "busy").count();
     let header = Line::from(vec![
@@ -292,11 +371,13 @@ fn ui(
             Style::default().fg(Color::DarkGray),
         ),
         Span::styled(
-            "· ↑↓/jk select · ⏎ focus · q quit · r refresh",
+            "· ↑↓/jk select · ⏎ focus · n rename · r refresh · q quit",
             Style::default().fg(Color::DarkGray),
         ),
     ]);
-    f.render_widget(Paragraph::new(header), chunks[0]);
+    if renaming.is_none() {
+        f.render_widget(Paragraph::new(header), chunks[0]);
+    }
 
     // Sessions
     let width = chunks[1].width.saturating_sub(4) as usize;
@@ -313,9 +394,9 @@ fn ui(
         let selected = idx == sel;
         let caret = if selected { "▸ " } else { "  " };
         let tabname: String = r.tab.as_deref().unwrap_or("-").chars().take(16).collect();
+        let name = column(&r.label(), 13);
         let head = format!(
-            "{caret}{dot} {:<11}{:<8}{:>4}  {tabname:<16}",
-            r.label(),
+            "{caret}{dot} {name} {:<8}{:>4}  {tabname:<16}",
             state_txt,
             ago(r.updated_at),
         );
@@ -328,7 +409,7 @@ fn ui(
             ),
             Span::styled(format!("{dot} "), state_style),
             Span::styled(
-                format!("{:<11}", r.label()),
+                format!("{name} "),
                 Style::default().add_modifier(Modifier::BOLD),
             ),
             Span::styled(format!("{:<8}", state_txt), state_style),
