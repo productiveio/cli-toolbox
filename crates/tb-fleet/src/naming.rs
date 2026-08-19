@@ -30,9 +30,15 @@ use serde::{Deserialize, Serialize};
 use crate::discovery::{Session, claude_home, is_fixture};
 use crate::error::{Error, Result};
 
-/// Hard cap on a generated name, in characters. Long names are ellipsised in
-/// every fleet view, so a longer one buys nothing.
-pub const MAX_NAME: usize = 24;
+/// Hard cap on a generated name, in characters.
+///
+/// Sized to the widest headline cell the `watch` item will grow to (34 columns on
+/// a desktop pane, see `dash::rows::NAME_CELL_MAX`), less a little, since the row
+/// ellipsises anything past that and a name it can't draw buys nothing. It was 24
+/// while a generated name was only ever a rename *suggestion*; now that it is on
+/// screen for every session, all the time, `unrecoverable-ids-remova` is a cost
+/// paid once per glance.
+pub const MAX_NAME: usize = 32;
 
 /// Ceiling on the context handed to the model. The session title is a full user
 /// prompt and can be thousands of characters; a name doesn't need them.
@@ -63,7 +69,7 @@ const BORING_BRANCHES: [&str; 6] = ["main", "master", "develop", "development", 
 /// The instruction the model gets. Kept terse: the whole point of `--model haiku`
 /// plus a neutral cwd is that this call stays cheap.
 const INSTRUCTION: &str = "You are naming a coding session so a developer can tell it apart from a dozen others.\n\
-Reply with ONE lowercase kebab-case slug of 2-4 words, at most 24 characters.\n\
+Reply with ONE lowercase kebab-case slug of 2-4 words, at most 32 characters.\n\
 Name what the WORK is, not where it lives. No quotes, no backticks, no explanation, no trailing period.\n";
 
 // --- sanitising --------------------------------------------------------------
@@ -137,11 +143,36 @@ pub fn slugify(text: &str, cap: usize) -> String {
         } else if !out.ends_with('-') {
             out.push('-');
         }
-        if out.chars().count() >= cap {
+        // One past the cap: enough to tell a cut that lands on a word boundary
+        // from one that lands inside a word, which is all `cap_on_boundary` needs.
+        if out.chars().count() > cap {
             break;
         }
     }
-    out.trim_matches('-').to_string()
+    cap_on_boundary(out.trim_matches('-'), cap)
+}
+
+/// Cap a slug at `cap` characters, preferring the last word boundary in it.
+///
+/// A hard cut reads as a typo — `unrecoverable-session-ids-removal` became
+/// `unrecoverable-session-ids-remova`, and a name on screen all day is worth the
+/// three characters it costs to end on a word. A boundary is only worth taking
+/// while it keeps two thirds of the budget; below that the hard cut carries more.
+///
+/// Byte and character indices coincide here: a slug is ASCII by construction.
+fn cap_on_boundary(s: &str, cap: usize) -> String {
+    if s.len() <= cap {
+        return s.to_string();
+    }
+    let hard = &s[..cap];
+    // The cut already lands between words — nothing to move back to.
+    if s.as_bytes().get(cap) == Some(&b'-') {
+        return hard.trim_matches('-').to_string();
+    }
+    match hard.rfind('-') {
+        Some(i) if i * 3 >= cap * 2 => s[..i].to_string(),
+        _ => hard.trim_matches('-').to_string(),
+    }
 }
 
 // --- the heuristic fallback --------------------------------------------------
@@ -929,13 +960,35 @@ mod tests {
     }
 
     #[test]
-    fn names_are_capped_at_twenty_four_characters() {
-        let n = sanitize_name("`aaaaaaaaaa-bbbbbbbbbb-cccccccccc`").unwrap();
+    fn names_are_capped_at_thirty_two_characters() {
+        // No word boundary worth taking (the last one throws away half the
+        // budget), so the cap is hard.
+        let n = sanitize_name("`aaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbbbbbb`").unwrap();
         assert_eq!(n.chars().count(), MAX_NAME);
-        assert_eq!(n, "aaaaaaaaaa-bbbbbbbbbb-cc");
+        assert_eq!(n, "aaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbb");
         // The cap must not leave a dangling separator behind.
-        let n = sanitize_name("`aaaaaaaaaaaaaaaaaaaaaaa-bbb`").unwrap();
+        let n = sanitize_name("`aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbb`").unwrap();
         assert!(!n.ends_with('-'), "{n}");
+    }
+
+    // A name that is on screen for every session, all the time, should not read
+    // as a typo. `unrecoverable-ids-remova` is what the hard cut used to give.
+    #[test]
+    fn the_cap_lands_on_a_word_boundary_when_one_is_close_enough() {
+        assert_eq!(
+            sanitize_name("`unrecoverable-session-ids-removal`").as_deref(),
+            Some("unrecoverable-session-ids")
+        );
+        // Already on a boundary: nothing to move back to.
+        assert_eq!(
+            sanitize_name("`aaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbb-cc`").as_deref(),
+            Some("aaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbb")
+        );
+        // …and a name that fits is left exactly alone.
+        assert_eq!(
+            sanitize_name("`cdc-backfill-retry`").as_deref(),
+            Some("cdc-backfill-retry")
+        );
     }
 
     #[test]
@@ -1023,7 +1076,7 @@ mod tests {
         for b in ["main", "master", "develop", "HEAD", "MAIN"] {
             assert_eq!(
                 heuristic_from(Some(b), Some("regenerate the repo skills index")).as_deref(),
-                Some("regenerate-the-repo-skil"),
+                Some("regenerate-the-repo-skills-index"),
                 "{b}"
             );
         }
@@ -1178,7 +1231,7 @@ mod tests {
         .unwrap();
         assert_eq!(calls.get(), 2, "one retry, no more");
         assert_eq!(got.source, NameSource::Heuristic);
-        assert_eq!(got.name, "clean-up-the-released-fe");
+        assert_eq!(got.name, "clean-up-the-released-feature");
         assert!(got.note.unwrap().contains("not on PATH"));
         // A guess is never cached — it would outlive the outage.
         assert!(cache.is_empty());
