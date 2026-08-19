@@ -69,6 +69,7 @@ Each tool ships with a Claude Code skill that runs `tb-<tool> prime` on load to 
 ```json
 "Bash(tb-backyard:*)",
 "Bash(tb-bug:*)",
+"Bash(tb-fleet:*)",
 "Bash(tb-lf:*)",
 "Bash(tb-pr:*)",
 "Bash(tb-sem:*)",
