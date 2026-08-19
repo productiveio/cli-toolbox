@@ -40,6 +40,21 @@ fn osa(script: &str, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+/// Refuse to drive a backend while a fixture is standing in for the registry.
+///
+/// A canned fleet's handles are fabricated: `tmux send-keys -t %99` and the iTerm
+/// AppleScript would either fail loudly or, worse, hit whatever really answers to
+/// that handle. `TB_FLEET_FIXTURE` is documented as a demo/screenshot mode, so it
+/// has to be inert.
+fn deny_fixture() -> Result<()> {
+    if crate::discovery::is_fixture() {
+        return Err(Error::Other(
+            "fixture mode: backends are inert (unset TB_FLEET_FIXTURE)".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn require_handle(s: &Session) -> Result<&str> {
     s.handle.as_deref().ok_or_else(|| {
         Error::Other(format!(
@@ -51,6 +66,7 @@ fn require_handle(s: &Session) -> Result<&str> {
 }
 
 pub fn peek(s: &Session) -> Result<String> {
+    deny_fixture()?;
     let handle = require_handle(s)?;
     match s.backend {
         Backend::Iterm => osa(
@@ -74,7 +90,25 @@ end run"#
     }
 }
 
+/// One `tmux send-keys` at `handle`, failing when tmux says it failed.
+fn send_keys(handle: &str, rest: &[&str]) -> Result<()> {
+    let mut cmd = Command::new("tmux");
+    cmd.args(["send-keys", "-t", handle]).args(rest);
+    let out = cmd.output()?;
+    if !out.status.success() {
+        let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        let why = if why.is_empty() {
+            format!("exited {}", out.status)
+        } else {
+            why
+        };
+        return Err(Error::Other(format!("tmux send-keys -t {handle}: {why}")));
+    }
+    Ok(())
+}
+
 pub fn send(s: &Session, text: &str) -> Result<()> {
+    deny_fixture()?;
     let handle = require_handle(s)?;
     match s.backend {
         Backend::Iterm => {
@@ -99,12 +133,12 @@ end run"#
             Ok(())
         }
         Backend::Tmux => {
-            Command::new("tmux")
-                .args(["send-keys", "-t", handle, "-l", text])
-                .status()?;
-            Command::new("tmux")
-                .args(["send-keys", "-t", handle, "Enter"])
-                .status()?;
+            // A non-zero `send-keys` ("can't find pane") is the pane having gone
+            // away, not a spawn failure — `?` alone would swallow it and report
+            // a `/rename` that never landed as success, after which the tmux
+            // session gets renamed anyway.
+            send_keys(handle, &["-l", text])?;
+            send_keys(handle, &["Enter"])?;
             Ok(())
         }
         Backend::Unknown => require_handle(s).map(|_| ()),
@@ -113,6 +147,7 @@ end run"#
 
 /// Bring a session's terminal to the front (its iTerm tab, or its tmux window/pane).
 pub fn focus(s: &Session) -> Result<()> {
+    deny_fixture()?;
     let handle = require_handle(s)?;
     match s.backend {
         Backend::Iterm => {
@@ -171,6 +206,238 @@ end run"#,
         }
         Backend::Unknown => require_handle(s).map(|_| ()),
     }
+}
+
+// --- tmux session naming -----------------------------------------------------
+
+/// What happened to a session's tmux name. A skip is a normal outcome — iTerm
+/// sessions, shared tmux sessions and the dashboard's own session all land here
+/// — so it is never an error the caller has to apologise for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TmuxSync {
+    Renamed(String),
+    Skipped(String),
+}
+
+/// Make a name tmux will store verbatim.
+///
+/// tmux silently rewrites `:` and `.` in a session name to `_` — renaming one to
+/// `foo:bar.baz` yields `foo_bar_baz`. Doing the substitution ourselves (to `-`,
+/// which reads better) means tmux's own rewrite never fires, and the collision
+/// pre-check compares the string that actually lands.
+pub fn sanitize_tmux_name(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        if c == ':' || c == '.' || c.is_whitespace() {
+            if !out.ends_with('-') {
+                out.push('-');
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    // A leading `-` would be parsed as a flag by `tmux rename-session`.
+    let out = out.trim_start_matches('-');
+    // Capped for the same reason the Claude name is: tmux will happily carry a
+    // 300-character session name into every status line on the machine.
+    out.chars().take(MAX_TMUX_NAME).collect()
+}
+
+/// The longest tmux session name this will produce.
+pub const MAX_TMUX_NAME: usize = 64;
+
+/// `desired`, or `desired-2`, `desired-3`… until it collides with nothing in
+/// `existing`.
+///
+/// Pure on purpose: `has-session -t X` does prefix/fnmatch matching and answers
+/// "yes" for a name that doesn't exist, so the only correct check is an exact
+/// compare against the full list — and that list is worth being able to fake.
+pub fn unique_tmux_name(desired: &str, existing: &[String]) -> String {
+    let taken = |n: &str| existing.iter().any(|e| e == n);
+    if !taken(desired) {
+        return desired.to_string();
+    }
+    for n in 2..1000 {
+        let candidate = format!("{desired}-{n}");
+        if !taken(&candidate) {
+            return candidate;
+        }
+    }
+    format!("{desired}-{}", std::process::id())
+}
+
+/// Reasons to leave a tmux session's name alone, or `None` to go ahead.
+///
+/// Pure so every guard is testable without a live server. The one-session-one-job
+/// convention is what makes renaming a tmux session meaningful at all; where the
+/// convention visibly doesn't hold (more than one window or pane), the name is
+/// somebody's filing system and not ours to rewrite.
+pub fn tmux_guard(
+    current: &str,
+    own: Option<&str>,
+    windows: usize,
+    panes: usize,
+) -> Option<String> {
+    if current == "fleet" {
+        return Some("left `fleet` alone — the switch-client binding depends on it".into());
+    }
+    if own == Some(current) {
+        return Some(format!(
+            "left `{current}` alone — it's this dashboard's own session"
+        ));
+    }
+    if windows > 1 || panes > 1 {
+        return Some(format!(
+            "left `{current}` alone — {windows} windows / {panes} panes, so it isn't one job"
+        ));
+    }
+    None
+}
+
+/// Every live tmux session name, exactly as tmux stores it.
+fn tmux_session_names() -> Vec<String> {
+    Command::new("tmux")
+        .args(["list-sessions", "-F", "#{session_name}"])
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(str::to_string)
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// One `tmux display-message -p -t <target> <format>`, or why it didn't answer.
+fn tmux_query(target: &str, format: &str) -> std::result::Result<String, String> {
+    let out = Command::new("tmux")
+        .args(["display-message", "-p", "-t", target, format])
+        .output()
+        .map_err(|e| format!("cannot run tmux: {e}"))?;
+    if !out.status.success() {
+        let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(if why.is_empty() {
+            format!("tmux exited {}", out.status)
+        } else {
+            why
+        });
+    }
+    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if text.is_empty() {
+        return Err(format!("tmux gave no answer for {format}"));
+    }
+    Ok(text)
+}
+
+/// The tmux session a target (a pane id) belongs to, *now*.
+///
+/// The one on [`Session`] is a poll snapshot up to `--interval` old, while the
+/// rename itself resolves live from the pane id. A pane that moved between polls
+/// would otherwise be guarded against its old session name and renamed in its
+/// new one — including `fleet`, which is precisely what the guard protects.
+fn tmux_session_of(target: &str) -> std::result::Result<String, String> {
+    tmux_query(target, "#{session_name}")
+}
+
+/// The tmux session this process is running inside, via `$TMUX_PANE`.
+///
+/// `Ok(None)` means "not inside tmux at all". An error is *not* that: reporting
+/// a failed lookup as "not mine" would let the dashboard rename the session it
+/// is drawing itself in, so the caller has to fail closed on it.
+fn own_tmux_session() -> std::result::Result<Option<String>, String> {
+    let Ok(pane) = std::env::var("TMUX_PANE") else {
+        return Ok(None);
+    };
+    tmux_query(&pane, "#{session_name}").map(Some)
+}
+
+/// `(windows, panes)` in the session a target belongs to. Errors rather than
+/// guessing `(1, 1)`: that guess reads as "one session, one job" and waves the
+/// rename through on exactly the tmux failure that should have stopped it.
+fn tmux_shape(target: &str) -> std::result::Result<(usize, usize), String> {
+    let windows: usize = tmux_query(target, "#{session_windows}")?
+        .parse()
+        .map_err(|_| "tmux gave an unreadable window count".to_string())?;
+    let out = Command::new("tmux")
+        .args(["list-panes", "-s", "-t", target, "-F", "#{pane_id}"])
+        .output()
+        .map_err(|e| format!("cannot run tmux: {e}"))?;
+    if !out.status.success() {
+        let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(if why.is_empty() {
+            format!("tmux list-panes exited {}", out.status)
+        } else {
+            why
+        });
+    }
+    let panes = String::from_utf8_lossy(&out.stdout).lines().count().max(1);
+    Ok((windows, panes))
+}
+
+/// Bring a session's tmux *session* name in line with its Claude name — one tmux
+/// session per job is the convention this whole feature serves.
+///
+/// The target is the pane id where we have one: it is session-name independent,
+/// so nothing here can be aimed at the wrong session by a name containing `:`.
+pub fn rename_tmux_session(s: &Session, new: &str) -> Result<TmuxSync> {
+    if crate::discovery::is_fixture() {
+        return Ok(TmuxSync::Skipped("fixture mode: tmux untouched".into()));
+    }
+    if s.backend != Backend::Tmux {
+        return Ok(TmuxSync::Skipped(format!(
+            "no tmux session to rename ({})",
+            s.backend.label()
+        )));
+    }
+    // The pane id, never a name: `-t a:b` on a session called `a:b` resolves as
+    // session `a`, window `b`. Discovery fills `handle` and `tmux_session` from
+    // the same pane lookup, so no handle means no tmux session either.
+    let Some(target) = s.handle.as_deref().filter(|h| !h.is_empty()) else {
+        return Ok(TmuxSync::Skipped("tmux session unknown".into()));
+    };
+    let desired = sanitize_tmux_name(new);
+    if desired.is_empty() {
+        return Ok(TmuxSync::Skipped(
+            "nothing usable left of that name for tmux".into(),
+        ));
+    }
+    // Everything below resolves live from the pane, the guards included.
+    let current = match tmux_session_of(target) {
+        Ok(c) => c,
+        Err(why) => return Ok(TmuxSync::Skipped(format!("tmux session unknown: {why}"))),
+    };
+    if desired == current {
+        return Ok(TmuxSync::Skipped(format!("tmux session already {current}")));
+    }
+    let (windows, panes) = match tmux_shape(target) {
+        Ok(shape) => shape,
+        Err(why) => {
+            return Ok(TmuxSync::Skipped(format!(
+                "left `{current}` alone — tmux would not say its shape: {why}"
+            )));
+        }
+    };
+    let own = match own_tmux_session() {
+        Ok(own) => own,
+        Err(why) => {
+            return Ok(TmuxSync::Skipped(format!(
+                "left `{current}` alone — cannot tell if it is this dashboard's own: {why}"
+            )));
+        }
+    };
+    if let Some(why) = tmux_guard(&current, own.as_deref(), windows, panes) {
+        return Ok(TmuxSync::Skipped(why));
+    }
+    let unique = unique_tmux_name(&desired, &tmux_session_names());
+    let out = Command::new("tmux")
+        .args(["rename-session", "-t", target, &unique])
+        .output()?;
+    if !out.status.success() {
+        let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(Error::Other(format!("tmux rename-session: {why}")));
+    }
+    Ok(TmuxSync::Renamed(format!("⧉ {current} → {unique}")))
 }
 
 /// Shell-quote a value for a single-quoted context.
@@ -335,6 +602,123 @@ mod tests {
             launch_command("/tmp", Prompt::None, Some("probe"), "claude --resume"),
             "cd '/tmp' && claude --resume -n 'probe'"
         );
+    }
+
+    // --- tmux session naming -------------------------------------------------
+
+    // tmux rewrites `:` and `.` to `_` behind your back, so a collision check
+    // against the pre-rewrite string compares a name that never lands.
+    #[test]
+    fn tmux_names_lose_the_characters_tmux_would_rewrite() {
+        assert_eq!(sanitize_tmux_name("foo:bar.baz"), "foo-bar-baz");
+        assert_eq!(sanitize_tmux_name("cdc backfill"), "cdc-backfill");
+        assert_eq!(sanitize_tmux_name("a: . b"), "a-b");
+        assert_eq!(sanitize_tmux_name("cdc-backfill"), "cdc-backfill");
+        // A leading `-` reads as a flag to `tmux rename-session`.
+        assert_eq!(sanitize_tmux_name(" leading"), "leading");
+        // A typed name of any length still has to fit a status line.
+        let long = sanitize_tmux_name(&"a".repeat(500));
+        assert_eq!(long.chars().count(), MAX_TMUX_NAME);
+    }
+
+    // Both guards used to answer "go ahead" when tmux itself failed to answer —
+    // `(1, 1)` and `None` are indistinguishable from "one job, not mine".
+    #[test]
+    fn the_guards_fail_closed_when_tmux_does_not_answer() {
+        // A pane id that cannot exist; with tmux absent the command fails too.
+        assert!(tmux_query("%999999", "#{session_name}").is_err());
+        assert!(tmux_session_of("%999999").is_err());
+        assert!(tmux_shape("%999999").is_err());
+    }
+
+    // …and end to end: an unresolvable pane is skipped, never renamed on a
+    // stale name carried over from the last poll.
+    #[test]
+    fn an_unresolvable_pane_is_skipped_rather_than_renamed_blind() {
+        let s = Session {
+            backend: Backend::Tmux,
+            handle: Some("%999999".into()),
+            // Deliberately stale and deliberately dangerous: the snapshot says
+            // one thing, the live pane would say another.
+            tmux_session: Some("some-old-name".into()),
+            ..Default::default()
+        };
+        let why = match rename_tmux_session(&s, "cdc-backfill").unwrap() {
+            TmuxSync::Skipped(why) => why,
+            TmuxSync::Renamed(what) => panic!("renamed blind: {what}"),
+        };
+        assert!(why.contains("tmux session unknown"), "{why}");
+
+        // No pane id at all is the same answer — discovery fills `handle` and
+        // `tmux_session` from one lookup, so there is no third case.
+        let s = Session {
+            backend: Backend::Tmux,
+            tmux_session: Some("some-old-name".into()),
+            ..Default::default()
+        };
+        assert!(matches!(
+            rename_tmux_session(&s, "x").unwrap(),
+            TmuxSync::Skipped(_)
+        ));
+    }
+
+    // `.status()?` propagated only spawn failure, so "can't find pane" was
+    // reported as a `/rename` that landed — and the tmux session got renamed to
+    // match a name the session never received.
+    #[test]
+    fn send_keys_reports_what_tmux_says_went_wrong() {
+        let e = send_keys("%999999", &["-l", "hi"]).unwrap_err();
+        assert!(e.to_string().contains("send-keys"), "{e}");
+    }
+
+    #[test]
+    fn colliding_names_get_a_numeric_suffix() {
+        let existing: Vec<String> = ["work", "cdc-backfill", "cdc-backfill-2"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(unique_tmux_name("flag-cleanup", &existing), "flag-cleanup");
+        assert_eq!(
+            unique_tmux_name("cdc-backfill", &existing),
+            "cdc-backfill-3"
+        );
+        assert_eq!(unique_tmux_name("work", &existing), "work-2");
+        // Nothing taken at all is a straight pass-through.
+        assert_eq!(unique_tmux_name("work", &[]), "work");
+    }
+
+    #[test]
+    fn the_guards_refuse_the_sessions_that_must_not_be_renamed() {
+        // `bind f switch-client -t fleet` depends on this name.
+        assert!(tmux_guard("fleet", None, 1, 1).is_some());
+        // The dashboard's own session — renaming it out from under the TUI.
+        assert!(tmux_guard("work", Some("work"), 1, 1).is_some());
+        // More than one window or pane: one-session-one-job doesn't hold here.
+        assert!(tmux_guard("work", None, 3, 1).is_some());
+        assert!(tmux_guard("work", None, 1, 4).is_some());
+        // The ordinary case goes ahead.
+        assert!(tmux_guard("work", Some("other"), 1, 1).is_none());
+    }
+
+    #[test]
+    fn non_tmux_sessions_are_a_friendly_no_op() {
+        let s = Session {
+            backend: Backend::Iterm,
+            tab: Some("work".into()),
+            ..Default::default()
+        };
+        assert!(matches!(
+            rename_tmux_session(&s, "x").unwrap(),
+            TmuxSync::Skipped(_)
+        ));
+        let s = Session {
+            backend: Backend::Unknown,
+            ..Default::default()
+        };
+        assert!(matches!(
+            rename_tmux_session(&s, "x").unwrap(),
+            TmuxSync::Skipped(_)
+        ));
     }
 
     #[test]

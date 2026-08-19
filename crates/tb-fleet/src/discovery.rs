@@ -6,13 +6,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub fn claude_home() -> PathBuf {
     dirs::home_dir().unwrap_or_default().join(".claude")
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Backend {
     Iterm,
@@ -30,7 +30,10 @@ impl Backend {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+/// `Deserialize` is here for the fixture mode (`TB_FLEET_FIXTURE`), which feeds
+/// the dashboard a canned fleet — used by the golden-buffer tests and as a demo.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Session {
     pub pid: i64,
     pub session_id: Option<String>,
@@ -45,7 +48,36 @@ pub struct Session {
     pub handle: Option<String>,
     /// Terminal tab name: iTerm tab title or tmux window name.
     pub tab: Option<String>,
+    /// The tmux *session* the pane lives in — one session per job is the
+    /// convention, so this is the terminal identifier worth showing.
+    pub tmux_session: Option<String>,
+    /// Registry `nameSource`: `"derived"` means Claude made the name up from the
+    /// cwd plus a hash, i.e. it carries no information about the work.
+    pub name_source: Option<String>,
+    /// Registry `waitingFor`: what a `waiting` session is blocked on.
+    pub waiting_for: Option<String>,
     pub title: Option<String>,
+}
+
+impl Default for Session {
+    fn default() -> Self {
+        Self {
+            pid: 0,
+            session_id: None,
+            name: None,
+            cwd: None,
+            status: "unknown".into(),
+            updated_at: None,
+            tty: None,
+            backend: Backend::Unknown,
+            handle: None,
+            tab: None,
+            tmux_session: None,
+            name_source: None,
+            waiting_for: None,
+            title: None,
+        }
+    }
 }
 
 impl Session {
@@ -55,6 +87,17 @@ impl Session {
         self.session_id
             .clone()
             .unwrap_or_else(|| self.pid.to_string())
+    }
+
+    /// True when the display name is Claude's cwd+hash fallback rather than
+    /// something a human (or an LLM) chose — batch B renames exactly these.
+    pub fn is_derived_name(&self) -> bool {
+        self.name_source.as_deref() == Some("derived")
+    }
+
+    /// Is this session blocked on the user right now?
+    pub fn is_waiting(&self) -> bool {
+        self.status == "waiting"
     }
 
     /// Short human label: derived name, else short sessionId, else pid.
@@ -83,9 +126,41 @@ struct Reg {
     updated_at: Option<i64>,
     #[serde(rename = "statusUpdatedAt")]
     status_updated_at: Option<i64>,
+    #[serde(rename = "nameSource")]
+    name_source: Option<String>,
+    #[serde(rename = "waitingFor")]
+    waiting_for: Option<String>,
+}
+
+/// One tmux pane, as reported by `list-panes -a`.
+#[derive(Debug, Clone)]
+pub struct Pane {
+    /// `session:window.pane` — the addressable target.
+    pub target: String,
+    /// `%12` — the stable pane id, preferred as a control handle.
+    pub pane_id: String,
+    pub window_name: String,
+    pub session_name: String,
+}
+
+/// A canned fleet from `TB_FLEET_FIXTURE=<path/to/sessions.json>`. Bypasses the
+/// registry entirely so the dashboard can be rendered (and asserted on) without
+/// live sessions.
+fn fixture() -> Option<Vec<Session>> {
+    let path = std::env::var_os("TB_FLEET_FIXTURE")?;
+    let text = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// True while the fixture is driving discovery — backends must not be poked.
+pub fn is_fixture() -> bool {
+    std::env::var_os("TB_FLEET_FIXTURE").is_some()
 }
 
 pub fn discover() -> Vec<Session> {
+    if let Some(rows) = fixture() {
+        return rows;
+    }
     let dir = claude_home().join("sessions");
     let panes = tmux_panes();
     let mut out = Vec::new();
@@ -114,14 +189,17 @@ pub fn discover() -> Vec<Session> {
         let (backend, handle) = backend_of(pid, Some(tty.as_str()), &panes);
         // tmux tab (window name) is free from the panes query; iTerm tab titles are
         // filled lazily by enrich_iterm_tabs (one AppleScript call) only for display.
-        let tab = if backend == Backend::Tmux {
-            panes
-                .get(&format!("/dev/{tty}"))
-                .map(|(_, _, window)| window.clone())
-                .filter(|w| !w.is_empty())
+        let pane = if backend == Backend::Tmux {
+            panes.get(&format!("/dev/{tty}"))
         } else {
             None
         };
+        let tab = pane
+            .map(|p| p.window_name.clone())
+            .filter(|w| !w.is_empty());
+        let tmux_session = pane
+            .map(|p| p.session_name.clone())
+            .filter(|w| !w.is_empty());
         let title = match (reg.session_id.as_deref(), reg.cwd.as_deref()) {
             (Some(sid), Some(cwd)) => title_for(cwd, sid),
             _ => None,
@@ -135,6 +213,9 @@ pub fn discover() -> Vec<Session> {
             backend,
             handle,
             tab,
+            tmux_session,
+            name_source: reg.name_source,
+            waiting_for: reg.waiting_for,
             session_id: reg.session_id,
             name: reg.name,
             cwd: reg.cwd,
@@ -235,16 +316,16 @@ fn env_of(pid: i64) -> String {
 fn backend_of(
     pid: i64,
     tty: Option<&str>,
-    panes: &HashMap<String, (String, String, String)>,
+    panes: &HashMap<String, Pane>,
 ) -> (Backend, Option<String>) {
     let env = env_of(pid);
     if env.starts_with("TMUX=") || env.contains(" TMUX=") {
         let handle = tty.and_then(|t| {
-            panes.get(&format!("/dev/{t}")).map(|(target, pane_id, _)| {
-                if pane_id.is_empty() {
-                    target.clone()
+            panes.get(&format!("/dev/{t}")).map(|p| {
+                if p.pane_id.is_empty() {
+                    p.target.clone()
                 } else {
-                    pane_id.clone()
+                    p.pane_id.clone()
                 }
             })
         });
@@ -260,38 +341,53 @@ fn backend_of(
     (Backend::Unknown, None)
 }
 
-/// pane_tty -> (target, pane_id, window_name) for every tmux pane, empty if tmux isn't running.
-fn tmux_panes() -> HashMap<String, (String, String, String)> {
+/// pane_tty -> pane for every tmux pane, empty if tmux isn't running.
+fn tmux_panes() -> HashMap<String, Pane> {
     let mut map = HashMap::new();
     let Ok(out) = Command::new("tmux")
         .args([
             "list-panes",
             "-a",
             "-F",
-            "#{pane_tty}\t#{session_name}:#{window_index}.#{pane_index}\t#{pane_id}\t#{window_name}",
+            "#{pane_tty}\t#{session_name}:#{window_index}.#{pane_index}\t#{pane_id}\t#{window_name}\t#{session_name}",
         ])
         .output()
     else {
         return map;
     };
     for line in String::from_utf8_lossy(&out.stdout).lines() {
-        let mut parts = line.split('\t');
-        if let (Some(ptty), Some(target), Some(pane_id)) =
-            (parts.next(), parts.next(), parts.next())
-        {
-            let window = parts.next().unwrap_or("").to_string();
-            map.insert(
-                ptty.to_string(),
-                (target.to_string(), pane_id.to_string(), window),
-            );
-        }
+        map.extend(parse_pane(line));
     }
     map
+}
+
+/// `pane_tty \t target \t pane_id \t window_name \t session_name` -> (tty, pane).
+fn parse_pane(line: &str) -> Option<(String, Pane)> {
+    let mut parts = line.split('\t');
+    let ptty = parts.next()?;
+    let target = parts.next()?;
+    let pane_id = parts.next()?;
+    let window_name = parts.next().unwrap_or("").to_string();
+    // session_name is also the prefix of `target`, but parsing it back out would
+    // break on the `:` a session name is allowed to contain — ask tmux instead.
+    let session_name = parts.next().unwrap_or("").to_string();
+    Some((
+        ptty.to_string(),
+        Pane {
+            target: target.to_string(),
+            pane_id: pane_id.to_string(),
+            window_name,
+            session_name,
+        },
+    ))
 }
 
 /// Fill iTerm sessions' `tab` with their tab title via a single AppleScript call.
 /// Kept out of `discover()` so one-shot commands (peek/send) don't pay for it.
 pub fn enrich_iterm_tabs(rows: &mut [Session]) {
+    if is_fixture() {
+        return;
+    }
     if !rows
         .iter()
         .any(|r| r.backend == Backend::Iterm && r.tab.is_none())
@@ -390,5 +486,29 @@ mod tests {
     fn cwd_encoding() {
         assert_eq!(encode_cwd("/Users/ivan/Code/work"), "-Users-ivan-Code-work");
         assert_eq!(encode_cwd("/a/b.c"), "-a-b-c");
+    }
+
+    #[test]
+    fn panes_carry_their_tmux_session() {
+        let (tty, p) = parse_pane("/dev/ttys004\tai-agent:2.0\t%17\tzsh\tai-agent").unwrap();
+        assert_eq!(tty, "/dev/ttys004");
+        assert_eq!(p.session_name, "ai-agent");
+        assert_eq!(p.window_name, "zsh");
+        assert_eq!(p.pane_id, "%17");
+        // A session name containing a colon still resolves, because we don't
+        // reconstruct it from `target`.
+        let (_, p) = parse_pane("/dev/ttys005\ta:b:1.0\t%1\tvim\ta:b").unwrap();
+        assert_eq!(p.session_name, "a:b");
+        assert!(parse_pane("garbage").is_none());
+    }
+
+    #[test]
+    fn derived_names_are_flagged() {
+        let mut s = Session::default();
+        assert!(!s.is_derived_name());
+        s.name_source = Some("derived".into());
+        assert!(s.is_derived_name());
+        s.name_source = Some("user".into());
+        assert!(!s.is_derived_name());
     }
 }

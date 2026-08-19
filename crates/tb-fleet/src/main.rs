@@ -22,6 +22,26 @@ struct Cli {
 const DEFAULT_INTERVAL: u64 = 5;
 const DEFAULT_STUCK: i64 = 300;
 
+/// `--rows`: how many terminal rows one session occupies.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum RowsArg {
+    #[value(name = "1")]
+    One,
+    #[value(name = "2")]
+    Two,
+    Auto,
+}
+
+impl From<RowsArg> for Option<bool> {
+    fn from(r: RowsArg) -> Self {
+        match r {
+            RowsArg::One => Some(false),
+            RowsArg::Two => Some(true),
+            RowsArg::Auto => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, clap::ValueEnum)]
 enum BackendArg {
     Iterm,
@@ -69,6 +89,33 @@ enum Commands {
         target: String,
         /// The new display name
         name: String,
+        /// Leave the session's tmux session name alone
+        #[arg(long)]
+        no_tmux_sync: bool,
+        /// Rename even a busy session (types into its live turn — be sure)
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Suggest a name for a session from what it is actually working on
+    Name {
+        /// sessionId prefix, derived name, or pid (omit with --all)
+        target: Option<String>,
+        /// Every session still carrying Claude's cwd+hash name
+        #[arg(long)]
+        all: bool,
+        /// Send the suggestion as /rename instead of only printing it
+        #[arg(long)]
+        apply: bool,
+        /// Print what would be renamed and change nothing (the default)
+        #[arg(long, conflicts_with = "apply")]
+        dry_run: bool,
+        /// Leave the session's tmux session name alone
+        #[arg(long)]
+        no_tmux_sync: bool,
+        /// Ignore the cached name and generate (and store) a fresh one
+        #[arg(long, alias = "no-cache")]
+        refresh: bool,
     },
 
     /// Spawn a new session in a fresh tab/pane
@@ -130,6 +177,15 @@ enum Commands {
         /// Notifications only, no TUI (backgroundable)
         #[arg(long)]
         quiet: bool,
+        /// Terminal rows per session: 1, 2, or auto by width (persisted by `z`)
+        #[arg(long, value_enum)]
+        rows: Option<RowsArg>,
+        /// Capture mouse/tap input in the TUI (default; a tap selects and focuses)
+        #[arg(long)]
+        mouse: bool,
+        /// Leave the mouse to the terminal, so selection and copy behave normally
+        #[arg(long, conflicts_with = "mouse")]
+        no_mouse: bool,
     },
 
     /// Manage the Claude Code skill file
@@ -147,6 +203,9 @@ fn default_command() -> Commands {
             interval: DEFAULT_INTERVAL,
             stuck: DEFAULT_STUCK,
             quiet: false,
+            rows: None,
+            mouse: false,
+            no_mouse: false,
         }
     } else {
         Commands::List { json: false }
@@ -173,7 +232,29 @@ fn main() {
         Commands::List { json } => commands::list(json),
         Commands::Peek { target, lines } => commands::peek(&target, lines),
         Commands::Send { target, text } => commands::send(&target, &text),
-        Commands::Rename { target, name } => commands::rename(&target, &name),
+        Commands::Rename {
+            target,
+            name,
+            no_tmux_sync,
+            force,
+        } => commands::rename(&target, &name, no_tmux_sync, force),
+        Commands::Name {
+            target,
+            all,
+            apply,
+            dry_run,
+            no_tmux_sync,
+            refresh,
+        } => commands::name(
+            target,
+            commands::NameOpts {
+                all,
+                apply,
+                dry_run,
+                no_tmux_sync,
+                refresh,
+            },
+        ),
         Commands::Spawn {
             prompt,
             dir,
@@ -217,7 +298,23 @@ fn main() {
             interval,
             stuck,
             quiet,
-        } => watch::run(interval, stuck, quiet),
+            rows,
+            mouse,
+            no_mouse,
+        } => watch::run(watch::WatchOpts {
+            interval_secs: interval,
+            stuck_secs: stuck,
+            quiet,
+            rows: rows.map(Into::into),
+            // Neither flag given means "whatever the config says".
+            mouse: if no_mouse {
+                Some(false)
+            } else if mouse {
+                Some(true)
+            } else {
+                None
+            },
+        }),
         Commands::Skill { .. } => unreachable!("handled above"),
     };
 

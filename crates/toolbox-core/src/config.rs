@@ -62,25 +62,53 @@ pub fn save_config<T: Serialize>(path: &Path, config: &T) -> std::io::Result<()>
     std::fs::write(path, content)
 }
 
-/// Read a TOML config file, set a single key, and write it back.
+/// Read a TOML config file, set a single top-level key, and write it back.
 /// Creates the file and parent directories if they don't exist.
 pub fn patch_toml(path: &Path, key: &str, value: &str) -> std::io::Result<()> {
-    let mut table: toml::Table = if path.exists() {
-        let content = std::fs::read_to_string(path)?;
-        toml::from_str(&content)
+    patch_toml_path(path, &[key], value)
+}
+
+/// Set a (possibly nested) string key — `["ui", "rows"]` is `[ui] rows = "…"` —
+/// creating any missing intermediate tables, and write the file back.
+///
+/// Edits the document in place, so comments, key order and formatting survive.
+/// A file that exists but doesn't parse is an error, never a fresh empty
+/// document: silently replacing a config someone hand-edited badly loses the
+/// rest of their settings.
+pub fn patch_toml_path(path: &Path, keys: &[&str], value: &str) -> std::io::Result<()> {
+    if keys.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "patch_toml_path needs at least one key",
+        ));
+    }
+    let mut doc: toml_edit::DocumentMut = if path.exists() {
+        std::fs::read_to_string(path)?
+            .parse()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
     } else {
-        toml::Table::new()
+        toml_edit::DocumentMut::new()
     };
 
-    table.insert(key.to_string(), toml::Value::String(value.to_string()));
+    let (last, parents) = keys.split_last().expect("non-empty, checked above");
+    let mut table = doc.as_table_mut();
+    for k in parents {
+        let entry = table
+            .entry(k)
+            .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()));
+        table = entry.as_table_mut().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("`{k}` is not a table"),
+            )
+        })?;
+    }
+    table[*last] = toml_edit::value(value);
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let content = toml::to_string_pretty(&table)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    std::fs::write(path, content)
+    std::fs::write(path, doc.to_string())
 }
 
 /// Mask a token for display: `****...XXXX` (last 4 chars).
@@ -104,6 +132,52 @@ mod tests {
     #[test]
     fn masked_token_short() {
         assert_eq!(masked_token("short"), "****");
+    }
+
+    #[test]
+    fn patch_toml_keeps_comments_and_unrelated_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "# my config\ncommand = \"cc\"\n\n[ui]\nmouse = true\n",
+        )
+        .unwrap();
+
+        patch_toml_path(&path, &["ui", "rows"], "2").unwrap();
+
+        let out = std::fs::read_to_string(&path).unwrap();
+        assert!(out.contains("# my config"), "{out}");
+        assert!(out.contains("command = \"cc\""), "{out}");
+        assert!(out.contains("mouse = true"), "{out}");
+        assert!(out.contains("rows = \"2\""), "{out}");
+
+        // An existing value is replaced, not duplicated.
+        patch_toml_path(&path, &["ui", "rows"], "auto").unwrap();
+        let out = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(out.matches("rows =").count(), 1, "{out}");
+        assert!(out.contains("rows = \"auto\""), "{out}");
+    }
+
+    #[test]
+    fn patch_toml_creates_missing_file_and_tables() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested/config.toml");
+        patch_toml_path(&path, &["ui", "rows"], "1").unwrap();
+        let out = std::fs::read_to_string(&path).unwrap();
+        assert!(out.contains("[ui]"), "{out}");
+        assert!(out.contains("rows = \"1\""), "{out}");
+    }
+
+    // A hand-edited syntax error must not be "fixed" by overwriting the file.
+    #[test]
+    fn patch_toml_refuses_to_clobber_an_unparseable_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let broken = "command = \"cc\n[ui\n";
+        std::fs::write(&path, broken).unwrap();
+        assert!(patch_toml_path(&path, &["ui", "rows"], "2").is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
     }
 
     #[test]

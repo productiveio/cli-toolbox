@@ -1,6 +1,6 @@
 //! One function per CLI verb. `watch` lives in its own module.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -11,12 +11,120 @@ use serde::Deserialize;
 use crate::backend::{self, Prompt};
 use crate::discovery::{self, Backend, Session, claude_home};
 use crate::error::{Error, Result};
-use crate::render::{home_rel, plain_table, tail};
+use crate::naming;
+use crate::render::{home_rel, plain_table, tail, term_width};
 
-#[derive(Deserialize)]
-struct FleetConfig {
+#[derive(Deserialize, Default)]
+pub struct FleetConfig {
     /// The command that launches Claude Code (defaults to `claude`).
     command: Option<String>,
+    #[serde(default)]
+    pub ui: UiConfig,
+    #[serde(default)]
+    pub naming: NamingConfig,
+}
+
+/// `[naming]` in the tool's config.toml — how `N`/`Ctrl-N` and `tb-fleet name`
+/// behave. All three keys are opt-*out*: the defaults are what the feature is for.
+#[derive(Deserialize, Default, Clone)]
+pub struct NamingConfig {
+    /// Generate names at all. `false` leaves only the branch/title heuristic.
+    pub enabled: Option<bool>,
+    /// Model passed to `claude -p --model`.
+    pub model: Option<String>,
+    /// Rename the session's tmux session to match a confirmed Claude rename.
+    pub sync_tmux: Option<bool>,
+}
+
+impl NamingConfig {
+    pub fn enabled(&self) -> bool {
+        self.enabled.unwrap_or(true)
+    }
+    pub fn model(&self) -> String {
+        self.model
+            .as_deref()
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .unwrap_or("haiku")
+            .to_string()
+    }
+    pub fn sync_tmux(&self) -> bool {
+        self.sync_tmux.unwrap_or(true)
+    }
+}
+
+/// `[ui]` in the tool's config.toml — dashboard preferences that survive restarts.
+#[derive(Deserialize, Default, Clone)]
+pub struct UiConfig {
+    /// `"1"`, `"2"` or `"auto"` — how many terminal rows one session occupies.
+    pub rows: Option<String>,
+    /// Mouse/tap capture in the `watch` TUI. Defaults to on.
+    pub mouse: Option<bool>,
+}
+
+fn load_config() -> FleetConfig {
+    load_all().cfg
+}
+
+/// Everything one read of config.toml yields.
+///
+/// `run_tui` wants `[ui]`, `[naming]` *and* the parse error in the same breath;
+/// asking for them one at a time read and parsed the same file four times at
+/// startup.
+pub struct Loaded {
+    pub cfg: FleetConfig,
+    /// `Some(message)` when the file exists but doesn't parse. Loading degrades
+    /// to defaults on purpose, so without this the user never learns why their
+    /// settings stopped applying — or why `z` no longer sticks.
+    pub problem: Option<String>,
+}
+
+pub fn load_all() -> Loaded {
+    let Ok(path) = toolbox_core::config::config_path("tb-fleet") else {
+        return Loaded {
+            cfg: FleetConfig::default(),
+            problem: None,
+        };
+    };
+    match toolbox_core::config::load_standalone::<FleetConfig>(&path) {
+        Ok(cfg) => Loaded {
+            cfg: cfg.unwrap_or_default(),
+            problem: None,
+        },
+        Err(e) => Loaded {
+            cfg: FleetConfig::default(),
+            problem: Some(format!(
+                "config not readable ({}): {e}",
+                home_rel_path(&path)
+            )),
+        },
+    }
+}
+
+/// `[ui]` config, or all-defaults when there's no config file.
+pub fn ui_config() -> UiConfig {
+    load_config().ui
+}
+
+/// `[naming]` config, or all-defaults when there's no config file.
+pub fn naming_config() -> NamingConfig {
+    load_config().naming
+}
+
+fn home_rel_path(p: &Path) -> String {
+    home_rel(&p.display().to_string())
+}
+
+/// Write one `[ui]` key back, leaving the rest of the file — comments included —
+/// alone. Best-effort by contract: the caller reports the error, a dashboard
+/// toggle never takes the TUI down over an unwritable or malformed config.
+///
+/// A config that exists but doesn't parse is *not* overwritten: the old
+/// round-trip through an empty table silently dropped `command = "…"` for anyone
+/// with a hand-edited syntax error.
+pub fn persist_ui(key: &str, value: &str) -> std::result::Result<(), String> {
+    let path = toolbox_core::config::config_path("tb-fleet").map_err(|e| e.to_string())?;
+    toolbox_core::config::patch_toml_path(&path, &["ui", key], value).map_err(|e| e.to_string())
 }
 
 /// Resolve the command used to launch Claude in a spawned session. Hosts differ:
@@ -29,20 +137,12 @@ fn resolve_launcher() -> String {
             return cmd.to_string();
         }
     }
-    if let Ok(path) = toolbox_core::config::config_path("tb-fleet")
-        && let Ok(Some(cfg)) = toolbox_core::config::load_standalone::<FleetConfig>(&path)
-        && let Some(cmd) = cfg.command
+    if let Some(cmd) = load_config().command
         && !cmd.trim().is_empty()
     {
         return cmd.trim().to_string();
     }
     "claude".to_string()
-}
-
-fn term_width() -> usize {
-    crossterm::terminal::size()
-        .map(|(c, _)| c as usize)
-        .unwrap_or(120)
 }
 
 pub fn list(json: bool) -> Result<()> {
@@ -67,9 +167,10 @@ pub fn peek(target: &str, lines: usize) -> Result<()> {
         s.status,
         where_.dimmed()
     );
-    println!("{}", "─".repeat(74));
+    let rule = "─".repeat(term_width().clamp(40, 200));
+    println!("{rule}");
     println!("{}", tail(&text, lines, term_width().saturating_sub(2)));
-    println!("{}\n", "─".repeat(74));
+    println!("{rule}\n");
     Ok(())
 }
 
@@ -85,13 +186,83 @@ pub fn send(target: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
+/// How one rename should be applied.
+#[derive(Clone, Copy, Default)]
+pub struct RenameOpts {
+    /// Bring the session's tmux session name along.
+    pub sync_tmux: bool,
+    /// Send `/rename` even to a busy or waiting session. The hold exists because
+    /// a live turn would read `/rename foo` as its answer; a session that is
+    /// *always* busy would otherwise be unrenameable by any path, so the escape
+    /// hatch is explicit rather than absent.
+    pub force: bool,
+}
+
+/// What [`apply_rename`] did.
+pub enum RenameOutcome {
+    /// `/rename` was typed into the session. The note, when present, describes
+    /// what happened to its tmux session name.
+    Sent(Option<String>),
+    /// Nothing was sent, and why.
+    Held(String),
+}
+
+/// Drive Claude's own `/rename` for one session, then (optionally) bring its
+/// tmux session name along.
+///
+/// The single choke point for every rename: the CLI verbs, `name --apply` and
+/// the dashboard's rename buffer all come through here, so the "never type into
+/// a live turn" rule can't be forgotten in one of them. `backend::send` types
+/// into a real Claude TUI — a session mid-turn, or sitting on a permission
+/// prompt, would receive `/rename foo` as its *answer*.
+pub fn apply_rename(s: &Session, name: &str, o: RenameOpts) -> Result<RenameOutcome> {
+    if !o.force {
+        if s.status == "busy" {
+            return Ok(RenameOutcome::Held(format!(
+                "{} is mid-turn — nothing sent (--force overrides)",
+                s.label()
+            )));
+        }
+        if s.is_waiting() {
+            return Ok(RenameOutcome::Held(format!(
+                "{} is waiting on you — nothing sent (--force overrides)",
+                s.label()
+            )));
+        }
+    }
+    backend::send(s, &format!("/rename {name}"))?;
+    if !o.sync_tmux {
+        return Ok(RenameOutcome::Sent(None));
+    }
+    Ok(RenameOutcome::Sent(
+        match backend::rename_tmux_session(s, name) {
+            Ok(backend::TmuxSync::Renamed(msg)) => Some(msg),
+            Ok(backend::TmuxSync::Skipped(why)) => Some(why),
+            // The Claude rename already landed; a tmux failure is a footnote,
+            // not a reason to report the whole thing as failed.
+            Err(e) => Some(format!("tmux not renamed: {e}")),
+        },
+    ))
+}
+
 /// Rename a session by driving Claude's own `/rename` — the registry (and so
 /// every fleet view) picks the new name up on its next status write.
-pub fn rename(target: &str, name: &str) -> Result<()> {
+pub fn rename(target: &str, name: &str, no_tmux_sync: bool, force: bool) -> Result<()> {
     let s = discovery::resolve(target).map_err(Error::Other)?;
     let name = clean_name(name)?;
     let was = s.label();
-    backend::send(&s, &format!("/rename {name}"))?;
+    let opts = RenameOpts {
+        sync_tmux: !no_tmux_sync && naming_config().sync_tmux(),
+        force,
+    };
+    match apply_rename(&s, &name, opts)? {
+        RenameOutcome::Held(why) => return Err(Error::Other(why)),
+        RenameOutcome::Sent(note) => {
+            if let Some(note) = note {
+                println!("{}", note.dimmed());
+            }
+        }
+    }
 
     // Confirm from the registry rather than trusting the keystrokes landed.
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -111,8 +282,175 @@ pub fn rename(target: &str, name: &str) -> Result<()> {
     Ok(())
 }
 
+// --- name ---------------------------------------------------------------------
+
+/// How `tb-fleet name` was asked to run.
+#[derive(Default, Clone, Copy)]
+pub struct NameOpts {
+    /// Every session whose name is still Claude's cwd+hash fallback.
+    pub all: bool,
+    /// Actually send `/rename`. Without it this prints suggestions and stops.
+    pub apply: bool,
+    /// The explicit form of the default — suggest, touch nothing.
+    pub dry_run: bool,
+    pub no_tmux_sync: bool,
+    /// Ignore the cached name and overwrite it with a fresh one.
+    pub refresh: bool,
+}
+
+/// Suggest (and optionally apply) LLM-generated names.
+///
+/// The scriptable half of the `N` / `Ctrl-N` keys: same generator, same cache,
+/// same guards, usable from a skill or a shell without opening the dashboard.
+/// What the `name` verb is allowed to do, from the config and the flags.
+///
+/// The only thing that stops `[naming] enabled = false` from spawning a
+/// `claude` per session: the headline it prints says nothing will happen, and
+/// for a while that was all it was.
+fn gen_opts(cfg: &NamingConfig, o: NameOpts, fixture: bool) -> naming::GenOpts {
+    naming::GenOpts {
+        allow_llm: cfg.enabled() && !fixture,
+        refresh: o.refresh,
+    }
+}
+
+pub fn name(target: Option<String>, o: NameOpts) -> Result<()> {
+    let cfg = naming_config();
+    let how = gen_opts(&cfg, o, discovery::is_fixture());
+    let targets: Vec<Session> = match (&target, o.all) {
+        (Some(t), false) => vec![discovery::resolve(t).map_err(Error::Other)?],
+        (None, true) => discovery::discover()
+            .into_iter()
+            .filter(Session::is_derived_name)
+            .collect(),
+        (Some(_), true) => {
+            return Err(Error::Other("pass a target or --all, not both".into()));
+        }
+        (None, false) => {
+            return Err(Error::Other(
+                "name what? pass a session target (sessionId prefix, name, or pid) or --all".into(),
+            ));
+        }
+    };
+    if targets.is_empty() {
+        println!("no sessions still carry a Claude-derived name — nothing to rename");
+        return Ok(());
+    }
+
+    let apply = o.apply && !o.dry_run;
+    let rename_opts = RenameOpts {
+        sync_tmux: !o.no_tmux_sync && cfg.sync_tmux(),
+        force: false,
+    };
+    // Off in config, or a canned fleet: the heuristic answers and no child is
+    // ever spawned — `how.allow_llm` is what carries that all the way to
+    // `naming::suggest`, which is the only thing that can actually enforce it.
+    if !how.allow_llm {
+        println!(
+            "{}",
+            "naming is inert here (fixture mode or [naming] enabled = false) — showing the branch/title guess"
+                .dimmed()
+        );
+    }
+
+    for (s, result) in generate(&targets, &cfg, how) {
+        let was = s.label();
+        let suggestion = match result {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("{} {}: {}", "✕".red(), was.bold(), e.dimmed());
+                continue;
+            }
+        };
+        let new = &suggestion.name;
+        if !apply {
+            println!(
+                "{}  →  {}   {}",
+                was.dimmed(),
+                new.bold(),
+                format!("({})", suggestion.source.label()).dimmed()
+            );
+            continue;
+        }
+        match apply_rename(&s, new, rename_opts) {
+            Ok(RenameOutcome::Sent(note)) => {
+                println!("{}  →  {}", was.dimmed(), new.bold());
+                if let Some(note) = note {
+                    println!("   {}", note.dimmed());
+                }
+            }
+            Ok(RenameOutcome::Held(why)) => println!("{} {}", "⏸".yellow(), why.dimmed()),
+            Err(e) => eprintln!("{} {was}: {e}", "✕".red()),
+        }
+    }
+    Ok(())
+}
+
+/// Generate a suggestion per session, two model calls in flight at a time.
+/// Order follows `targets` so the output is stable.
+fn generate(
+    targets: &[Session],
+    cfg: &NamingConfig,
+    how: naming::GenOpts,
+) -> Vec<(Session, std::result::Result<naming::Suggestion, String>)> {
+    let (pool, rx) = naming::NamePool::start(cfg.model(), how);
+    for s in targets {
+        pool.enqueue(naming::NameJob {
+            key: s.key(),
+            session: s.clone(),
+            bulk: true,
+        });
+    }
+    let mut by_key: HashMap<String, std::result::Result<naming::Suggestion, String>> =
+        HashMap::new();
+    // Counted by answers collected, not by messages read: `Unavailable` is a
+    // one-off aside and must not consume a session's slot.
+    while by_key.len() < targets.len() {
+        match rx.recv() {
+            Ok(naming::NameMsg::Named {
+                key, name, source, ..
+            }) => {
+                by_key.insert(
+                    key,
+                    Ok(naming::Suggestion {
+                        name,
+                        source,
+                        note: None,
+                    }),
+                );
+            }
+            Ok(naming::NameMsg::Failed { key, err, .. }) => {
+                by_key.insert(key, Err(err));
+            }
+            // Said once per run by contract; the per-session lines carry the
+            // detail that matters here.
+            Ok(naming::NameMsg::Unavailable(_)) => continue,
+            // Every worker is gone — nothing more is coming.
+            Err(_) => break,
+        }
+    }
+    drop(pool);
+    targets
+        .iter()
+        .map(|s| {
+            let r = by_key
+                .remove(&s.key())
+                .unwrap_or_else(|| Err("no answer from the naming worker".into()));
+            (s.clone(), r)
+        })
+        .collect()
+}
+
+/// The longest name any path may send. Generated names are capped at
+/// [`naming::MAX_NAME`]; this is the looser cap for one a human typed, and it
+/// exists because the name goes out as `/rename <name>` into a live TUI *and*
+/// becomes a tmux session name.
+pub const MAX_RENAME: usize = 64;
+
 /// A session name has to survive being typed into a TUI prompt as one line.
-fn clean_name(name: &str) -> Result<String> {
+/// Over-long names are cropped rather than refused — the user typed something,
+/// and a 300-character tmux session name helps nobody.
+pub fn clean_name(name: &str) -> Result<String> {
     let name = name.trim();
     if name.is_empty() {
         return Err(Error::Other("empty name".into()));
@@ -120,7 +458,7 @@ fn clean_name(name: &str) -> Result<String> {
     if name.contains(['\n', '\r']) {
         return Err(Error::Other("name must be a single line".into()));
     }
-    Ok(name.to_string())
+    Ok(name.chars().take(MAX_RENAME).collect::<String>())
 }
 
 /// Everything `spawn` and `handoff` share about *where* the new session lands.
@@ -187,21 +525,11 @@ fn handoff_dir() -> PathBuf {
     claude_home().join("fleet-handoffs")
 }
 
-/// A filename-safe stem from the brief's first line.
+/// A filename-safe stem from the brief's first line. Shares its slugger with
+/// the name generator — two spellings of "make this safe to use as a name" is
+/// one too many.
 fn slug(text: &str) -> String {
-    let first = text.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
-    let mut out = String::new();
-    for c in first.trim_start_matches(['#', ' ']).chars() {
-        if c.is_ascii_alphanumeric() {
-            out.push(c.to_ascii_lowercase());
-        } else if !out.ends_with('-') {
-            out.push('-');
-        }
-        if out.len() >= 40 {
-            break;
-        }
-    }
-    let out = out.trim_matches('-').to_string();
+    let out = naming::slugify(text, 40);
     if out.is_empty() {
         "handoff".into()
     } else {
@@ -350,6 +678,73 @@ pub fn handoff(
 mod tests {
     use super::*;
 
+    // `enabled = false` printed "nothing will happen here" and then spawned a
+    // `claude` per session anyway: nothing carried the setting past this point.
+    #[test]
+    fn naming_disabled_in_config_never_allows_the_model() {
+        let off = NamingConfig {
+            enabled: Some(false),
+            ..Default::default()
+        };
+        assert!(!gen_opts(&off, NameOpts::default(), false).allow_llm);
+        // A fixture is the other way to make it inert.
+        assert!(!gen_opts(&NamingConfig::default(), NameOpts::default(), true).allow_llm);
+        // The default is the feature doing its job.
+        assert!(gen_opts(&NamingConfig::default(), NameOpts::default(), false).allow_llm);
+        // …and `--refresh` rides along.
+        let refresh = NameOpts {
+            refresh: true,
+            ..Default::default()
+        };
+        assert!(gen_opts(&NamingConfig::default(), refresh, false).refresh);
+        assert!(!gen_opts(&NamingConfig::default(), NameOpts::default(), false).refresh);
+    }
+
+    // A name goes out as `/rename <name>` into a live TUI and then becomes a
+    // tmux session name, so neither end wants 300 characters of it.
+    #[test]
+    fn names_are_trimmed_validated_and_capped() {
+        assert_eq!(clean_name("  cdc-backfill  ").unwrap(), "cdc-backfill");
+        assert!(clean_name("   ").is_err());
+        assert!(clean_name("two\nlines").is_err());
+        let long = clean_name(&"a".repeat(300)).unwrap();
+        assert_eq!(long.chars().count(), MAX_RENAME);
+        // Character-counted: a multi-byte name must not be split mid-codepoint.
+        let wide = clean_name(&"é".repeat(300)).unwrap();
+        assert_eq!(wide.chars().count(), MAX_RENAME);
+    }
+
+    // The hold protects a live turn from reading `/rename foo` as its answer.
+    // A session that is essentially always busy still has to be renameable.
+    #[test]
+    fn a_busy_session_is_held_unless_forced() {
+        let busy = Session {
+            pid: 1,
+            status: "busy".into(),
+            name: Some("cdc-spike".into()),
+            ..Default::default()
+        };
+        let held = apply_rename(&busy, "x", RenameOpts::default()).unwrap();
+        match held {
+            RenameOutcome::Held(why) => assert!(why.contains("--force"), "{why}"),
+            RenameOutcome::Sent(_) => panic!("a busy session must not be typed into"),
+        }
+        // Forced, the hold is gone: this fixture has no handle, so the send
+        // fails — what matters is that it got as far as trying.
+        let forced = apply_rename(
+            &busy,
+            "x",
+            RenameOpts {
+                sync_tmux: false,
+                force: true,
+            },
+        );
+        assert!(
+            !matches!(forced, Ok(RenameOutcome::Held(_))),
+            "--force must bypass the hold"
+        );
+    }
+
     #[test]
     fn slugs_come_from_the_first_meaningful_line() {
         assert_eq!(
@@ -386,6 +781,9 @@ mod tests {
             backend: Backend::Iterm,
             handle: None,
             tab: None,
+            tmux_session: None,
+            name_source: None,
+            waiting_for: None,
             title: None,
         };
         let text = compose("Do it.", "/tmp", Some(&from), "2026-08-17 10:00");

@@ -1,7 +1,9 @@
 pub mod backend;
 pub mod commands;
+pub mod dash;
 pub mod discovery;
 pub mod error;
+pub mod naming;
 pub mod notify;
 pub mod render;
 pub mod watch;

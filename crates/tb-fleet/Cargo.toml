@@ -1,6 +1,6 @@
 [package]
 name = "tb-fleet"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Manage the Claude Code sessions running on this machine — see, peek, steer, spawn, and supervise across iTerm tabs and tmux panes"
 authors.workspace = true
@@ -24,6 +24,7 @@ colored.workspace = true
 chrono.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
+unicode-width.workspace = true
 dirs = "6"
 
 [dev-dependencies]

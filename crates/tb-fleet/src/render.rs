@@ -1,14 +1,31 @@
 //! Shared formatting helpers for the plain (non-TUI) output.
+//!
+//! Everything here measures text in **display columns**, not chars: session names
+//! are user-chosen and routinely carry CJK or emoji, which a `chars()` count
+//! reports as half as wide as the terminal actually draws them.
 
 use colored::Colorize;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::discovery::Session;
+
+/// How wide the terminal is, with a sane fallback when stdout isn't one.
+pub fn term_width() -> usize {
+    crossterm::terminal::size()
+        .map(|(c, _)| c as usize)
+        .unwrap_or(120)
+}
 
 pub fn home_rel(path: &str) -> String {
     match dirs::home_dir().and_then(|h| h.to_str().map(String::from)) {
         Some(home) if path.starts_with(&home) => format!("~{}", &path[home.len()..]),
         _ => path.to_string(),
     }
+}
+
+/// Display width in terminal columns.
+pub fn width_of(text: &str) -> usize {
+    UnicodeWidthStr::width(text)
 }
 
 /// Compact age from a ms-epoch timestamp: 12s / 4m / 3h / 2d.
@@ -30,19 +47,7 @@ pub fn ago(updated_at: Option<i64>) -> String {
 
 /// Last `n` non-blank-prefixed lines, each hard-capped to the terminal width.
 pub fn tail(text: &str, n: usize, width: usize) -> String {
-    let capped: Vec<String> = text
-        .trim_end()
-        .lines()
-        .map(|l| {
-            if l.chars().count() > width {
-                let mut s: String = l.chars().take(width.saturating_sub(1)).collect();
-                s.push('…');
-                s
-            } else {
-                l.to_string()
-            }
-        })
-        .collect();
+    let capped: Vec<String> = text.trim_end().lines().map(|l| fit(l, width)).collect();
     let start = capped
         .iter()
         .position(|l| !l.trim().is_empty())
@@ -52,55 +57,132 @@ pub fn tail(text: &str, n: usize, width: usize) -> String {
     slice[from..].join("\n")
 }
 
-/// Pad to `width`, or truncate with an ellipsis so a long name can't shove the
-/// columns behind it out of line. Names are user-chosen now, so assume nothing.
+/// Truncate to at most `width` display columns, marking the cut with `…`.
+/// Never pads — use [`column`] when you want a fixed-width cell.
+pub fn fit(text: &str, width: usize) -> String {
+    if width_of(text) <= width {
+        return text.to_string();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    // Leave one column for the ellipsis, and stop before a wide char would
+    // straddle the boundary.
+    let budget = width - 1;
+    let mut out = String::new();
+    let mut used = 0;
+    for c in text.chars() {
+        let w = UnicodeWidthChar::width(c).unwrap_or(0);
+        if used + w > budget {
+            break;
+        }
+        used += w;
+        out.push(c);
+    }
+    // A run of wide chars can leave a column short of `budget`; pad it so the
+    // cell still lands on exactly `width`.
+    while used < budget {
+        out.push(' ');
+        used += 1;
+    }
+    out.push('…');
+    out
+}
+
+/// Pad to exactly `width` display columns, or truncate with an ellipsis so a long
+/// name can't shove the columns behind it out of line. Names are user-chosen now,
+/// so assume nothing.
 pub fn column(text: &str, width: usize) -> String {
-    let n = text.chars().count();
+    let n = width_of(text);
     if n <= width {
         return format!("{text}{}", " ".repeat(width - n));
     }
-    let keep: String = text.chars().take(width.saturating_sub(1)).collect();
-    format!("{keep}…")
+    fit(text, width)
+}
+
+/// Squash a transcript-derived string into one safe line: control characters are
+/// dropped (they corrupt a ratatui `Line`) and runs of whitespace collapse.
+pub fn clean_text(text: &str) -> String {
+    let stripped: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    stripped.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The terminal a session lives in, as one short token: `⧉ <tmux session>`,
+/// `▣ <iTerm tab>`, or `-` when we know neither.
+pub fn terminal_label(s: &Session) -> String {
+    if let Some(t) = s.tmux_session.as_deref().filter(|t| !t.is_empty()) {
+        return format!("⧉ {t}");
+    }
+    if let Some(t) = s.tab.as_deref().filter(|t| !t.is_empty()) {
+        return format!("▣ {t}");
+    }
+    "-".to_string()
+}
+
+/// Glyph + word for a registry status. `waiting` is the one that matters: the
+/// session is blocked on the user and nothing else will move until they look.
+pub fn status_words(status: &str) -> (&'static str, &str) {
+    match status {
+        "busy" => ("●", "working"),
+        "idle" => ("○", "idle"),
+        "waiting" => ("⏸", "needs you"),
+        other => ("·", other),
+    }
 }
 
 pub fn plain_table(rows: &[Session]) -> String {
+    let width = term_width().clamp(40, 200);
     let mut out = vec![
         format!(
             "\nFLEET — {} live session{}",
             rows.len(),
             if rows.len() == 1 { "" } else { "s" }
         ),
-        "─".repeat(74),
+        "─".repeat(width),
     ];
     if rows.is_empty() {
         out.push("(no running claude sessions found)".into());
         return out.join("\n");
     }
+    // Data-driven name column: as wide as the widest label, within reason.
+    let name_w = rows
+        .iter()
+        .map(|r| width_of(&r.label()))
+        .max()
+        .unwrap_or(12)
+        .clamp(8, 32);
+    let term_w = rows
+        .iter()
+        .map(|r| width_of(&terminal_label(r)))
+        .max()
+        .unwrap_or(3)
+        .clamp(3, 20);
     for r in rows {
+        // Pad *before* colouring: `colored` writes raw escapes and ignores the
+        // format width, so `{:<9}` on a ColoredString does nothing.
+        let (dot, word) = status_words(&r.status);
+        let state = column(word, 9);
         let (dot, state) = match r.status.as_str() {
-            "busy" => ("●".green(), "working".green()),
-            "idle" => ("○".dimmed(), "idle".dimmed()),
-            other => ("·".normal(), other.normal()),
+            "busy" => (dot.green(), state.green()),
+            "idle" => (dot.dimmed(), state.dimmed()),
+            "waiting" => (dot.yellow(), state.yellow().bold()),
+            _ => (dot.normal(), state.normal()),
         };
-        let label = column(&r.label(), 12);
+        let label = column(&r.label(), name_w);
         let where_ = r.cwd.as_deref().map(home_rel).unwrap_or_else(|| "?".into());
         out.push(format!(
-            "{dot} {} {:<7} {:>4}  {:<5} {}",
+            "{dot} {} {state} {:>4}  {:<5} {} {}",
             label.bold(),
-            state,
             ago(r.updated_at),
             r.backend.label(),
+            column(&terminal_label(r), term_w).cyan(),
             where_.dimmed(),
         ));
-        let title = r.title.as_deref().unwrap_or("(no prompt captured)");
-        let title: String = title
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-            .chars()
-            .take(70)
-            .collect();
-        out.push(format!("  {}", title));
+        let title = clean_text(r.title.as_deref().unwrap_or("(no prompt captured)"));
+        out.push(format!("  {}", fit(&title, width.saturating_sub(2))));
     }
     out.join("\n")
 }
@@ -114,6 +196,50 @@ mod tests {
         assert_eq!(column("work-23", 9), "work-23  ");
         assert_eq!(column("a-very-long-session-name", 9), "a-very-l…");
         assert_eq!(column("exactly9c", 9), "exactly9c");
+    }
+
+    // The whole point of unicode-width: `测试-session` is 10 chars but 12 columns,
+    // and a chars()-based pad mis-aligns every row after it.
+    #[test]
+    fn columns_measure_display_width_not_chars() {
+        assert_eq!(width_of("测试-session"), 12);
+        assert_eq!("测试-session".chars().count(), 10);
+
+        let c = column("测试-session", 16);
+        assert_eq!(width_of(&c), 16);
+
+        // Truncation lands on exactly the requested width even when the cut
+        // falls in the middle of a double-wide char.
+        for w in 2..12 {
+            assert_eq!(width_of(&fit("测试测试测试", w)), w, "fit to {w}");
+        }
+        assert_eq!(fit("测试测试", 5), "测试…");
+
+        assert_eq!(width_of("🚀-deploy"), 9);
+        assert_eq!(width_of(&column("🚀-deploy", 12)), 12);
+        assert_eq!(width_of(&fit("🚀-deploy-the-thing", 9)), 9);
+    }
+
+    #[test]
+    fn fit_is_a_no_op_when_it_fits() {
+        assert_eq!(fit("short", 20), "short");
+        assert_eq!(fit("", 0), "");
+    }
+
+    #[test]
+    fn clean_text_strips_control_chars() {
+        assert_eq!(clean_text("a\x1b[31mb\tc\n d"), "a [31mb c d");
+        assert_eq!(clean_text("  spaced   out \r\n"), "spaced out");
+    }
+
+    #[test]
+    fn terminal_label_prefers_tmux() {
+        let mut s = Session::default();
+        assert_eq!(terminal_label(&s), "-");
+        s.tab = Some("zsh".into());
+        assert_eq!(terminal_label(&s), "▣ zsh");
+        s.tmux_session = Some("ai-agent".into());
+        assert_eq!(terminal_label(&s), "⧉ ai-agent");
     }
 
     #[test]

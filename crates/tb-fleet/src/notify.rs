@@ -16,6 +16,10 @@ fn has_terminal_notifier() -> bool {
 }
 
 pub fn notify(title: &str, message: &str) {
+    // A canned fleet must not ring the real Notification Center.
+    if crate::discovery::is_fixture() {
+        return;
+    }
     let _ = if has_terminal_notifier() {
         Command::new("terminal-notifier")
             .args(["-title", title, "-message", message, "-sound", "Glass"])

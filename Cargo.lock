@@ -2324,7 +2324,7 @@ dependencies = [
 
 [[package]]
 name = "tb-fleet"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -2339,6 +2339,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "toolbox-core",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
@@ -2642,6 +2643,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "toml",
+ "toml_edit",
 ]
 
 [[package]]
