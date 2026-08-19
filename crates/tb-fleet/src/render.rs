@@ -147,10 +147,10 @@ pub fn plain_table(rows: &[Session]) -> String {
         out.push("(no running claude sessions found)".into());
         return out.join("\n");
     }
-    // Data-driven name column: as wide as the widest label, within reason.
+    // Data-driven identity column: as wide as the widest headline, within reason.
     let name_w = rows
         .iter()
-        .map(|r| width_of(&r.label()))
+        .map(|r| width_of(&r.headline()))
         .max()
         .unwrap_or(12)
         .clamp(8, 32);
@@ -171,7 +171,7 @@ pub fn plain_table(rows: &[Session]) -> String {
             "waiting" => (dot.yellow(), state.yellow().bold()),
             _ => (dot.normal(), state.normal()),
         };
-        let label = column(&r.label(), name_w);
+        let label = column(&r.headline(), name_w);
         let where_ = r.cwd.as_deref().map(home_rel).unwrap_or_else(|| "?".into());
         out.push(format!(
             "{dot} {} {state} {:>4}  {:<5} {} {}",
@@ -190,6 +190,27 @@ pub fn plain_table(rows: &[Session]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // `list` shows what a session is *doing*, exactly like the dashboard does —
+    // the session name only stands in while nothing has titled it.
+    #[test]
+    fn the_table_leads_with_the_headline() {
+        let mut s = Session {
+            pid: 7,
+            name: Some("work-9d".into()),
+            cwd: Some("/Users/x/Code/work".into()),
+            status: "idle".into(),
+            title: Some("why is the statusline blank".into()),
+            ..Default::default()
+        };
+        let out = plain_table(std::slice::from_ref(&s));
+        assert!(out.contains("work-9d"), "{out}");
+
+        s.gen_title = Some("statusline-blank".into());
+        let out = plain_table(std::slice::from_ref(&s));
+        assert!(out.contains("statusline-blank"), "{out}");
+        assert!(!out.contains("work-9d"), "{out}");
+    }
 
     #[test]
     fn columns_pad_and_truncate() {

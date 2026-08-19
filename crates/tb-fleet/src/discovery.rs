@@ -283,14 +283,26 @@ pub fn discover() -> Vec<Session> {
     out
 }
 
-/// Resolve a target (sessionId prefix, derived name, or pid) to exactly one session.
+/// Resolve a target (sessionId prefix, session name, generated title, or pid) to
+/// exactly one session.
 pub fn resolve(target: &str) -> Result<Session, String> {
-    let rows = discover();
+    let mut rows = discover();
+    // Every fleet view prints the *title* as a session's identity, so a title has
+    // to resolve: otherwise `peek <the thing list just showed me>` fails for every
+    // titled session, which is all of them.
+    crate::naming::stamp_titles(&mut rows);
+    resolve_in(rows, target)
+}
+
+/// The matching behind [`resolve`], over a row set the caller supplies — split out
+/// so the rules can be exercised without a registry or a name cache.
+pub fn resolve_in(rows: Vec<Session>, target: &str) -> Result<Session, String> {
     let hits: Vec<Session> = rows
         .into_iter()
         .filter(|r| {
             r.pid.to_string() == target
                 || r.name.as_deref() == Some(target)
+                || r.gen_title.as_deref() == Some(target)
                 || r.session_id
                     .as_deref()
                     .is_some_and(|s| s.starts_with(target))
@@ -303,7 +315,7 @@ pub fn resolve(target: &str) -> Result<Session, String> {
             "\"{target}\" matches {} sessions: {} — be more specific",
             hits.len(),
             hits.iter()
-                .map(Session::label)
+                .map(Session::headline)
                 .collect::<Vec<_>>()
                 .join(", ")
         )),
@@ -593,6 +605,45 @@ mod tests {
         assert_eq!(s.headline(), "aaaaaaaa");
         s.session_id = None;
         assert_eq!(s.headline(), "42");
+    }
+
+    // The fleet views print titles, so a title has to be usable as a target —
+    // "peek the one called statusline-blank" is the whole point of showing it.
+    #[test]
+    fn a_target_resolves_by_title_name_id_or_pid() {
+        let row = |pid: i64, name: &str, sid: &str, title: Option<&str>| Session {
+            pid,
+            name: Some(name.into()),
+            session_id: Some(sid.into()),
+            gen_title: title.map(str::to_string),
+            ..Default::default()
+        };
+        let rows = vec![
+            row(1, "work-9d", "aaaaaaaa-1111", Some("statusline-blank")),
+            row(2, "flag-cleanup", "bbbbbbbb-2222", None),
+        ];
+        let one = |target: &str| resolve_in(rows.clone(), target).map(|s| s.pid);
+        assert_eq!(one("statusline-blank"), Ok(1));
+        assert_eq!(one("work-9d"), Ok(1));
+        assert_eq!(one("aaaaaaaa"), Ok(1));
+        assert_eq!(one("1"), Ok(1));
+        assert_eq!(one("flag-cleanup"), Ok(2));
+        assert!(one("nothing-like-this").is_err());
+    }
+
+    // Two sessions can land on the same title. The error has to name them by what
+    // the user actually saw, which is the title.
+    #[test]
+    fn an_ambiguous_target_lists_the_headlines() {
+        let dup = |pid: i64| Session {
+            pid,
+            name: Some(format!("work-{pid}")),
+            gen_title: Some("flag-cleanup".into()),
+            ..Default::default()
+        };
+        let err = resolve_in(vec![dup(1), dup(2)], "flag-cleanup").unwrap_err();
+        assert!(err.contains("matches 2 sessions"), "{err}");
+        assert!(err.contains("flag-cleanup, flag-cleanup"), "{err}");
     }
 
     #[test]

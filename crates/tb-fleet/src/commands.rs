@@ -178,7 +178,7 @@ pub fn peek(target: &str, lines: usize) -> Result<()> {
     println!(
         "\n{} {} ({}, {}) — {}",
         "▼".cyan(),
-        s.label().bold(),
+        s.headline().bold(),
         s.backend.label(),
         s.status,
         where_.dimmed()
@@ -195,7 +195,7 @@ pub fn send(target: &str, text: &str) -> Result<()> {
     backend::send(&s, text)?;
     println!(
         "sent to {} ({}): {}",
-        s.label().bold(),
+        s.headline().bold(),
         s.backend.label(),
         text
     );
@@ -236,13 +236,13 @@ pub fn apply_rename(s: &Session, name: &str, o: RenameOpts) -> Result<RenameOutc
         if s.status == "busy" {
             return Ok(RenameOutcome::Held(format!(
                 "{} is mid-turn — nothing sent (--force overrides)",
-                s.label()
+                s.headline()
             )));
         }
         if s.is_waiting() {
             return Ok(RenameOutcome::Held(format!(
                 "{} is waiting on you — nothing sent (--force overrides)",
-                s.label()
+                s.headline()
             )));
         }
     }
