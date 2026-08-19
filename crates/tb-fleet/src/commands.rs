@@ -34,6 +34,10 @@ pub struct NamingConfig {
     pub model: Option<String>,
     /// Rename the session's tmux session to match a confirmed Claude rename.
     pub sync_tmux: Option<bool>,
+    /// Title every session in the `watch` dashboard automatically, so a row's
+    /// first line is the generated title rather than `work-9d`. `false` leaves
+    /// titling to `N` / `Ctrl-N` and rows fall back to the session name.
+    pub auto_title: Option<bool>,
 }
 
 impl NamingConfig {
@@ -50,6 +54,9 @@ impl NamingConfig {
     }
     pub fn sync_tmux(&self) -> bool {
         self.sync_tmux.unwrap_or(true)
+    }
+    pub fn auto_title(&self) -> bool {
+        self.auto_title.unwrap_or(true)
     }
 }
 
@@ -152,6 +159,10 @@ pub fn list(json: bool) -> Result<()> {
     // The terminal a session lives in is part of what `list` is for; without this
     // every iTerm-backed row renders as `-`.
     discovery::enrich_iterm_tabs(&mut rows);
+    // Titles the dashboard has already paid for, so `--json` carries what a
+    // session is *doing* and not only what it's called. Read-only: `list` never
+    // generates one.
+    naming::stamp_titles(&mut rows);
     if json {
         println!("{}", serde_json::to_string_pretty(&rows)?);
     } else {
@@ -403,7 +414,7 @@ fn generate(
         pool.enqueue(naming::NameJob {
             key: s.key(),
             session: s.clone(),
-            bulk: true,
+            purpose: naming::Purpose::Bulk,
         });
     }
     let mut by_key: HashMap<String, std::result::Result<naming::Suggestion, String>> =
@@ -790,6 +801,7 @@ mod tests {
             name_source: None,
             waiting_for: None,
             title: None,
+            gen_title: None,
         };
         let text = compose("Do it.", "/tmp", Some(&from), "2026-08-17 10:00");
         assert!(text.contains("(work-f9, in /tmp)"));

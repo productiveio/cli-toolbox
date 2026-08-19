@@ -9,8 +9,11 @@
 //! [`heuristic_from`] is only the fallback for when `claude` is missing, logged
 //! out, rate-limited or answers with prose.
 //!
-//! Nothing here applies a name. Generation is suggest-only; the caller confirms
-//! (the TUI's rename buffer, or `tb-fleet name --apply`).
+//! Nothing here applies a name. What comes out is used two ways, and only one of
+//! them needs a confirmation: the `watch` dashboard draws it as a session's
+//! **title** (see [`Session::headline`]) the moment it lands, while renaming the
+//! session for real is typed into a live Claude TUI and stays suggest-only — the
+//! TUI's rename buffer, or `tb-fleet name --apply`. See [`Purpose`].
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -656,6 +659,20 @@ impl NameCache {
             .filter(|e| e.input_hash == input_hash && !e.name.is_empty())
     }
 
+    /// The stored name for `id` whatever it was generated from — the *display*
+    /// read, as opposed to [`NameCache::get`]'s "may I skip the model" read.
+    ///
+    /// A drifted input (the branch moved, a first prompt landed) means the title
+    /// is due for regeneration, not that there is nothing to draw: last run's
+    /// title still describes the work far better than `work-9d` does, and it is
+    /// on screen the instant the dashboard opens rather than a model call later.
+    pub fn title(&self, id: &str) -> Option<&str> {
+        self.entries
+            .get(id)
+            .map(|e| e.name.as_str())
+            .filter(|n| !n.is_empty())
+    }
+
     pub fn put(&mut self, id: &str, entry: CachedName) {
         self.entries.insert(id.to_string(), entry);
     }
@@ -706,15 +723,49 @@ impl NameCache {
     }
 }
 
+/// Stamp each session with the title stored for it, so a view can draw headlines
+/// without generating anything. One disk read, no model call, no `claude` child.
+///
+/// The `watch` loop keeps its own live copy (it has fresher titles than the file
+/// while a pass is in flight); every other view reads the cache through this.
+pub fn stamp_titles(rows: &mut [Session]) {
+    let cache = NameCache::load();
+    for r in rows {
+        if let Some(title) = cache.title(&r.key()) {
+            r.gen_title = Some(title.to_string());
+        }
+    }
+}
+
 // --- the background pool -----------------------------------------------------
+
+/// Why a name was asked for. It decides what happens to the answer, which is
+/// the only difference between the three paths that generate one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Purpose {
+    /// `N` on one row: prefill that session's rename buffer and wait for ⏎.
+    Offer,
+    /// `Ctrl-N` across the fleet: report into the event log. A dozen rename
+    /// buffers in a row is not a confirmation flow.
+    Bulk,
+    /// The background pass behind every row's headline. Display only: it never
+    /// opens a buffer, never sends `/rename`, and says nothing per session —
+    /// the header's progress counter is the whole of its UI.
+    Title,
+}
+
+impl Purpose {
+    /// Does an answer to this reach the user by itself?
+    pub fn is_interactive(self) -> bool {
+        !matches!(self, Purpose::Title)
+    }
+}
 
 /// One session queued for naming.
 pub struct NameJob {
     pub key: String,
     pub session: Session,
-    /// Started by `Ctrl-N` — the result is logged rather than opening a rename
-    /// buffer, because a dozen buffers in a row is not a confirmation flow.
-    pub bulk: bool,
+    pub purpose: Purpose,
 }
 
 /// What a worker reports back to the loop that owns the screen.
@@ -724,16 +775,16 @@ pub enum NameMsg {
         label: String,
         name: String,
         source: NameSource,
-        bulk: bool,
+        purpose: Purpose,
     },
     Failed {
         key: String,
         label: String,
         err: String,
-        bulk: bool,
+        purpose: Purpose,
     },
     /// The model is unreachable — missing binary, logged out, rate-limited.
-    /// Sent at most once per pool, so a bulk pass over 12 sessions doesn't
+    /// Sent at most once per pool, so a pass over 12 sessions doesn't
     /// paste the same line twelve times into the event log.
     Unavailable(String),
 }
@@ -830,14 +881,14 @@ fn worker(
                     label,
                     name: s.name,
                     source: s.source,
-                    bulk: job.bulk,
+                    purpose: job.purpose,
                 }
             }
             Err(err) => NameMsg::Failed {
                 key: job.key,
                 label,
                 err,
-                bulk: job.bulk,
+                purpose: job.purpose,
             },
         };
         if out.send(msg).is_err() {

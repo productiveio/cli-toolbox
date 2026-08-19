@@ -32,7 +32,7 @@ use crate::dash::layout::{self as dashlayout, Density, Plan};
 use crate::dash::rows::{self, FleetCtx, session_item};
 use crate::discovery::{Session, claude_home, discover, enrich_iterm_tabs, is_fixture};
 use crate::error::{Error, Result};
-use crate::naming::{GenOpts, NameJob, NameMsg, NamePool, NameSource};
+use crate::naming::{GenOpts, NameCache, NameJob, NameMsg, NamePool, NameSource, Purpose};
 use crate::notify::notify;
 use crate::render::{ago, width_of};
 
@@ -368,37 +368,153 @@ struct NameProgress {
 
 /// Everything the naming feature keeps between frames.
 ///
-/// The pool is started on the first `N`, not at boot: most `watch` sessions
-/// never name anything, and two idle threads plus a channel are not free.
+/// Two things come out of the same generator here. **Titles** are what every row
+/// draws on its first line, and they are automatic: the dashboard titles the
+/// whole fleet in the background so a row says what its session is doing without
+/// anyone pressing anything. **Suggestions** are the `N` flow — the same title,
+/// offered as a new Claude session *name*, which only a confirmed `/rename`
+/// applies. A title is display state and costs nothing to be wrong about; a name
+/// is typed into a live session, so it keeps its confirmation step.
 struct Naming {
     pool: Option<(NamePool, Receiver<NameMsg>)>,
+    /// Generated titles by session key — the headline source for every row.
+    titles: HashMap<String, String>,
+    /// What each title was generated from (the session's first prompt), so a
+    /// title made before the user had said anything is regenerated once they do.
+    /// The transcript's first prompt is the one input that lands *after* a
+    /// session shows up in the registry.
+    titled_from: HashMap<String, Option<String>>,
     /// Names generated this run, each still awaiting the user's ⏎.
     suggestions: HashMap<String, String>,
     /// In flight, so a second `N` on the same row doesn't queue it twice.
     queued: HashSet<String>,
+    /// Keys the user asked to be *offered* while a background title for them was
+    /// already in flight. The job in the channel can't be amended, so the answer
+    /// is upgraded on arrival instead — without this, `N` pressed during the
+    /// startup titling pass looked like it did nothing at all.
+    wanted: HashMap<String, Purpose>,
     /// Already fell back to the heuristic once — the model is having a bad day
     /// and re-queueing it every keypress just burns time.
     exhausted: HashSet<String>,
     pending: usize,
     total: usize,
     enabled: bool,
+    /// Title the fleet without being asked. `[naming] auto_title = false` turns
+    /// it off, and rows fall back to the Claude session name.
+    auto: bool,
     model: String,
+    /// The name cache as it was on disk at startup, read once. Seeds titles for
+    /// sessions the workers haven't answered for yet.
+    disk: NameCache,
 }
 
 impl Naming {
     fn new(cfg: &commands::NamingConfig) -> Self {
+        // Last run's titles, so the dashboard opens *already* reading as itself
+        // instead of showing a screen of `work-9d` until the first model call
+        // lands. Every one of them is re-checked by the titling pass below.
+        let disk = NameCache::load();
         Naming {
             pool: None,
+            titles: HashMap::new(),
+            titled_from: HashMap::new(),
             suggestions: HashMap::new(),
             queued: HashSet::new(),
+            wanted: HashMap::new(),
             exhausted: HashSet::new(),
             pending: 0,
             total: 0,
             // A canned fleet must never reach the model: its sessions are
             // fabricated, so every call would be paid for and meaningless.
             enabled: cfg.enabled() && !is_fixture(),
+            auto: cfg.auto_title(),
             model: cfg.model(),
+            disk,
         }
+    }
+
+    /// Title everything the fleet is showing, quietly. Runs after every poll and
+    /// is a no-op once the fleet is titled.
+    fn autotitle(&mut self, rows: &[Session]) {
+        if !self.auto || !self.enabled {
+            return;
+        }
+        self.adopt_disk_titles(rows);
+        for key in self.due_for_title(rows) {
+            let Some(s) = rows.iter().find(|s| s.key() == key).cloned() else {
+                continue;
+            };
+            if self.spawn(&s, Purpose::Title) {
+                self.titled_from.insert(key, s.title.clone());
+            }
+        }
+    }
+
+    /// Take last run's titles for rows that have none yet, so the dashboard reads
+    /// as itself from the first frame instead of showing `work-9d` until a model
+    /// call lands. Adopted titles are still queued below — the worker's cache
+    /// read confirms them for free when the input hasn't moved.
+    fn adopt_disk_titles(&mut self, rows: &[Session]) {
+        for s in rows {
+            let key = s.key();
+            if self.titles.contains_key(&key) {
+                continue;
+            }
+            if let Some(name) = self.disk.title(&key) {
+                self.titles.insert(key, name.to_string());
+            }
+        }
+    }
+
+    /// Which rows are due a title.
+    ///
+    /// A session is due when this run hasn't titled it, or when its first prompt
+    /// has changed since the title it has was generated from — the transcript's
+    /// first prompt is the one naming input that lands *after* the session shows
+    /// up in the registry, so a session titled at boot from a directory alone
+    /// gets a real title the moment the user says what they want.
+    ///
+    /// Pure, so the policy can be exercised without starting a pool or paying
+    /// for a model call.
+    fn due_for_title(&self, rows: &[Session]) -> Vec<String> {
+        rows.iter()
+            .map(|s| (s.key(), s))
+            .filter(|(key, s)| {
+                !self.queued.contains(key)
+                    && !self.exhausted.contains(key)
+                    // Titled this run already; only a changed prompt re-opens it.
+                    && self.titled_from.get(key).is_none_or(|from| from != &s.title)
+            })
+            .map(|(key, _)| key)
+            .collect()
+    }
+
+    /// Queue one session, starting the pool if this is the first job.
+    ///
+    /// The pool is started on demand rather than at boot because it isn't always
+    /// wanted: `[naming] enabled = false` and fixture mode never get here, and
+    /// two idle threads plus a channel are not free.
+    fn spawn(&mut self, s: &Session, purpose: Purpose) -> bool {
+        if self.pool.is_none() {
+            // `enabled` is the caller's to check; the TUI has no refresh key,
+            // `tb-fleet name --refresh` does.
+            self.pool = Some(NamePool::start(self.model.clone(), GenOpts::llm()));
+        }
+        let Some((pool, _)) = &self.pool else {
+            return false;
+        };
+        let key = s.key();
+        if !pool.enqueue(NameJob {
+            key: key.clone(),
+            session: s.clone(),
+            purpose,
+        }) {
+            return false;
+        }
+        self.queued.insert(key);
+        self.pending += 1;
+        self.total += 1;
+        true
     }
 
     fn progress(&self) -> Option<NameProgress> {
@@ -408,9 +524,19 @@ impl Naming {
         })
     }
 
-    /// Queue `keys` for naming. Returns the events to log, plus the keys whose
-    /// name is already in hand and can be offered straight away.
-    fn request(&mut self, rows: &[Session], keys: &[String], bulk: bool) -> (Vec<Ev>, Vec<String>) {
+    /// Queue `keys` for naming on the user's behalf (`N` / `Ctrl-N`). Returns the
+    /// events to log, plus the keys whose name is already in hand and can be
+    /// offered straight away.
+    ///
+    /// A title generated by the background pass counts as in hand: by the time
+    /// anyone presses `N` the fleet is usually titled already, so the ordinary
+    /// `N` costs nothing and never queues behind a titling backlog.
+    fn request(
+        &mut self,
+        rows: &[Session],
+        keys: &[String],
+        purpose: Purpose,
+    ) -> (Vec<Ev>, Vec<String>) {
         let mut evs = Vec::new();
         let mut ready = Vec::new();
         if keys.is_empty() {
@@ -426,11 +552,15 @@ impl Naming {
         }
         let mut queued_now = 0usize;
         for key in keys {
-            if self.suggestions.contains_key(key) {
+            if self.titles.contains_key(key) {
+                self.suggestions
+                    .entry(key.clone())
+                    .or_insert_with(|| self.titles[key].clone());
                 ready.push(key.clone());
                 continue;
             }
             if self.queued.contains(key) {
+                self.wanted.insert(key.clone(), purpose);
                 continue;
             }
             let Some(s) = rows.iter().find(|s| &s.key() == key) else {
@@ -443,22 +573,8 @@ impl Naming {
                 ));
                 continue;
             }
-            if self.pool.is_none() {
-                // `enabled` was checked above, so the model is allowed here;
-                // the TUI has no refresh key, `tb-fleet name --refresh` does.
-                self.pool = Some(NamePool::start(self.model.clone(), GenOpts::llm()));
-            }
-            let Some((pool, _)) = &self.pool else {
-                continue;
-            };
-            if pool.enqueue(NameJob {
-                key: key.clone(),
-                session: s.clone(),
-                bulk,
-            }) {
-                self.queued.insert(key.clone());
-                self.pending += 1;
-                self.total += 1;
+            let s = s.clone();
+            if self.spawn(&s, purpose) {
                 queued_now += 1;
             }
         }
@@ -484,6 +600,15 @@ impl Naming {
             }
         }
         out
+    }
+
+    /// What the answer to `key` should do now it's here: whatever the job was
+    /// queued as, unless the user asked for more while it was in flight.
+    fn purpose_of(&mut self, key: &str, queued_as: Purpose) -> Purpose {
+        match self.wanted.remove(key) {
+            Some(upgraded) if !queued_as.is_interactive() => upgraded,
+            _ => queued_as,
+        }
     }
 
     /// Book-keeping for one answered job.
@@ -613,27 +738,45 @@ fn run_tui(o: WatchOpts) -> Result<()> {
             let ev = match msg {
                 // Said once per pool by contract — `claude` missing, logged out
                 // or rate-limited is one line, not one line per session.
-                NameMsg::Unavailable(why) => Ev::now("⚠", format!("naming fell back: {why}")),
+                NameMsg::Unavailable(why) => Some(Ev::now("⚠", format!("naming fell back: {why}"))),
                 NameMsg::Failed {
-                    key, label, err, ..
+                    key,
+                    label,
+                    err,
+                    purpose,
                 } => {
+                    let purpose = naming.purpose_of(&key, purpose);
                     naming.settle(&key, true);
-                    Ev::now("✕", format!("no name for {label}: {err}"))
+                    // A background title that didn't work out is not news: the
+                    // row keeps its session name and `Unavailable` has already
+                    // said whatever systemic thing went wrong, once.
+                    purpose
+                        .is_interactive()
+                        .then(|| Ev::now("✕", format!("no name for {label}: {err}")))
                 }
                 NameMsg::Named {
                     key,
                     name,
                     source,
-                    bulk,
+                    purpose,
                     ..
                 } => {
+                    let purpose = naming.purpose_of(&key, purpose);
                     naming.settle(&key, source == NameSource::Heuristic);
-                    naming.suggestions.insert(key.clone(), name.clone());
-                    offer(&key, &name, &rows, &mut renaming, bulk)
+                    // Every answer becomes the row's headline, however it was
+                    // asked for — one generation serves the display and the
+                    // rename flow both.
+                    naming.titles.insert(key.clone(), name.clone());
+                    purpose.is_interactive().then(|| {
+                        naming.suggestions.insert(key.clone(), name.clone());
+                        offer(&key, &name, &rows, &mut renaming, purpose == Purpose::Bulk)
+                    })
                 }
             };
-            log.insert(0, ev);
-            log.truncate(EVENT_CAP);
+            if let Some(ev) = ev {
+                log.insert(0, ev);
+                log.truncate(EVENT_CAP);
+            }
         }
         dash.naming = naming.progress();
 
@@ -646,7 +789,12 @@ fn run_tui(o: WatchOpts) -> Result<()> {
             }
             log.truncate(EVENT_CAP);
             last_poll = Some(Instant::now());
+            // New sessions get a title, and a session whose first prompt has
+            // landed since gets a better one. A no-op once the fleet is titled.
+            naming.autotitle(&rows);
         }
+        // The registry knows nothing about titles, and `rows` came from it.
+        apply_titles(&mut rows, &naming.titles);
         if selected.is_none() && !rows.is_empty() {
             selected = Some(rows[0].key());
         }
@@ -778,6 +926,7 @@ fn run_tui(o: WatchOpts) -> Result<()> {
             // rename buffer is what actually sends.
             Action::SuggestName | Action::SuggestNameAll => {
                 let bulk = action == Action::SuggestNameAll;
+                let purpose = if bulk { Purpose::Bulk } else { Purpose::Offer };
                 let keys: Vec<String> = if bulk {
                     // Only the cwd+hash names — a name a human or an earlier
                     // pass chose is not ours to replace in bulk.
@@ -792,7 +941,7 @@ fn run_tui(o: WatchOpts) -> Result<()> {
                         .flatten()
                         .collect()
                 };
-                let (evs, ready) = naming.request(&rows, &keys, bulk);
+                let (evs, ready) = naming.request(&rows, &keys, purpose);
                 for e in evs {
                     log.insert(0, e);
                 }
@@ -808,6 +957,23 @@ fn run_tui(o: WatchOpts) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Stamp each row with its generated title, so the dashboard draws headlines
+/// instead of `work-9d`.
+///
+/// Rows are rebuilt from Claude's registry on every poll and the registry has no
+/// idea what a title is, so this runs per frame rather than per poll — a title
+/// that arrives between polls shows up on the next draw, not the next poll.
+/// A row keeps whatever title it arrived with when we have none of our own —
+/// `discover` never sets one, but a fixture can, and a demo fleet that lost its
+/// titles to an empty map would draw `work-9d` on every row.
+fn apply_titles(rows: &mut [Session], titles: &HashMap<String, String>) {
+    for r in rows {
+        if let Some(title) = titles.get(&r.key()) {
+            r.gen_title = Some(title.clone());
+        }
+    }
 }
 
 /// `ListState::offset` is not bounded by the widget, so a shrinking fleet (or a
@@ -839,7 +1005,11 @@ fn draw(
     dash.tick = dash.tick.wrapping_add(1);
     let naming = dash.naming;
     let tick = dash.tick;
-    let longest = rows.iter().map(|r| width_of(&r.label())).max().unwrap_or(0);
+    let longest = rows
+        .iter()
+        .map(|r| width_of(&r.headline()))
+        .max()
+        .unwrap_or(0);
     let mut plan = dashlayout::plan(
         area.width,
         area.height,
@@ -1719,17 +1889,158 @@ mod tests {
 
     // --- naming --------------------------------------------------------------
 
-    fn naming_off() -> Naming {
+    fn naming_with(enabled: bool, auto: bool) -> Naming {
         Naming {
             pool: None,
+            titles: HashMap::new(),
+            titled_from: HashMap::new(),
             suggestions: HashMap::new(),
             queued: HashSet::new(),
+            wanted: HashMap::new(),
             exhausted: HashSet::new(),
             pending: 0,
             total: 0,
-            enabled: false,
+            enabled,
+            auto,
             model: "haiku".into(),
+            // Never the real file: a unit test must not read (or seed itself
+            // from) whatever this machine's fleet happens to be called.
+            disk: NameCache::at(std::path::PathBuf::new()),
         }
+    }
+
+    fn naming_off() -> Naming {
+        naming_with(false, true)
+    }
+
+    // --- titles --------------------------------------------------------------
+
+    // The point of the whole feature: a row's first line is the generated title,
+    // not the Claude session name (`work-9d`) and not the terminal tab name.
+    #[test]
+    fn a_title_replaces_the_session_name_on_the_row() {
+        let mut rows = fixture();
+        let derived = rows.iter().position(Session::is_derived_name).unwrap();
+        let key = rows[derived].key();
+        // The row as it stands: a derived name and an iTerm tab called `work`.
+        assert_eq!(rows[derived].tab.as_deref(), Some("work"));
+        let titles = HashMap::from([(key, "statusline-blank".to_string())]);
+        apply_titles(&mut rows, &titles);
+
+        let drawn = screen_of(120, 20, None, &rows, &[]).join("\n");
+        assert!(drawn.contains("statusline-blank"), "{drawn}");
+        assert!(!drawn.contains("work-9d"), "{drawn}");
+    }
+
+    // …and until one exists the row still has to say *something*.
+    #[test]
+    fn an_untitled_row_falls_back_to_the_session_name() {
+        let mut rows = fixture();
+        apply_titles(&mut rows, &HashMap::new());
+        let drawn = screen_of(120, 20, None, &rows, &[]).join("\n");
+        assert!(drawn.contains("work-9d"), "{drawn}");
+    }
+
+    // Titling is automatic, so the pass has to be a no-op in the steady state:
+    // twelve `claude` children per poll is not a background feature.
+    #[test]
+    fn the_titling_pass_asks_for_each_session_once() {
+        let rows = fixture();
+        let mut n = naming_with(true, true);
+        assert_eq!(n.due_for_title(&rows).len(), rows.len());
+
+        for s in &rows {
+            n.titled_from.insert(s.key(), s.title.clone());
+        }
+        assert!(n.due_for_title(&rows).is_empty());
+    }
+
+    // A session shows up in the registry before its first prompt is in the
+    // transcript, so the title it gets at boot is made from a directory and not
+    // much else. When the prompt lands, that title is owed a second look.
+    #[test]
+    fn a_prompt_that_lands_later_re_opens_the_title() {
+        let mut rows = fixture();
+        let mut n = naming_with(true, true);
+        rows[0].title = None;
+        n.titled_from.insert(rows[0].key(), None);
+        for s in rows.iter().skip(1) {
+            n.titled_from.insert(s.key(), s.title.clone());
+        }
+        assert!(n.due_for_title(&rows).is_empty());
+
+        rows[0].title = Some("profile the invoice grid re-render storm".into());
+        assert_eq!(n.due_for_title(&rows), vec![rows[0].key()]);
+    }
+
+    // In flight and already fell back are both "leave it alone": the first would
+    // pay twice, the second re-runs a call that is failing today.
+    #[test]
+    fn the_titling_pass_skips_queued_and_exhausted_sessions() {
+        let rows = fixture();
+        let mut n = naming_with(true, true);
+        n.queued.insert(rows[0].key());
+        n.exhausted.insert(rows[1].key());
+        assert_eq!(n.due_for_title(&rows), vec![rows[2].key()]);
+    }
+
+    // `[naming] auto_title = false` (and fixture mode) start no pool at all.
+    #[test]
+    fn auto_title_off_starts_nothing() {
+        let rows = fixture();
+        for mut n in [naming_with(true, false), naming_with(false, true)] {
+            n.autotitle(&rows);
+            assert!(n.pool.is_none());
+            assert_eq!(n.pending, 0);
+            assert!(n.titles.is_empty());
+        }
+    }
+
+    // A background title is display state: it must not open a rename buffer, and
+    // it must not put a line in the event log for every session in the fleet.
+    #[test]
+    fn a_background_title_neither_offers_nor_logs() {
+        let mut n = naming_with(true, true);
+        let key = fixture()[0].key();
+        let purpose = n.purpose_of(&key, Purpose::Title);
+        assert_eq!(purpose, Purpose::Title);
+        assert!(!purpose.is_interactive());
+    }
+
+    // …unless the user pressed `N` while it was in flight. The job in the channel
+    // can't be amended, so the *answer* is upgraded instead.
+    #[test]
+    fn n_pressed_during_a_titling_pass_still_offers() {
+        let rows = fixture();
+        let mut n = naming_with(true, true);
+        let key = rows[0].key();
+        n.queued.insert(key.clone());
+
+        let (evs, ready) = n.request(&rows, std::slice::from_ref(&key), Purpose::Offer);
+        // Nothing new was queued and nothing was ready — but the want was recorded.
+        assert!(ready.is_empty());
+        assert!(evs.is_empty(), "{}", evs.len());
+        assert_eq!(n.purpose_of(&key, Purpose::Title), Purpose::Offer);
+        // Consumed: the next answer for that key is a title again.
+        assert_eq!(n.purpose_of(&key, Purpose::Title), Purpose::Title);
+    }
+
+    // A title already in hand is what `N` offers, so the ordinary keypress never
+    // queues behind the titling backlog and never pays for the same name twice.
+    #[test]
+    fn n_offers_the_title_the_row_is_already_showing() {
+        let rows = fixture();
+        let mut n = naming_with(true, true);
+        let key = rows[0].key();
+        n.titles.insert(key.clone(), "cdc-backfill-retry".into());
+
+        let (_, ready) = n.request(&rows, std::slice::from_ref(&key), Purpose::Offer);
+        assert_eq!(ready, vec![key.clone()]);
+        assert!(n.pool.is_none());
+        assert_eq!(
+            n.suggestions.get(&key).map(String::as_str),
+            Some("cdc-backfill-retry")
+        );
     }
 
     // Fixture mode (and `[naming] enabled = false`) must never reach the model:
@@ -1738,7 +2049,7 @@ mod tests {
     fn naming_disabled_says_so_and_starts_nothing() {
         let rows = fixture();
         let mut n = naming_off();
-        let (evs, ready) = n.request(&rows, &[rows[0].key()], false);
+        let (evs, ready) = n.request(&rows, &[rows[0].key()], Purpose::Offer);
         assert!(n.pool.is_none());
         assert_eq!(n.pending, 0);
         assert!(ready.is_empty());

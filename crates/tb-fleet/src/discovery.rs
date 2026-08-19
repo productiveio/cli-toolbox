@@ -57,6 +57,11 @@ pub struct Session {
     /// Registry `waitingFor`: what a `waiting` session is blocked on.
     pub waiting_for: Option<String>,
     pub title: Option<String>,
+    /// The LLM-generated title — what the work *is*, not where it lives. Filled
+    /// in from `~/.claude/fleet-names.json` and the dashboard's background
+    /// titling pass, never by the registry, and deliberately independent of both
+    /// `name` and `tab`: it is what the TUI puts on a row's first line.
+    pub gen_title: Option<String>,
 }
 
 impl Default for Session {
@@ -76,6 +81,7 @@ impl Default for Session {
             name_source: None,
             waiting_for: None,
             title: None,
+            gen_title: None,
         }
     }
 }
@@ -100,6 +106,24 @@ impl Session {
         self.status == "waiting"
     }
 
+    /// What the dashboard puts on a row: the generated title when there is one,
+    /// else [`Session::label`].
+    ///
+    /// The title wins over both the Claude session name and the terminal tab
+    /// name **by design**. `work-9d` says where a session runs and a tab title
+    /// says which pane you're looking at; neither says what the session is
+    /// doing, which is the one thing a fleet of a dozen has to be read by. The
+    /// fallback only shows while the titling pass hasn't answered yet (or is
+    /// switched off).
+    pub fn headline(&self) -> String {
+        self.gen_title
+            .as_deref()
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| self.label())
+    }
+
     /// Short human label: derived name, else short sessionId, else pid.
     pub fn label(&self) -> String {
         self.name
@@ -111,6 +135,31 @@ impl Session {
             })
             .unwrap_or_else(|| self.pid.to_string())
     }
+}
+
+/// Entrypoints that are not a session anyone supervises: a `claude -p` child, an
+/// SDK run, a CI job. None of them has a TUI to focus, send to or rename.
+///
+/// They have to be excluded by name because they register themselves exactly like
+/// the real thing — `kind: "interactive"` included — and one of them is how this
+/// crate generates names: `ask_claude` shells out to `claude -p`, which appears in
+/// the registry as an `sdk-cli` session in `$TMPDIR` called `t-d1`. Left in, the
+/// dashboard's titling pass discovers its own children and titles them, and each
+/// title it pays for spawns the next one.
+const HEADLESS_ENTRYPOINTS: [&str; 5] = [
+    "sdk-cli",
+    "sdk-ts",
+    "sdk-py",
+    "local-agent",
+    "github-action",
+];
+
+/// Is this registry entry a headless run rather than a session on a terminal?
+/// Unknown entrypoints are kept — a new interactive one (`claude-vscode`,
+/// `claude-desktop`, `remote`) belongs in the fleet, and missing a real session is
+/// the worse failure of the two.
+fn is_headless(entrypoint: &str) -> bool {
+    HEADLESS_ENTRYPOINTS.contains(&entrypoint) || entrypoint.starts_with("sdk-")
 }
 
 #[derive(serde::Deserialize)]
@@ -130,6 +179,9 @@ struct Reg {
     name_source: Option<String>,
     #[serde(rename = "waitingFor")]
     waiting_for: Option<String>,
+    /// How this session was started — `"cli"` for a terminal, `"sdk-cli"` for a
+    /// `claude -p` child. See [`is_headless`].
+    entrypoint: Option<String>,
 }
 
 /// One tmux pane, as reported by `list-panes -a`.
@@ -180,8 +232,13 @@ pub fn discover() -> Vec<Session> {
             continue;
         };
         let Some(pid) = reg.pid else { continue };
-        // Interactive sessions only (skip print/headless runs).
+        // Interactive sessions only (skip print/headless runs). `kind` alone does
+        // not say it: a `claude -p` child registers as `interactive` too, and its
+        // entrypoint is the only thing that gives it away.
         if reg.kind.as_deref().is_some_and(|k| k != "interactive") {
+            continue;
+        }
+        if reg.entrypoint.as_deref().is_some_and(is_headless) {
             continue;
         }
         // ps returns non-zero for a dead pid, so this doubles as a liveness check.
@@ -219,6 +276,7 @@ pub fn discover() -> Vec<Session> {
             session_id: reg.session_id,
             name: reg.name,
             cwd: reg.cwd,
+            gen_title: None,
         });
     }
     out.sort_by_key(|s| std::cmp::Reverse(s.updated_at.unwrap_or(0)));
@@ -485,6 +543,57 @@ fn title_for(cwd: &str, session_id: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // `ask_claude` shells out to `claude -p`, and that child registers itself as a
+    // live `interactive` session in `$TMPDIR`. Titling the fleet would otherwise
+    // discover its own children — and pay for a title for each one.
+    #[test]
+    fn headless_runs_are_not_sessions() {
+        for e in [
+            "sdk-cli",
+            "sdk-ts",
+            "sdk-py",
+            "local-agent",
+            "github-action",
+        ] {
+            assert!(is_headless(e), "{e}");
+        }
+        // A terminal, an editor, a desktop app and anything new: all real fleet
+        // members, and an unknown entrypoint is kept rather than dropped.
+        for e in [
+            "cli",
+            "claude-vscode",
+            "claude-desktop",
+            "remote",
+            "whatever",
+        ] {
+            assert!(!is_headless(e), "{e}");
+        }
+    }
+
+    #[test]
+    fn the_headline_is_the_title_and_falls_back_to_the_label() {
+        let mut s = Session {
+            pid: 42,
+            session_id: Some("aaaaaaaa-1111".into()),
+            name: Some("work-9d".into()),
+            tab: Some("✳ a tab title".into()),
+            ..Default::default()
+        };
+        // No title yet: the row still needs something to say.
+        assert_eq!(s.headline(), "work-9d");
+        s.gen_title = Some("statusline-blank".into());
+        assert_eq!(s.headline(), "statusline-blank");
+        // A blank title is not a title — a row must never draw an empty headline.
+        s.gen_title = Some("  ".into());
+        assert_eq!(s.headline(), "work-9d");
+        // Nothing at all: the short sessionId, then the pid.
+        s.gen_title = None;
+        s.name = None;
+        assert_eq!(s.headline(), "aaaaaaaa");
+        s.session_id = None;
+        assert_eq!(s.headline(), "42");
+    }
 
     #[test]
     fn cwd_encoding() {

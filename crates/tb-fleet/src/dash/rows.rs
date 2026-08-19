@@ -17,9 +17,16 @@
 //! ```
 //!
 //! Line 1 is identity — the caret, the jump digit, the state dot and then the
-//! **name**, bold and bright, with everything else pushed into a dim column on the
-//! right. Then context: the prompt, given a whole line's width, and the terminal
-//! and directory, which only say what the block title and each other don't.
+//! **headline**, bold and bright, with everything else pushed into a dim column on
+//! the right. Then context: the prompt, given a whole line's width, and the
+//! terminal and directory, which only say what the block title and each other
+//! don't.
+//!
+//! The headline is [`Session::headline`] — the LLM-generated title, which is what
+//! the work *is*. The Claude session name and the terminal tab name never take
+//! that slot; both answer "which pane is this", and a row already carries the
+//! terminal label for that. The session name only shows through while a title
+//! hasn't been generated yet.
 //!
 //! Rows are assembled **to fit**: every line ends up exactly `plan.width` columns
 //! wide, padding included. That's not cosmetic — the selected row is highlighted
@@ -60,12 +67,12 @@ fn indent(p: &Plan) -> usize {
 /// Width of the age cell — `120m` is the longest thing `ago` produces.
 const AGE_CELL: usize = 4;
 
-/// Widest the name cell grows to when sizing line 1's content block. A fleet's
-/// longest name sets the block's width; past this it stops dragging every other
-/// row's status column right with it, and pushes only its own.
+/// Widest the headline cell grows to when sizing line 1's content block. A
+/// fleet's longest headline sets the block's width; past this it stops dragging
+/// every other row's status column right with it, and pushes only its own.
 const NAME_CELL_MAX: usize = 34;
 
-/// The name: the brightest thing in the item, because it's what the user
+/// The headline: the brightest thing in the item, because it's what the user
 /// navigates by.
 fn name_style() -> Style {
     Style::default()
@@ -201,7 +208,7 @@ impl FleetCtx {
                 p.show_base && base_title(b).is_some_and(|t| width_of(&t) + 2 <= p.width)
             }),
             term_cell: widest(terminal_label).clamp(3, p.term_cell.max(3)),
-            name_cell: widest(|s| s.label()).clamp(12, p.name_width.clamp(12, NAME_CELL_MAX)),
+            name_cell: widest(|s| s.headline()).clamp(12, p.name_width.clamp(12, NAME_CELL_MAX)),
         }
     }
 }
@@ -446,7 +453,7 @@ fn tiny(s: &Session, p: &Plan, selected: bool) -> Line<'static> {
         String::new()
     };
     let name_room = r.room().saturating_sub(width_of(&age));
-    r.push(fit(&s.label(), name_room), name_style());
+    r.push(fit(&s.headline(), name_room), name_style());
     if !age.is_empty() {
         r.fill_to(p.width.saturating_sub(width_of(&age)));
         r.push(age, dim_style());
@@ -464,7 +471,10 @@ fn one_row(s: &Session, p: &Plan, ctx: &FleetCtx, idx: usize, selected: bool) ->
 
     push_prefix(&mut r, p, idx, selected);
     r.push(format!("{dot} "), st);
-    r.push(column(&s.label(), p.name_width.min(r.room())), name_style());
+    r.push(
+        column(&s.headline(), p.name_width.min(r.room())),
+        name_style(),
+    );
     r.push(" ", Style::default());
     if p.show_status_word {
         r.push(column(word, WORD_CELL), st);
@@ -540,7 +550,7 @@ fn head(s: &Session, p: &Plan, ctx: &FleetCtx, idx: usize, selected: bool) -> Li
     push_prefix(&mut r, p, idx, selected);
     r.push(format!("{dot} "), st);
     let name_cap = p.name_width.min(p.width.saturating_sub(left + 1 + right));
-    let name = fit(&s.label(), name_cap);
+    let name = fit(&s.headline(), name_cap);
     let used = left + width_of(&name);
     r.push(name, name_style());
     if right > 0 {
@@ -586,10 +596,10 @@ fn context(s: &Session, p: &Plan, ctx: &FleetCtx, selected: bool) -> Line<'stati
 }
 
 /// Line 2 of the phone item: where the session lives. The terminal label gets the
-/// line, because while names are still `work-03` an iTerm tab title like
-/// `✳ PR #1119 thread cap persisted state` is the most informative thing the row
-/// has — and the directory only joins it when it says something the block title
-/// and the label don't.
+/// line — it is how the user finds the pane by hand, and an iTerm tab title like
+/// `✳ PR #1119 thread cap persisted state` carries real detail the 24-character
+/// headline had to drop. The directory only joins it when it says something the
+/// block title and the label don't.
 fn where_line(s: &Session, p: &Plan, ctx: &FleetCtx, selected: bool) -> Line<'static> {
     let mut r = RowBuf::new(p.width);
     r.fill_to(indent(p));
@@ -729,6 +739,42 @@ mod tests {
                 "{out:?}"
             );
         }
+    }
+
+    // The whole point of the headline: a row shows what the session is *doing*.
+    // `work-03` and an iTerm tab title both answer "which pane is this" — the
+    // terminal label is where that belongs, and it keeps its place on the row.
+    #[test]
+    fn the_generated_title_outranks_the_session_and_tab_names() {
+        let mut s = session("work-03", "busy");
+        s.tab = Some("✳ some tab title".into());
+        s.gen_title = Some("cdc-backfill-retry".into());
+        let p = plan(170, 40, 3, width_of("cdc-backfill-retry"), None);
+        let out = drawn(&s, &p, 0, false).join("\n");
+        assert!(out.contains("cdc-backfill-retry"), "{out}");
+        assert!(!out.contains("work-03"), "{out}");
+    }
+
+    // Until the titling pass answers there is still a row to draw.
+    #[test]
+    fn a_row_with_no_title_yet_falls_back_to_the_session_name() {
+        let s = session("work-03", "busy");
+        let p = plan(170, 40, 3, 12, None);
+        let out = drawn(&s, &p, 0, false).join("\n");
+        assert!(out.contains("work-03"), "{out}");
+    }
+
+    // The headline is what the fleet's name column is sized to — a long title
+    // must not be clipped to the width of the short session name behind it.
+    #[test]
+    fn the_name_cell_is_sized_to_the_headline() {
+        let mut s = session("work-03", "busy");
+        s.gen_title = Some("invoice-grid-rerender".into());
+        let p = plan(170, 40, 3, width_of("invoice-grid-rerender"), None);
+        assert_eq!(
+            ctx_of(&s, &p).name_cell,
+            width_of("invoice-grid-rerender").max(12)
+        );
     }
 
     // The name is the user's orientation anchor: it starts in the same column on

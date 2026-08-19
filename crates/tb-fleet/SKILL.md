@@ -41,7 +41,7 @@ A firstmate-style orchestrator for the many Claude Code sessions the user runs i
    | tap / click | select + focus (mouse capture is on by default; `--no-mouse` or `[ui] mouse = false` turns it off) |
    | scroll wheel | move the selection |
    | `n` | rename the selected session |
-   | `N` | suggest a name for the selected session (opens the rename buffer prefilled) |
+   | `N` | offer the selected session's title as a new Claude session *name* (opens the rename buffer prefilled) |
    | Ctrl-N | suggest names for every still-unnamed session; results land in the event log |
    | `r` | refresh now |
    | `z` | compact single-line rows ⇄ the default two-line ones (remembered in `[ui] rows`) |
@@ -56,7 +56,9 @@ A firstmate-style orchestrator for the many Claude Code sessions the user runs i
         make the CDC backfill idempotent across retries
    ```
 
-   Line 1 is identity — caret, jump digit, state dot, then the **name**, bold and the brightest thing on screen, with the terminal label, the status word and the age in a dim column to its right. Line 2 is indented and carries the session's first prompt across the rest of the width.
+   Line 1 is identity — caret, jump digit, state dot, then the **headline**, bold and the brightest thing on screen, with the terminal label, the status word and the age in a dim column to its right. Line 2 is indented and carries the session's first prompt across the rest of the width.
+
+   The headline is the **generated title** (see below), *not* the Claude session name and *not* the terminal tab name: both of those answer "which pane is this", which is what the terminal label on the row is for. A row falls back to the session name only while its title hasn't been generated yet, or when titling is switched off.
 
    Below ~70 columns (a phone over mosh/Termius) it becomes **three lines**, because the terminal label and the prompt can't share forty columns without the prompt becoming a stub:
 
@@ -111,23 +113,29 @@ The name is Claude's own, from its session registry — tb-fleet reads it, and c
 
 Renaming is cosmetic and instant — it changes the display name, never the sessionId, so `peek`/`send` targets keep working. Old names are kept by Claude under `formerNames`. Prefer short, task-shaped names (`cdc-spike`, `flag-cleanup`); long ones get truncated in the fleet views.
 
-### Generated names (`name`, `N`, Ctrl-N)
+### Generated titles and names (`name`, `N`, Ctrl-N)
 
-`tb-fleet name` asks a model what a session is *actually working on* and proposes a short kebab-case slug (`cdc-backfill-retry`). It reads the session's directory, git branch and first prompt, and shells out to `claude -p --model haiku` — a couple of seconds and a few hundred tokens per session.
+The generator asks a model what a session is *actually working on* and produces a short kebab-case slug (`cdc-backfill-retry`). It reads the session's directory, git branch and first prompt, and shells out to `claude -p --model haiku` — a couple of seconds and a few hundred tokens per session.
 
-**It is suggest-and-confirm, never auto-apply.** Generating a name changes nothing:
+That one slug is used two ways, and the difference matters:
+
+- as a **title** — what the `watch` TUI draws on a row's first line. Display only. The dashboard titles the whole fleet by itself, in the background, so rows read as the work they are without anyone pressing anything. Nothing is sent to any session and nothing is confirmed; a title that misses costs nothing.
+- as a **name** — Claude's own session name, which only a `/rename` typed into the live session sets. That still needs the user's ⏎, because it goes into a running TUI.
+
+**Titling is automatic; naming is suggest-and-confirm.** Titles are generated on the first poll for every session, refreshed when a session's first prompt changes, cached across runs, and shown with the header's progress counter while a pass is in flight. `[naming] auto_title = false` turns the pass off and rows fall back to the Claude session name. Generating a name still changes nothing by itself:
 
 - `tb-fleet name <target>` / `--all` prints `old → new (llm)` and stops. `--dry-run` is the explicit spelling of the same thing.
 - `--apply` is what actually sends `/rename`. Confirm with the user before passing it, exactly like `send`.
 - `--refresh` (alias `--no-cache`) throws away the cached name for that session, generates a new one and stores *that*. It's the escape hatch when a bad name got cached — otherwise the cache would keep serving it for free, forever.
-- In the TUI, `N` on a row generates and then **prefills the rename buffer** — the user still presses ⏎ (or edits, or Esc). Ctrl-N generates for every unnamed session at once and reports each one in the event log; applying is still one `N` + ⏎ per session.
+- In the TUI, `N` on a row **prefills the rename buffer** with that row's title — the user still presses ⏎ (or edits, or Esc). Because the fleet is titled already, `N` normally costs nothing: it offers the title the row is showing rather than paying for a second call. Ctrl-N does the same for every still-unnamed session and reports each one in the event log; applying is still one `N` + ⏎ per session.
+- Renaming is now optional polish. The row already reads correctly from its title — `/rename` is for when you want the name to match *inside* the session too (and, with `sync_tmux`, in tmux).
 
 Other things worth knowing:
 
 - **Never renames a session mid-turn.** `/rename` is typed into a live Claude TUI, so a busy session, or one sitting on a permission prompt, would read it as its answer. Those are *held* with a note instead — rename them when they go idle. The hold covers **every** path: `rename`, `name --apply` and the TUI's rename buffer. `tb-fleet rename <target> <name> --force` overrides it for a session that is essentially always busy — it really does type into the live turn, so confirm with the user first.
 - **A model answer has to look like a name.** The reply is only accepted when it is a single kebab-case token: anything carrying a space or an apostrophe is a refusal or a CLI error ("I cannot provide a name.", "Credit balance is too low", "Invalid API key · Please run /login"), and those are rejected, retried, and never cached. So `(heuristic)` after a name means "the model said something unusable", not necessarily "the model was down".
 - **`--all` only touches Claude-derived names** (`name_source == "derived"`). A name a human or an earlier pass chose is left alone.
-- **Names are cached** in `~/.claude/fleet-names.json`, keyed by session and by a hash of what was fed to the model, so re-running `name` on an unchanged session is free. Only usable model answers are cached — never a heuristic guess, never a rejected reply. `--refresh` is how you replace an entry. The cache is written atomically — two `watch` instances (say a Mac and a phone) can share it.
+- **Names are cached** in `~/.claude/fleet-names.json`, keyed by session and by a hash of what was fed to the model, so re-running `name` on an unchanged session is free, and the dashboard opens with last run's titles already on screen rather than a screen of `work-9d`. A cached title whose input has since drifted is still drawn — it describes the work better than the session name does — and is regenerated in the background. Only usable model answers are cached — never a heuristic guess, never a rejected reply. `--refresh` is how you replace an entry. The cache is written atomically — two `watch` instances (say a Mac and a phone) can share it.
 - **Fallback:** if `claude` is missing, logged out or rate-limited, it falls back to the session's git branch (ignoring `main`/`master`/`develop`) or a slug of its first prompt, marked `(heuristic)` and said once, not once per session.
 - **Inert in fixture mode.** `TB_FLEET_FIXTURE` never reaches the model and never touches tmux.
 
@@ -154,6 +162,9 @@ enabled = true      # false = heuristic only; no `claude` child is spawned by
                     # `name`, `N` or Ctrl-N, and names come from the branch/title
 model = "haiku"     # passed to `claude -p --model`
 sync_tmux = true    # rename the tmux session along with the Claude session
+auto_title = true   # title the whole fleet in the background, so every row in the
+                    # `watch` TUI shows what its session is doing. `false` leaves
+                    # titling to `N`/Ctrl-N and rows show the session name instead
 ```
 
 With `enabled = false`, `tb-fleet name` says so up front and prints the branch/title guess — there is nothing to pay for and nothing to confirm, but `--apply` still works if you want that guess sent.
@@ -165,7 +176,8 @@ With `enabled = false`, `tb-fleet name` says so up front and prints the branch/t
 - "stuck" = a session idle past `--stuck` seconds while blocked on a permission/confirmation prompt.
 - Bare `tb-fleet` opens the dashboard on a terminal but falls back to a one-shot `list` when stdout is piped — so keep using `tb-fleet list` explicitly when you parse the output; never call it bare expecting to read stdout.
 - The terminal a session lives in is shown as `⧉ <tmux session>` (or `▣ <iTerm tab>`), and `list --json` carries it as `tmux_session`. The tmux *session* name is the useful one — one session per job is the convention; the window name is usually just `zsh`.
-- `list --json` also carries `name_source` (`"derived"` = Claude's cwd+hash fallback, i.e. a name that says nothing) and `waiting_for`.
+- `list --json` also carries `name_source` (`"derived"` = Claude's cwd+hash fallback, i.e. a name that says nothing), `waiting_for`, and `gen_title` — the generated title, read straight from the cache (never generated by `list`, so it's `null` for a session nothing has titled yet). The plain table and `<target>` still use the **session name**: that's what `peek`/`send`/`rename` resolve against.
+- **Headless runs are not sessions.** `claude -p`, the SDK entrypoints and CI jobs register themselves in the same registry as a real session, `kind: "interactive"` and all — they're skipped by entrypoint. Notably, generating a name *is* a `claude -p` child, so without this the dashboard would discover its own naming children and title them, paying for a call per call.
 - `TB_FLEET_FIXTURE=<sessions.json>` makes every view read a canned fleet from that file instead of the live registry — a demo/screenshot mode. It's inert by design: no backend is driven (`peek`/`send`/`rename`/focus all refuse), no notifications fire, and no watch state is written. So it's safe to leave running against fabricated handles, but it can't be used to drive real sessions.
 - `TB_FLEET_FIXTURE` is inert for naming too: no `claude` child is ever spawned and no tmux session is renamed.
 - macOS + iTerm/tmux only.
