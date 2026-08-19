@@ -25,6 +25,10 @@ A firstmate-style orchestrator for the many Claude Code sessions the user runs i
 
 `<target>` = a session's **generated title** (`cdc-backfill-retry`), its Claude session name (`work-f9`), a sessionId prefix, or a pid. The title is what `list` and the dashboard print as a session's identity, so what the user just read off a fleet view is always a usable target.
 
+**Any unambiguous fragment of a title or name works too** — you don't have to retype 30 characters. Matching walks four rungs and the *first* one with hits decides: exact (pid, whole name, whole title, sessionId prefix) → prefix (`fleet`) → substring (`llm`) → characters-in-order (`flt`, `fltitle`). So a name typed in full is never reinterpreted as a fuzzy match on some other session, and looseness is only reached for a query nothing tighter explains. Fragments under 3 characters don't reach the fuzzy rung.
+
+**Two sessions matching at the same rung is an error, not a coin flip** — you get the candidate list back and pass a longer fragment. That's what makes fragments safe for `send` and `rename`, which type into a live Claude TUI: resolving to the wrong session there costs somebody else their turn. When relaying such an error to the user, quote the candidates.
+
 ## How to behave
 
 1. **Read freely, act with confirmation.** `list` and `peek` are read-only — run them whenever relevant. `send` and `spawn` change a running agent's state, so **draft the exact command and confirm with the user before running it**, unless their instruction already fully specified it ("tell work-48 to run the tests" is explicit → just do it; "spawn something to look into the flaky test" needs you to confirm dir/prompt first). `handoff` is the exception — the user asking for it *is* the confirmation.

@@ -283,8 +283,11 @@ pub fn discover() -> Vec<Session> {
     out
 }
 
-/// Resolve a target (sessionId prefix, session name, generated title, or pid) to
-/// exactly one session.
+/// Resolve a target to exactly one session.
+///
+/// A target is a pid, a sessionId prefix, a session name, a generated title — or
+/// any unambiguous fragment of the last two, down to a fuzzy `flt` for
+/// `fleet-llm-title`. See [`resolve_in`] for how loose is too loose.
 pub fn resolve(target: &str) -> Result<Session, String> {
     let mut rows = discover();
     // Every fleet view prints the *title* as a session's identity, so a title has
@@ -294,32 +297,107 @@ pub fn resolve(target: &str) -> Result<Session, String> {
     resolve_in(rows, target)
 }
 
+/// Shortest query allowed to match by subsequence. Two characters spread across a
+/// 30-character headline is not a name anyone typed on purpose, and the looser the
+/// rung the more a stray hit costs: `send` and `rename` type into a live session.
+const MIN_FUZZY: usize = 3;
+
+/// How hard we had to look to match a target. Walked in order, and the **first
+/// rung with any hits decides** — so a name typed in full always beats a fuzzy
+/// interpretation of it, and looseness is only ever reached for a query that
+/// nothing tighter explains.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Rung {
+    /// A pid, a whole name, a whole title, or a sessionId prefix.
+    Exact,
+    /// The headline or name starts with the query — `fleet` for `fleet-llm-title`.
+    Prefix,
+    /// The query appears somewhere in them — `llm` for `fleet-llm-title`.
+    Substring,
+    /// The query's characters appear in order — `fltitle`, `flt`, `f-l-t`.
+    Subsequence,
+}
+
+const RUNGS: [Rung; 4] = [
+    Rung::Exact,
+    Rung::Prefix,
+    Rung::Substring,
+    Rung::Subsequence,
+];
+
+impl Rung {
+    fn matches(self, s: &Session, q: &str) -> bool {
+        match self {
+            Rung::Exact => {
+                s.pid.to_string() == q
+                    || s.name.as_deref().is_some_and(|n| n.to_lowercase() == q)
+                    || s.gen_title
+                        .as_deref()
+                        .is_some_and(|t| t.to_lowercase() == q)
+                    || s.session_id
+                        .as_deref()
+                        .is_some_and(|id| id.to_lowercase().starts_with(q))
+            }
+            Rung::Prefix => Self::any(s, |h| h.starts_with(q)),
+            Rung::Substring => Self::any(s, |h| h.contains(q)),
+            Rung::Subsequence => {
+                q.chars().count() >= MIN_FUZZY && Self::any(s, |h| is_subsequence(q, &h))
+            }
+        }
+    }
+
+    /// The strings a loose target may match on: what the fleet views *print* as
+    /// this session's identity, plus the Claude session name behind it. The name
+    /// stays in because it is still what `rename` reports and what a user who
+    /// knows their fleet by `work-9d` will type.
+    fn any(s: &Session, f: impl Fn(String) -> bool) -> bool {
+        let headline = s.headline().to_lowercase();
+        let name = s.name.as_deref().unwrap_or_default().to_lowercase();
+        f(headline) || (!name.is_empty() && f(name))
+    }
+}
+
+/// Do `q`'s characters appear in `haystack`, in order but not necessarily
+/// adjacent? This is the whole of the fuzzy matching: it lets `fltitle` and
+/// `f-l-t` find `fleet-llm-title` without scoring anything, which matters because
+/// nothing here ever picks a "best" match — see [`resolve_in`].
+fn is_subsequence(q: &str, haystack: &str) -> bool {
+    let mut chars = haystack.chars();
+    q.chars().all(|c| chars.any(|h| h == c))
+}
+
 /// The matching behind [`resolve`], over a row set the caller supplies — split out
 /// so the rules can be exercised without a registry or a name cache.
+///
+/// **One hit or an error, never a best guess.** Each rung of [`RUNGS`] is all-or-
+/// nothing: two sessions matching at the same looseness is an ambiguous request,
+/// and the answer is the list of candidates rather than whichever scored higher.
+/// That is what makes fuzzy matching safe to hand to `send` and `rename`, which
+/// type into a live Claude TUI — the cost of resolving to the wrong session there
+/// is somebody else's turn, so a coin flip is not an acceptable tie-break.
 pub fn resolve_in(rows: Vec<Session>, target: &str) -> Result<Session, String> {
-    let hits: Vec<Session> = rows
-        .into_iter()
-        .filter(|r| {
-            r.pid.to_string() == target
-                || r.name.as_deref() == Some(target)
-                || r.gen_title.as_deref() == Some(target)
-                || r.session_id
-                    .as_deref()
-                    .is_some_and(|s| s.starts_with(target))
-        })
-        .collect();
-    match hits.len() {
-        1 => Ok(hits.into_iter().next().unwrap()),
-        0 => Err(format!("no live session matches \"{target}\"")),
-        _ => Err(format!(
-            "\"{target}\" matches {} sessions: {} — be more specific",
-            hits.len(),
-            hits.iter()
-                .map(Session::headline)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
+    let q = target.trim().to_lowercase();
+    if q.is_empty() {
+        return Err("no target given".into());
     }
+    for rung in RUNGS {
+        let mut hits = rows.iter().filter(|r| rung.matches(r, &q));
+        let Some(first) = hits.next() else { continue };
+        if hits.next().is_none() {
+            return Ok(first.clone());
+        }
+        let all: Vec<String> = rows
+            .iter()
+            .filter(|r| rung.matches(r, &q))
+            .map(Session::headline)
+            .collect();
+        return Err(format!(
+            "\"{target}\" matches {} sessions: {} — be more specific",
+            all.len(),
+            all.join(", ")
+        ));
+    }
+    Err(format!("no live session matches \"{target}\""))
 }
 
 /// The Claude session this process was launched from: the nearest ancestor pid
@@ -609,6 +687,15 @@ mod tests {
 
     // The fleet views print titles, so a title has to be usable as a target —
     // "peek the one called statusline-blank" is the whole point of showing it.
+    fn titled(pid: i64, name: &str, title: &str) -> Session {
+        Session {
+            pid,
+            name: Some(name.into()),
+            gen_title: Some(title.into()),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn a_target_resolves_by_title_name_id_or_pid() {
         let row = |pid: i64, name: &str, sid: &str, title: Option<&str>| Session {
@@ -629,6 +716,63 @@ mod tests {
         assert_eq!(one("1"), Ok(1));
         assert_eq!(one("flag-cleanup"), Ok(2));
         assert!(one("nothing-like-this").is_err());
+    }
+
+    // Typing the whole 30-character title to peek at something is not a workflow.
+    #[test]
+    fn a_target_can_be_a_fragment_of_the_headline() {
+        let rows = vec![titled(1, "work-74", "fleet-llm-title")];
+        let one = |q: &str| resolve_in(rows.clone(), q).map(|s| s.pid);
+        // Prefix, then substring, then the query's characters in order.
+        assert_eq!(one("fleet"), Ok(1));
+        assert_eq!(one("llm"), Ok(1));
+        assert_eq!(one("fltitle"), Ok(1));
+        assert_eq!(one("flt"), Ok(1));
+        // Case is not part of anyone's memory of a name.
+        assert_eq!(one("FLEET-LLM"), Ok(1));
+        // Two characters is not a name — it's a typo, and the looser the rung the
+        // more a stray hit costs.
+        assert!(one("ft").is_err());
+    }
+
+    // The ladder's whole point: a target typed in full is never reinterpreted as a
+    // fuzzy match on somebody else. `api` is `api`, even though it is also a
+    // subsequence of `a-parallel-index`.
+    #[test]
+    fn a_tighter_match_wins_outright() {
+        let rows = vec![
+            titled(1, "api", "api"),
+            titled(2, "work-31", "a-parallel-index"),
+        ];
+        assert_eq!(resolve_in(rows.clone(), "api").map(|s| s.pid), Ok(1));
+        // …and the loose rung is still there for a query nothing tighter explains.
+        assert_eq!(resolve_in(rows, "aprlx").map(|s| s.pid), Ok(2));
+    }
+
+    // Nothing here picks a "best" match: `send` and `rename` type into a live
+    // session, so an ambiguous fragment has to come back as a question.
+    #[test]
+    fn an_ambiguous_fragment_is_an_error_not_a_guess() {
+        let rows = vec![
+            titled(1, "work-1", "flag-cleanup-frontend"),
+            titled(2, "work-2", "flag-cleanup-api"),
+        ];
+        let err = resolve_in(rows, "flag-cleanup").unwrap_err();
+        assert!(err.contains("matches 2 sessions"), "{err}");
+        assert!(err.contains("flag-cleanup-frontend"), "{err}");
+        assert!(err.contains("flag-cleanup-api"), "{err}");
+    }
+
+    #[test]
+    fn a_subsequence_needs_its_characters_in_order() {
+        assert!(is_subsequence("flt", "fleet-llm-title"));
+        assert!(is_subsequence("fleetllmtitle", "fleet-llm-title"));
+        // Right characters, wrong order.
+        assert!(!is_subsequence("tlf", "fleet-llm-title"));
+        // A character the haystack simply doesn't have.
+        assert!(!is_subsequence("fltz", "fleet-llm-title"));
+        // Repeated characters need that many occurrences left to consume.
+        assert!(!is_subsequence("fff", "fleet-llm-title"));
     }
 
     // Two sessions can land on the same title. The error has to name them by what
