@@ -146,7 +146,10 @@ fn resolve_launcher() -> String {
 }
 
 pub fn list(json: bool) -> Result<()> {
-    let rows = discovery::discover();
+    let mut rows = discovery::discover();
+    // The terminal a session lives in is part of what `list` is for; without this
+    // every iTerm-backed row renders as `-`.
+    discovery::enrich_iterm_tabs(&mut rows);
     if json {
         println!("{}", serde_json::to_string_pretty(&rows)?);
     } else {

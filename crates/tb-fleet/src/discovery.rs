@@ -394,7 +394,11 @@ pub fn enrich_iterm_tabs(rows: &mut [Session]) {
     {
         return;
     }
-    let script = r#"tell application "iTerm2"
+    // `tab` must be bound OUTSIDE the `tell` block: inside it, iTerm2's dictionary
+    // defines a `tab` class that shadows AppleScript's tab-character constant, so
+    // `& tab &` concatenates the literal text "tab" and the separator disappears.
+    let script = r#"set sep to ASCII character 9
+tell application "iTerm2"
   set out to ""
   repeat with w in windows
     repeat with t in tabs of w
@@ -403,7 +407,7 @@ pub fn enrich_iterm_tabs(rows: &mut [Session]) {
         set tt to title of t
       end try
       repeat with s in sessions of t
-        set out to out & (id of s) & tab & tt & linefeed
+        set out to out & (id of s) & sep & tt & linefeed
       end repeat
     end repeat
   end repeat
