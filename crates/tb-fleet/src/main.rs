@@ -22,12 +22,15 @@ struct Cli {
 const DEFAULT_INTERVAL: u64 = 5;
 const DEFAULT_STUCK: i64 = 300;
 
-/// `--rows`: how many terminal rows one session occupies.
+/// `--rows`: how tall one session's item is. The default is the full item — the
+/// name on its own line and the prompt on its own — which is two lines on a
+/// desktop and three on a phone, where the terminal label needs one too. `1` is
+/// the compact single line `z` toggles into.
 #[derive(Clone, Copy, clap::ValueEnum)]
 enum RowsArg {
-    #[value(name = "1")]
+    #[value(name = "1", alias = "compact")]
     One,
-    #[value(name = "2")]
+    #[value(name = "2", alias = "full")]
     Two,
     Auto,
 }
@@ -177,7 +180,7 @@ enum Commands {
         /// Notifications only, no TUI (backgroundable)
         #[arg(long)]
         quiet: bool,
-        /// Terminal rows per session: 1, 2, or auto by width (persisted by `z`)
+        /// Item height: 2/full (default; 3 lines on a phone), 1/compact, or auto (`z` persists it)
         #[arg(long, value_enum)]
         rows: Option<RowsArg>,
         /// Capture mouse/tap input in the TUI (default; a tap selects and focuses)

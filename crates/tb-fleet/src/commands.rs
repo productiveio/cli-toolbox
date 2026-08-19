@@ -56,7 +56,9 @@ impl NamingConfig {
 /// `[ui]` in the tool's config.toml — dashboard preferences that survive restarts.
 #[derive(Deserialize, Default, Clone)]
 pub struct UiConfig {
-    /// `"1"`, `"2"` or `"auto"` — how many terminal rows one session occupies.
+    /// `"1"`, `"2"` or `"auto"` — how tall one session's item is. `"2"` (and
+    /// `"auto"`) is the full item, which is two lines on a desktop and three on a
+    /// phone; `"1"` is the compact single line `z` toggles into.
     pub rows: Option<String>,
     /// Mouse/tap capture in the `watch` TUI. Defaults to on.
     pub mouse: Option<bool>,

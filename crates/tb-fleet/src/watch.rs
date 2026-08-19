@@ -29,7 +29,7 @@ use crate::backend;
 use crate::commands;
 use crate::dash::keys::{self, Action, RenameAction};
 use crate::dash::layout::{self as dashlayout, Density, Plan};
-use crate::dash::rows::session_item;
+use crate::dash::rows::{self, FleetCtx, session_item};
 use crate::discovery::{Session, claude_home, discover, enrich_iterm_tabs, is_fixture};
 use crate::error::{Error, Result};
 use crate::naming::{GenOpts, NameJob, NameMsg, NamePool, NameSource};
@@ -253,6 +253,10 @@ impl Drop for TermGuard {
 }
 
 /// `"1"`/`"2"`/`"auto"` from the config, folded with the command-line override.
+///
+/// `2` and `auto` both mean the full item — two lines on a desktop, three on a
+/// phone — so `1`, the compact single line `z` toggles into, is the only value
+/// that changes anything today.
 fn resolve_rows(flag: Option<Option<bool>>) -> Option<bool> {
     if let Some(explicit) = flag {
         return explicit;
@@ -745,7 +749,7 @@ fn run_tui(o: WatchOpts) -> Result<()> {
             // override there — persisting it would strand the user in a mode they
             // never chose the next time they open a wide terminal.
             Action::ToggleRows if dash.tiny => {
-                log.insert(0, Ev::now("·", "1/2-row layout needs a wider pane".into()));
+                log.insert(0, Ev::now("·", "the row layout needs a wider pane".into()));
                 log.truncate(EVENT_CAP);
             }
             Action::ToggleRows => {
@@ -886,7 +890,8 @@ fn draw(
     } else {
         render_header(f, chunks[0], rows, o, &plan, naming, tick);
     }
-    render_sessions(f, chunks[1], rows, sel, &plan, dash);
+    let ctx = FleetCtx::of(rows, &plan);
+    render_sessions(f, chunks[1], rows, sel, &plan, &ctx, dash);
     if events_height > 0 {
         render_events(f, chunks[2], log, &plan);
     }
@@ -1064,29 +1069,41 @@ fn render_header(
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
+/// ` Sessions · ~/Code/work `: the block's title carries the directory the fleet
+/// has in common, which is what earns the rows the right to leave it out.
+///
+/// `FleetCtx` already dropped the base if this pane couldn't print it, so the two
+/// can't disagree — a row never draws a relative path the title failed to explain.
+fn sessions_title(ctx: &FleetCtx) -> String {
+    ctx.base
+        .as_deref()
+        .and_then(rows::base_title)
+        .unwrap_or_else(|| " Sessions ".to_string())
+}
+
 fn render_sessions(
     f: &mut ratatui::Frame,
     area: Rect,
     rows: &[Session],
     sel: usize,
     plan: &Plan,
+    ctx: &FleetCtx,
     dash: &mut Dash,
 ) {
     if area.height == 0 || area.width == 0 {
         dash.list_area = Rect::default();
         return;
     }
+    // The directory the fleet shares is named here, once, instead of on every row.
+    let title = sessions_title(ctx);
     let block = if plan.borders {
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .title(" Sessions ")
+            .title(title)
     } else {
         // No columns to spare for a frame: one title line carries the same info.
-        Block::default().title(Span::styled(
-            " Sessions ",
-            Style::default().fg(Color::DarkGray),
-        ))
+        Block::default().title(Span::styled(title, Style::default().fg(Color::DarkGray)))
     };
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -1123,7 +1140,7 @@ fn render_sessions(
     let items: Vec<_> = rows
         .iter()
         .enumerate()
-        .map(|(i, r)| session_item(r, plan, i, i == sel))
+        .map(|(i, r)| session_item(r, plan, ctx, i, i == sel))
         .collect();
     dash.list.select(Some(sel));
     dash.list_area = list_area;
@@ -1195,7 +1212,7 @@ fn render_help(f: &mut ratatui::Frame) {
         ("tap", "select + focus (mouse/touch)"),
         ("n", "rename the selected session"),
         ("r", "refresh now"),
-        ("z", "1-row ⇄ 2-row layout (remembered)"),
+        ("z", "compact 1-line rows (remembered)"),
         ("e", "show/hide the events pane"),
         ("N", "suggest a name for this session"),
         ("^N", "suggest names for unnamed ones"),
@@ -1360,46 +1377,144 @@ mod tests {
             .collect()
     }
 
+    // The title is the only thing explaining the rows' relative paths, so it is
+    // either drawn whole or not at all — and `FleetCtx` is where that is decided,
+    // so the rows and the title can't disagree.
     #[test]
-    fn golden_wide() {
-        let s = screen(120, 40, None);
+    fn the_block_title_carries_the_common_base_only_when_it_fits() {
+        let at = |dir: &str| Session {
+            cwd: Some(dir.to_string()),
+            session_id: Some(dir.to_string()),
+            status: "idle".into(),
+            ..Default::default()
+        };
+        let home = |rest: &str| format!("{}/{rest}", dirs::home_dir().unwrap().display());
+        let title = |w: u16, rows: &[Session]| {
+            let plan = dashlayout::plan(w, 40, rows.len(), 22, None);
+            sessions_title(&FleetCtx::of(rows, &plan))
+        };
+
+        let shared = [at(&home("Code/work")), at(&home("Code/work/repos/api"))];
+        assert_eq!(title(170, &shared), " Sessions · ~/Code/work ");
+        // A phone pane names it too: ten columns plus the path is all it takes.
+        assert_eq!(title(44, &shared), " Sessions · ~/Code/work ");
+        // Nothing in common, nothing to name.
+        assert_eq!(title(170, &[at("/tmp/a"), at("/var/b")]), " Sessions ");
+        // Too long for the pane: the title stays plain, and the rows then draw
+        // whole paths rather than remainders of a base nobody was told about.
+        let deep = home("Code/work/worktrees/a-very-long-worktree-directory-name");
+        let long = [at(&deep), at(&deep)];
+        assert_eq!(title(40, &long), " Sessions ");
+        assert!(title(170, &long).contains("worktrees"));
+    }
+
+    #[test]
+    fn golden_desktop() {
+        // 170 columns is the terminal Ivan actually watches the fleet in.
+        let s = screen(170, 40, None);
         let all = s.join("\n");
         // Header: counts, and the waiting session called out.
         assert!(s[0].contains("fleet"), "{:?}", s[0]);
         assert!(s[0].contains("3 live"), "{:?}", s[0]);
         assert!(s[0].contains("1 need you"), "{:?}", s[0]);
         assert!(s[0].contains("? help"), "{:?}", s[0]);
-        // Bordered sessions block with the events pane below.
-        assert!(s[1].contains("Sessions"), "{:?}", s[1]);
+        // The directory the fleet shares is named once, in the block's title —
+        // which is what buys the rows the right to leave it off.
+        assert!(s[1].contains("Sessions · /tmp/wt"), "{:?}", s[1]);
         assert!(all.contains("Events"), "{all}");
-        // The waiting session is hoisted to the first row and named in words.
+        // Two lines per session: identity on the first, the prompt on the second.
         assert!(s[2].contains("flag-cleanup"), "{:?}", s[2]);
         assert!(s[2].contains("needs you"), "{:?}", s[2]);
-        assert!(s[2].starts_with('│'), "{:?}", s[2]);
-        // Full names — the old 13-column cell cut this at "cdc-ingestio…".
-        assert!(all.contains("cdc-ingestion-backfill"), "{all}");
-        // tmux session, not the window name, and the cwd.
-        assert!(all.contains("⧉ ai-agent"), "{all}");
-        assert!(all.contains("/tmp/wt/ai-agent"), "{all}");
-        // iTerm sessions fall back to their tab title.
+        assert!(s[2].contains("⧉ frontend"), "{:?}", s[2]);
+        assert!(s[3].contains("remove the released flag"), "{:?}", s[3]);
+        assert!(s[3].trim_matches(['│', ' ']).len() > 10, "{:?}", s[3]);
+        // Full names, and the prompt no longer competes for the same line.
+        assert!(s[4].contains("cdc-ingestion-backfill"), "{:?}", s[4]);
+        assert!(
+            s[5].contains("make the CDC backfill idempotent so a re-run is free"),
+            "{:?}",
+            s[5]
+        );
+        // iTerm sessions fall back to their tab title, and the one session that
+        // isn't under the common base draws its whole path.
         assert!(all.contains("▣ work"), "{all}");
-        // 1-row mode: three sessions, three rows.
+        assert!(all.contains("/tmp/work"), "{all}");
+        assert_cells(&s, 170);
+    }
+
+    // The same shape has to hold across the widths a desktop terminal actually
+    // gets resized to, borders and all.
+    #[test]
+    fn golden_desktop_widths_all_draw_two_line_items() {
+        for (w, h) in [(160u16, 40u16), (200, 50), (120, 40), (100, 30)] {
+            let s = screen(w, h, None);
+            let all = s.join("\n");
+            assert!(s[1].contains("Sessions"), "{w}x{h}: {:?}", s[1]);
+            // Row 1 is the hoisted waiting session; row 2 is its prompt.
+            assert!(s[2].contains("flag-cleanup"), "{w}x{h}: {:?}", s[2]);
+            assert!(s[2].contains("needs you"), "{w}x{h}: {:?}", s[2]);
+            assert!(
+                s[3].contains("remove the released flag"),
+                "{w}x{h}: {:?}",
+                s[3]
+            );
+            // …and the next session starts two lines down, numbered 2.
+            assert!(s[4].contains(" 2 "), "{w}x{h}: {:?}", s[4]);
+            assert!(
+                s[4].contains("cdc-ingestion-backfill"),
+                "{w}x{h}: {:?}",
+                s[4]
+            );
+            assert!(all.contains("⧉ ai-agent"), "{w}x{h}: {all}");
+            assert_cells(&s, w as usize);
+        }
+    }
+
+    // `z`: one line per session, for when fifteen of them matter more than
+    // reading any one of them.
+    #[test]
+    fn golden_desktop_compact() {
+        let s = screen(170, 40, Some(false));
+        let all = s.join("\n");
+        // Three sessions, three consecutive rows.
+        assert!(s[2].contains("flag-cleanup"), "{:?}", s[2]);
+        assert!(s[3].contains("cdc-ingestion-backfill"), "{:?}", s[3]);
         assert!(s[4].contains("work-9d"), "{:?}", s[4]);
-        assert_cells(&s, 120);
+        // Still numbered: the digits are how a phone client acts on a row.
+        assert!(s[2].contains("▸1"), "{:?}", s[2]);
+        // The prompt shares the line again, but the repeated base directory does
+        // not — it stays in the title.
+        assert!(s[3].contains("make the CDC backfill"), "{:?}", s[3]);
+        assert!(!s[3].contains("/tmp/wt/ai-agent"), "{:?}", s[3]);
+        assert!(all.contains("Sessions · /tmp/wt"), "{all}");
+        assert_cells(&s, 170);
     }
 
     #[test]
     fn golden_phone() {
         let s = screen(50, 20, None);
         let all = s.join("\n");
-        // 2-row items with the jump gutter, so ⏎-less clients can still act.
+        // Three lines, one job each: identity, terminal, prompt.
         assert!(s[2].contains("▸1"), "{:?}", s[2]);
         assert!(s[2].contains("flag-cleanup"), "{:?}", s[2]);
         assert!(s[2].contains("needs you"), "{:?}", s[2]);
         assert!(s[3].contains("⧉ frontend"), "{:?}", s[3]);
-        // Second session starts on the next pair of lines with gutter 2.
-        assert!(s[4].contains(" 2"), "{:?}", s[4]);
-        assert!(s[4].contains("cdc-ingestion-backfill"), "{:?}", s[4]);
+        assert!(s[4].contains("remove the released flag"), "{:?}", s[4]);
+        // A phone pane names the shared directory too, so the rows stop repeating
+        // it — and the one session outside it still draws its path.
+        assert!(s[1].contains("Sessions · /tmp/wt"), "{:?}", s[1]);
+        assert!(!s[3].contains("/tmp"), "{:?}", s[3]);
+        assert!(s[9].contains("/tmp/work"), "{:?}", s[9]);
+        // Second session starts three lines down, numbered 2.
+        assert!(s[5].contains(" 2"), "{:?}", s[5]);
+        assert!(s[5].contains("cdc-ingestion-backfill"), "{:?}", s[5]);
+        // The prompt gets the whole line: behind the terminal label it used to be
+        // a ~15-column stub on a 50-column pane.
+        assert!(
+            s[7].contains("make the CDC backfill idempotent so a re-r"),
+            "{:?}",
+            s[7]
+        );
         // Header drops the interval/stuck detail but keeps the counts.
         assert!(s[0].contains("3 live"), "{:?}", s[0]);
         assert!(!s[0].contains("stuck>"), "{:?}", s[0]);
@@ -1412,13 +1527,29 @@ mod tests {
     fn golden_phone_split() {
         let s = screen(40, 16, None);
         let all = s.join("\n");
-        // Borderless at 40 columns — the frame's two columns go to the name.
+        // Borderless at 40 columns — the frame's two columns go to the content.
         assert!(!s[1].starts_with('╭'), "{:?}", s[1]);
         assert!(s[1].contains("Sessions"), "{:?}", s[1]);
         assert!(s[2].contains("flag-cleanup"), "{:?}", s[2]);
-        assert!(all.contains("⧉ frontend"), "{all}");
-        assert!(all.contains("cdc-ingestion-backfill"), "{all}");
+        assert!(s[3].contains("⧉ frontend"), "{:?}", s[3]);
+        assert!(s[4].contains("remove the released flag"), "{:?}", s[4]);
+        assert!(all.contains("cdc-ingestion-backf"), "{all}");
         assert_cells(&s, 40);
+    }
+
+    // 32 columns: line 1 hands the status word to line 2 so the name keeps its
+    // room, and the third session still has to be on screen.
+    #[test]
+    fn golden_phone_narrow_split() {
+        let s = screen(32, 12, None);
+        assert!(s[2].contains("flag-cleanup"), "{:?}", s[2]);
+        assert!(!s[2].contains("needs you"), "{:?}", s[2]);
+        assert!(s[3].contains("needs you"), "{:?}", s[3]);
+        assert!(s[3].contains("⧉ frontend"), "{:?}", s[3]);
+        assert!(s[4].contains("remove the released flag"), "{:?}", s[4]);
+        // Three items in twelve rows — the events pane gives the row up.
+        assert!(s[8].contains("work-9d"), "{:?}", s);
+        assert_cells(&s, 32);
     }
 
     #[test]
@@ -1762,8 +1893,14 @@ mod tests {
         let s = screen_of(120, 30, None, &rows, &[]);
         let all = s.join("\n");
         assert!(all.contains("waiting for something to happen"), "{all}");
-        // The events pane is 3 rows, so the list shows the rest — 24 of the 15
-        // sessions' rows fit, and none of the list is blank filler.
+        // The events pane holds one line plus its frame, so the list gets the
+        // other 24 rows — eleven two-line items and the overflow hint, not the
+        // eight a 10-row events pane would have left room for.
+        assert!(all.contains("session-10"), "{all}");
+        assert!(all.contains("more ↓"), "{all}");
+        // One line per session and the whole fleet fits with room to spare.
+        let s = screen_of(120, 30, Some(false), &rows, &[]);
+        let all = s.join("\n");
         assert!(all.contains("session-14"), "{all}");
         assert!(!all.contains("more ↓"), "{all}");
     }

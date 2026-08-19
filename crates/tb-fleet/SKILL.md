@@ -44,12 +44,35 @@ A firstmate-style orchestrator for the many Claude Code sessions the user runs i
    | `N` | suggest a name for the selected session (opens the rename buffer prefilled) |
    | Ctrl-N | suggest names for every still-unnamed session; results land in the event log |
    | `r` | refresh now |
-   | `z` | toggle 1-row ⇄ 2-row items (remembered in `[ui] rows`) |
+   | `z` | compact single-line rows ⇄ the default two-line ones (remembered in `[ui] rows`) |
    | `e` | show/hide the events pane |
    | `?` | keybinding overlay |
    | `q`, Esc, Ctrl-C | quit |
 
-   The layout is responsive: below ~70 columns each session takes two lines (name + status on top, terminal/dir/prompt underneath), below ~40 the borders go, and the events pane shrinks or disappears with the terminal height. The numbered gutter and the digit keys exist because **Enter doesn't reach some mobile SSH clients** — over mosh/Termius a bare Return arrives as Ctrl-J, which is bound to focus as well (and to apply, inside the rename buffer; Ctrl-H deletes there, Ctrl-C still quits).
+   Every session is drawn as a **multi-line item** — the name gets a line, and so does the prompt. On a desktop that's two lines:
+
+   ```
+   ▸1 ⏸ cdc-ingestion-backfill              ⧉ ai-agent-cdc   needs you   4m
+        make the CDC backfill idempotent across retries
+   ```
+
+   Line 1 is identity — caret, jump digit, state dot, then the **name**, bold and the brightest thing on screen, with the terminal label, the status word and the age in a dim column to its right. Line 2 is indented and carries the session's first prompt across the rest of the width.
+
+   Below ~70 columns (a phone over mosh/Termius) it becomes **three lines**, because the terminal label and the prompt can't share forty columns without the prompt becoming a stub:
+
+   ```
+   ▸1 ○ work-03                idle   88m
+        ▣ ✳ Workstation keyboard layout (m…
+        Setupiram si workstation. Pogledaj…
+   ```
+
+   Identity, then where it lives, then what it's doing. Under ~40 columns line 1 also hands the status word down to line 2, so the name keeps its room; below ~40 the borders go, and below ~28 an item collapses to a single line of name + age. The events pane shrinks or disappears with the terminal height — and gives its last row up rather than push a third session off screen.
+
+   The directory the fleet shares is named once, in the block's title (`Sessions · ~/Code/work`) — at every width whose title can print it — so a row only draws the part of its path that neither that title nor its own terminal name already tells you: the directory it sits in below the shared base (`worktrees/`, `repos/`), or the whole path when the session is somewhere else entirely (`~/Code/brain`). A session sitting at the shared base draws no path at all, and no path ever takes more than a third of its line.
+
+   `z` (or `--rows 1`, or `[ui] rows = 1`) switches to a **compact** one-line-per-session layout, for when seeing fifteen sessions at once beats reading any one of them; `--rows 2` and `--rows auto` are the full-item default.
+
+   The numbered gutter and the digit keys exist because **Enter doesn't reach some mobile SSH clients** — over mosh/Termius a bare Return arrives as Ctrl-J, which is bound to focus as well (and to apply, inside the rename buffer; Ctrl-H deletes there, Ctrl-C still quits).
 
    Sessions the registry reports as `waiting` are hoisted to the top and shown as a bold **⏸ needs you** — that's the row that needs a human.
 
