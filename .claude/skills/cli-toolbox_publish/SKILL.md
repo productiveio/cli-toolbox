@@ -11,7 +11,7 @@ Bump versions, push tags, trigger CI releases, and optionally install locally â€
 
 ## Context
 
-This is for the `productiveio/cli-toolbox` workspace. It has 7 independent binaries: `tb-sem`, `tb-bug`, `tb-backyard`, `tb-lf` (deprecated, still released until it's retired), `tb-devctl`, `tb-session`, `tb-pr`. Each is versioned and released independently using git tags in `<crate>-v<version>` format.
+This is for the `productiveio/cli-toolbox` workspace. It has 8 independent binaries: `tb-sem`, `tb-bug`, `tb-backyard`, `tb-lf` (deprecated, still released until it's retired), `tb-devctl`, `tb-session`, `tb-pr`, `tb-fleet`. Each is versioned and released independently using git tags in `<crate>-v<version>` format.
 
 **Critical:** GitHub Actions does NOT trigger individual workflows when multiple tags are pushed in a single `git push --tags`. Tags MUST be pushed one at a time with a small delay between them.
 
@@ -23,7 +23,7 @@ Parse `$ARGUMENTS` to determine:
 - **`--install`**: after releases complete, install binaries locally via `scripts/install.sh`
 - **`--with-skill`**: when installing, also install Claude Code skills (passed through to install.sh)
 
-Valid tool names: `tb-sem`, `tb-bug`, `tb-backyard`, `tb-lf`, `tb-devctl`, `tb-session`, `tb-pr`
+Valid tool names: `tb-sem`, `tb-bug`, `tb-backyard`, `tb-lf`, `tb-devctl`, `tb-session`, `tb-pr`, `tb-fleet`
 
 If `--all` is used and no version is specified, read each crate's current version from `crates/<tool>/Cargo.toml` and suggest a patch bump for each. Ask the user to confirm.
 

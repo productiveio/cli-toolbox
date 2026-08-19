@@ -12,6 +12,7 @@ A Cargo workspace monorepo containing CLI tools built for internal use at [Produ
 | `tb-devctl` | `tb-devctl` | Local dev environment orchestrator for Productive services |
 | `tb-session` | `tb-session` | Claude Code session search — full-text index and resume past conversations |
 | `tb-pr` | `tb-pr` | GitHub PR radar — kanban TUI + CLI for tracking PRs needing your attention |
+| `tb-fleet` | `tb-fleet` | Manage the Claude Code sessions running on this machine — see, peek, steer, spawn, hand off, and supervise across iTerm tabs and tmux panes (run it bare for the live dashboard) |
 | `toolbox-core` | (library) | Shared infrastructure: config, HTTP, output formatting, time parsing |
 
 > **Deprecated:** `tb-lf` (Langfuse/DevPortal insights) is superseded by `tb-backyard` — same commands, current Backyard auth. It still installs and runs but prints a deprecation notice; run `tb-lf uninstall` once you've switched. It will be dropped from the install/release flow after the `v0.9.0` self-uninstall has propagated. Source stays in `crates/tb-lf`.
@@ -68,6 +69,7 @@ Each tool ships with a Claude Code skill that runs `tb-<tool> prime` on load to 
 ```json
 "Bash(tb-backyard:*)",
 "Bash(tb-bug:*)",
+"Bash(tb-fleet:*)",
 "Bash(tb-lf:*)",
 "Bash(tb-pr:*)",
 "Bash(tb-sem:*)",
