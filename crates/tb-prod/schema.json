@@ -8386,23 +8386,23 @@
           "description": "Footer with variables interpolated",
           "attribute": "footer_interpolated"
         },
-        "originalPdfUrl": {
-          "key": "originalPdfUrl",
+        "pdfUrl": {
+          "key": "pdfUrl",
           "type": "string",
           "typeCategory": "primitive",
-          "param": "original_pdf_url",
+          "param": "pdf_url",
           "readonly": true,
-          "description": "URL of the original proposal PDF",
-          "attribute": "original_pdf_url"
+          "description": "URL of the proposal PDF",
+          "attribute": "pdf_url"
         },
-        "auditPdfUrl": {
-          "key": "auditPdfUrl",
+        "signedPdfUrl": {
+          "key": "signedPdfUrl",
           "type": "string",
           "typeCategory": "primitive",
-          "param": "audit_pdf_url",
+          "param": "signed_pdf_url",
           "readonly": true,
-          "description": "URL of the audit trail PDF",
-          "attribute": "audit_pdf_url"
+          "description": "URL of the signed proposal PDF with the audit trail",
+          "attribute": "signed_pdf_url"
         },
         "publicUuid": {
           "key": "publicUuid",
