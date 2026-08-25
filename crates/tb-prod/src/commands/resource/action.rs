@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use crate::api::ProductiveClient;
 use crate::json_error;
-use crate::schema::ResourceDef;
+use crate::schema::{self, ResourceDef};
 
 use super::extensions;
 
@@ -52,6 +52,19 @@ pub async fn run(
             json_error::exit_with_error("action_not_found", &msg);
         }
     };
+
+    if action.scope == schema::ActionScope::Collection {
+        json_error::exit_with_error(
+            "operation_not_supported",
+            &format!(
+                "'{}' is a collection-scoped action ({} {}/{}) and cannot be invoked on a single record id.",
+                action_name,
+                action.method,
+                resource.api_path(),
+                action.endpoint
+            ),
+        );
+    }
 
     let path = format!("{}/{}/{}", resource.api_path(), id, action.endpoint);
 

@@ -3,8 +3,8 @@ use crate::json_error;
 use crate::schema::ResourceDef;
 
 pub async fn run(client: &ProductiveClient, resource: &ResourceDef, query_text: &str) {
-    let search_param = match &resource.search_filter_param {
-        Some(p) => p.as_str(),
+    let search_param = match resource.search_filter_param() {
+        Some(p) => p,
         None => {
             json_error::exit_with_error(
                 "operation_not_supported",

@@ -56,7 +56,7 @@ pub async fn run(client: &ProductiveClient, config: &Config) -> Result<()> {
     for (domain, resources) in &grouped {
         println!("### {}", domain);
         for r in resources {
-            println!("- **{}** — {}", r.type_name, r.description_short);
+            println!("- **{}** — {}", r.type_name, r.routing_summary);
         }
         println!();
     }

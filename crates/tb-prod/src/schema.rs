@@ -82,15 +82,12 @@ pub struct ResourceDef {
     pub item_name: String,
     pub collection_name: String,
     pub description: String,
-    pub description_short: String,
+    pub routing_summary: String,
     #[serde(default)]
     pub aliases: Option<Vec<String>>,
     pub endpoint: Option<String>,
     pub query_hints: Option<String>,
     pub default_sort: Option<String>,
-    pub search_filter_param: Option<String>,
-    #[serde(default)]
-    pub search_quick_result_type: Option<Vec<String>>,
     pub bulk_actions: Option<BulkActions>,
     pub actions: Option<ResourceActions>,
     #[serde(default)]
@@ -120,6 +117,15 @@ impl ResourceDef {
         self.fields
             .values()
             .find(|f| f.filter.as_deref() == Some(filter_key))
+    }
+
+    /// The filter param for keyword search, derived from the field configs.
+    /// Resources supporting fuzzy text search declare a field filtered by
+    /// `query` (or `full_query` for comments' body search).
+    pub fn search_filter_param(&self) -> Option<&str> {
+        ["query", "full_query"]
+            .into_iter()
+            .find(|key| self.field_by_filter(key).is_some())
     }
 
     /// Check if a REST operation is available.
@@ -233,9 +239,18 @@ pub struct CollectionDef {
 pub struct CustomAction {
     pub name: String,
     pub description: String,
+    pub scope: ActionScope,
     pub endpoint: String,
     pub method: String,
-    pub enabled_when: Option<EnableCondition>,
+}
+
+/// URL shape of a custom action: `record` maps to /resource/{id}/{endpoint},
+/// `collection` to /resource/{endpoint}.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ActionScope {
+    Record,
+    Collection,
 }
 
 // --- Cache config ---
@@ -327,11 +342,46 @@ mod tests {
     #[test]
     fn resolve_resource_by_alias() {
         let s = schema();
-        // "event" is a known alias for "events" (absence categories)
+        // "milestone" is a known alias for "task_lists"
         let resolved = s
-            .resolve_resource("event")
-            .expect("alias 'event' should resolve");
-        assert_eq!(resolved.type_name, "events");
+            .resolve_resource("milestone")
+            .expect("alias 'milestone' should resolve");
+        assert_eq!(resolved.type_name, "task_lists");
+    }
+
+    #[test]
+    fn search_filter_param_derived_from_field_filters() {
+        let s = schema();
+        // services declare a `query` filter field; comments use `full_query`.
+        let services = s.resolve_resource("services").unwrap();
+        assert_eq!(services.search_filter_param(), Some("query"));
+
+        let comments = s.resolve_resource("comments").unwrap();
+        assert_eq!(comments.search_filter_param(), Some("full_query"));
+
+        // workflows have no text-search filter field.
+        let workflows = s.resolve_resource("workflows").unwrap();
+        assert_eq!(workflows.search_filter_param(), None);
+    }
+
+    #[test]
+    fn custom_actions_carry_scope_endpoint_and_method() {
+        let s = schema();
+        let companies = s.resolve_resource("companies").unwrap();
+        let archive = companies
+            .custom_actions
+            .get("archive_company")
+            .expect("companies should expose archive_company");
+        assert_eq!(archive.scope, ActionScope::Record);
+        assert_eq!(archive.endpoint, "archive");
+        assert_eq!(archive.method, "PATCH");
+
+        let scenarios = s.resolve_resource("scenarios").unwrap();
+        let copy = scenarios
+            .custom_actions
+            .get("copy_scenario")
+            .expect("scenarios should expose copy_scenario");
+        assert_eq!(copy.scope, ActionScope::Collection);
     }
 
     #[test]

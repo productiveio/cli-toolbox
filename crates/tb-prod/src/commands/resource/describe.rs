@@ -9,7 +9,7 @@ pub fn run(resource: &ResourceDef, include: Option<&str>) {
         .unwrap_or_default();
 
     // Header
-    println!("{} — {}", resource.type_name, resource.description_short);
+    println!("{} — {}", resource.type_name, resource.routing_summary);
     if let Some(aliases) = &resource.aliases
         && !aliases.is_empty()
     {
@@ -20,7 +20,7 @@ pub fn run(resource: &ResourceDef, include: Option<&str>) {
     // Operations
     let ops = [
         ("query", resource.supports_action("index")),
-        ("search", resource.search_filter_param.is_some()),
+        ("search", resource.search_filter_param().is_some()),
         ("create", resource.supports_action("create")),
         ("update", resource.supports_action("update")),
         ("delete", resource.supports_action("delete")),
@@ -102,13 +102,17 @@ pub fn run(resource: &ResourceDef, include: Option<&str>) {
             println!("No custom actions available.");
         } else {
             for action in resource.custom_actions.values() {
+                let url = match action.scope {
+                    schema::ActionScope::Record => {
+                        format!("/{}/<id>/{}", resource.type_name, action.endpoint)
+                    }
+                    schema::ActionScope::Collection => {
+                        format!("/{}/{}", resource.type_name, action.endpoint)
+                    }
+                };
                 println!(
-                    "  {} — {} {} /{}/<id>/{}",
-                    action.name,
-                    action.method,
-                    action.description,
-                    resource.type_name,
-                    action.endpoint
+                    "  {} — {} {} {}",
+                    action.name, action.method, action.description, url
                 );
             }
         }
@@ -273,7 +277,7 @@ fn render_schema_section(resource: &ResourceDef, schema: &Schema) -> String {
     }
 
     // Search config
-    if let Some(param) = &resource.search_filter_param {
+    if let Some(param) = resource.search_filter_param() {
         writeln!(out, "Search: keyword via filter param \"{}\"", param).unwrap();
     }
     writeln!(out).unwrap();
@@ -290,7 +294,7 @@ pub fn print_all_types() {
     for (domain, resources) in grouped {
         println!("## {}", domain);
         for r in resources {
-            println!("  {:<28} {}", r.type_name, r.description_short);
+            println!("  {:<28} {}", r.type_name, r.routing_summary);
         }
         println!();
     }
