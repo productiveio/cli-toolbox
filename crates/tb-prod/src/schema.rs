@@ -82,6 +82,7 @@ pub struct ResourceDef {
     pub item_name: String,
     pub collection_name: String,
     pub description: String,
+    #[serde(alias = "routingSummary")]
     pub description_short: String,
     #[serde(default)]
     pub aliases: Option<Vec<String>>,
@@ -327,11 +328,11 @@ mod tests {
     #[test]
     fn resolve_resource_by_alias() {
         let s = schema();
-        // "event" is a known alias for "events" (absence categories)
+        // "milestone" is a known alias for "task_lists"
         let resolved = s
-            .resolve_resource("event")
-            .expect("alias 'event' should resolve");
-        assert_eq!(resolved.type_name, "events");
+            .resolve_resource("milestone")
+            .expect("alias 'milestone' should resolve");
+        assert_eq!(resolved.type_name, "task_lists");
     }
 
     #[test]
