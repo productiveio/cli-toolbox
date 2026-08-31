@@ -85,6 +85,25 @@ impl SortDir {
     }
 }
 
+/// Triage states backyard stores on a trace. `confirmed` and the other queue-item
+/// statuses are a different vocabulary and it ignores them.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum TriageStatus {
+    Flagged,
+    Dismissed,
+    Untouched,
+}
+
+impl TriageStatus {
+    fn as_param(self) -> &'static str {
+        match self {
+            TriageStatus::Flagged => "flagged",
+            TriageStatus::Dismissed => "dismissed",
+            TriageStatus::Untouched => "untouched",
+        }
+    }
+}
+
 /// Backyard scores satisfaction thumbs-down or not at all, so there is no
 /// thumbs-up filter to offer.
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -117,8 +136,8 @@ enum Commands {
         session: Option<String>,
         #[arg(long)]
         env: Option<String>,
-        #[arg(long)]
-        triage: Option<String>,
+        #[arg(long, value_enum)]
+        triage: Option<TriageStatus>,
         #[arg(long, value_enum)]
         satisfaction: Option<Satisfaction>,
         #[arg(long, value_enum)]
@@ -1043,7 +1062,7 @@ async fn run() -> tb_backyard::error::Result<()> {
                 ("user_id", user),
                 ("session_id", session),
                 ("environment", env),
-                ("triage_status", triage),
+                ("triage_status", triage.map(|t| t.as_param().to_string())),
                 (
                     "satisfaction",
                     satisfaction.map(|s| s.as_param().to_string()),
@@ -4739,6 +4758,10 @@ mod tests {
 
         assert_eq!(Satisfaction::Unsatisfied.as_param(), "down");
         assert_eq!(Satisfaction::Any.as_param(), "any");
+
+        assert_eq!(TriageStatus::Flagged.as_param(), "flagged");
+        assert_eq!(TriageStatus::Dismissed.as_param(), "dismissed");
+        assert_eq!(TriageStatus::Untouched.as_param(), "untouched");
     }
 
     #[test]
@@ -4752,6 +4775,8 @@ mod tests {
             "asc",
             "--satisfaction",
             "unsatisfied",
+            "--triage",
+            "untouched",
         ])
         .expect("supported filters should parse");
 
@@ -4760,11 +4785,13 @@ mod tests {
                 sort_by,
                 sort_dir,
                 satisfaction,
+                triage,
                 ..
             }) => {
                 assert_eq!(sort_by.map(|s| s.as_param()), Some("total_cost"));
                 assert_eq!(sort_dir.map(|d| d.as_param()), Some("asc"));
                 assert_eq!(satisfaction.map(|s| s.as_param()), Some("down"));
+                assert_eq!(triage.map(|t| t.as_param()), Some("untouched"));
             }
             _ => panic!("expected traces subcommand"),
         }
@@ -4778,6 +4805,7 @@ mod tests {
             ["traces", "--satisfaction", "satisfied"],
             ["traces", "--sort-by", "cost"],
             ["traces", "--sort", "total_cost"],
+            ["traces", "--triage", "confirmed"],
         ] {
             let parsed =
                 Cli::try_parse_from(std::iter::once("tb-backyard").chain(args.iter().copied()));
