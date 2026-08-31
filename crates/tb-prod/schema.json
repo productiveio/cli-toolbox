@@ -1,6 +1,6 @@
 {
   "version": "1.1.0",
-  "generatedAt": "2026-08-26T14:50:48.123Z",
+  "generatedAt": "2026-08-31T13:05:35.923Z",
   "resources": {
     "activities": {
       "type": "activities",
@@ -324,7 +324,7 @@
       "domain": "Automation & Configuration",
       "itemName": "agent configuration",
       "collectionName": "agent configurations",
-      "description": "Agent Config stores the system instructions (the agent's persistent prompt) for an AI agent.\n\nEach config belongs to exactly one agent via the `agent` relationship.\nUpdating the config changes the agent's behavior without recreating the agent.",
+      "description": "Agent Config stores the system instructions (the agent's persistent prompt) for an AI agent,\nplus the model and reasoning effort it runs on.\n\nEach config belongs to exactly one agent via the `agent` relationship.\nUpdating the config changes the agent's behavior without recreating the agent.",
       "routingSummary": "agent behavior configurations (instructions)",
       "fields": {
         "id": {
@@ -344,6 +344,31 @@
           "param": "instructions",
           "description": "User-defined system instructions (persistent prompt) applied on every run",
           "attribute": "instructions"
+        },
+        "aiModel": {
+          "key": "aiModel",
+          "type": "string",
+          "typeCategory": "primitive",
+          "format": "ai-model",
+          "param": "ai_model",
+          "attribute": "ai_model",
+          "enabledWhen": {
+            "flags": [
+              "agentModelSettings"
+            ]
+          }
+        },
+        "reasoningEffort": {
+          "key": "reasoningEffort",
+          "type": "agent_reasoning_effort",
+          "typeCategory": "enum",
+          "param": "reasoning_effort",
+          "attribute": "reasoning_effort",
+          "enabledWhen": {
+            "flags": [
+              "agentModelSettings"
+            ]
+          }
         },
         "createdAt": {
           "key": "createdAt",
@@ -380,7 +405,7 @@
       "domain": "Automation & Configuration",
       "itemName": "agent",
       "collectionName": "agents",
-      "description": "Agent is an AI-powered assistant that users can interact with, configure, and delegate/schedule tasks to.\n\nAn agent is composed of two linked records:\n- agents — identity: name, title, avatar, custom_role (permissions), and a manager (the only user that can manage/update the agent)\n- agent_configs — behavior: the system instructions the agent uses\n\nEach agent_config belongs to exactly one agent via its `agent` relationship.\n\nBoth records must exist for an agent to have behavior. The agent_config is created as a separate record referencing the agent; the `agent_config` field on the agents record is populated automatically from that link.\n\nAn agent acts like a regular user:\n- it has a permission set (custom_role) that defines what the agent is allowed to do across the application\n- for objects that support sharing (memberships) — for example projects — the agent must be granted access before it can read or act on them\n- it can connect to connectors (external tools and services)\n\nAny recurring or scheduled work the agent should do — periodic summaries, reminders, status checks, follow-ups, and similar — is expressed as a trigger, stored on the automations resource and filtered by agent_id.\n\nAccess to the agent itself is governed by memberships on the agent.\n\nTwo memberships are created automatically when an agent is created:\n- one for the agent's manager (via the agent_manager dynamic group, with full access)\n- one for the creator (person membership, read access)\n\nAgents are activated or deactivated via the `activate` and `deactivate` actions rather than deletion.",
+      "description": "Agent is an AI-powered assistant that users can interact with, configure, and delegate/schedule tasks to.\n\nAn agent is composed of two linked records:\n- agents — identity: name, title, avatar, custom_role (permissions), and a manager (the only user that can manage/update the agent)\n- agent_configs — behavior: the system instructions, model, and reasoning effort the agent runs on\n\nEach agent_config belongs to exactly one agent via its `agent` relationship.\n\nBoth records must exist for an agent to have behavior. The agent_config is created as a separate record referencing the agent; the `agent_config` field on the agents record is populated automatically from that link.\n\nAn agent acts like a regular user:\n- it has a permission set (custom_role) that defines what the agent is allowed to do across the application\n- for objects that support sharing (memberships) — for example projects — the agent must be granted access before it can read or act on them\n- it can connect to connectors (external tools and services)\n\nAny recurring or scheduled work the agent should do — periodic summaries, reminders, status checks, follow-ups, and similar — is expressed as a trigger, stored on the automations resource and filtered by agent_id.\n\nAccess to the agent itself is governed by memberships on the agent.\n\nTwo memberships are created automatically when an agent is created:\n- one for the agent's manager (via the agent_manager dynamic group, with full access)\n- one for the creator (person membership, read access)\n\nAgents are activated or deactivated via the `activate` and `deactivate` actions rather than deletion.",
       "routingSummary": "AI assistants with permission sets that users can interact with and delegate tasks to",
       "fields": {
         "id": {
@@ -1370,6 +1395,52 @@
         }
       },
       "collections": {}
+    },
+    "automation_project_assignments": {
+      "type": "automation_project_assignments",
+      "domain": "Other",
+      "itemName": "automation project assignment",
+      "collectionName": "automation project assignments",
+      "description": "Automation Project Assignment scopes a task automation to one project — one assignment per project.\nAn automation with no assignments and resolve_on_all_projects false runs on no project.\nCreated and deleted in bulk; no single-record write, no update.",
+      "routingSummary": "automation-project links — the projects a task automation runs on",
+      "fields": {
+        "id": {
+          "key": "id",
+          "type": "string",
+          "typeCategory": "primitive",
+          "param": "id",
+          "readonly": true,
+          "id": true
+        },
+        "automation": {
+          "key": "automation",
+          "type": "automations",
+          "typeCategory": "resource",
+          "param": "automation",
+          "required": true,
+          "filter": "automation_id",
+          "relationship": "automation"
+        },
+        "project": {
+          "key": "project",
+          "type": "projects",
+          "typeCategory": "resource",
+          "param": "project",
+          "required": true,
+          "filter": "project_id",
+          "relationship": "project"
+        }
+      },
+      "collections": {},
+      "bulkActions": {
+        "create": true,
+        "delete": true
+      },
+      "actions": {
+        "create": false,
+        "update": false,
+        "delete": false
+      }
     },
     "automations": {
       "type": "automations",
@@ -2651,14 +2722,6 @@
             "allowBlank": true
           }
         },
-        "domain": {
-          "key": "domain",
-          "type": "string",
-          "typeCategory": "primitive",
-          "param": "domain",
-          "description": "Company web domain (e.g., \"acme.com\")",
-          "attribute": "domain"
-        },
         "domains": {
           "key": "domains",
           "type": "string",
@@ -3327,7 +3390,7 @@
       "domain": "Automation & Configuration",
       "itemName": "custom field",
       "collectionName": "custom fields",
-      "description": "Custom Field adds user-defined data to resources like tasks, deals, budgets, projects, people, companies, invoices, expenses, bookings, and services.\nEach field has a customizable_type that determines which resource it extends, and a data_type that determines the input format:\ntext, number, select (single dropdown), multiselect, date, person reference, or file attachment.\n\nSelect and multiselect fields have associated custom field options that define the available choices.\nFields are organized into custom field sections for visual grouping.\nFields can be archived when no longer needed.",
+      "description": "Custom Field adds user-defined data to resources like tasks, deals, budgets, projects, people, companies, invoices, expenses, bookings, and services.\nEach field has a customizable_type that determines which resource it extends, and a data_type that determines the input format:\ntext, number, progress, select (single dropdown), multiselect, date, person reference, or file attachment.\n\nSelect and multiselect fields have associated custom field options that define the available choices.\nFields are organized into custom field sections for visual grouping.\nFields can be archived when no longer needed.",
       "routingSummary": "user-defined fields (text, number, dropdown, date, person, file) on tasks, deals, people, and other resources",
       "fields": {
         "id": {
@@ -3454,6 +3517,32 @@
           "param": "formatting_type_id",
           "description": "Display formatting for number custom fields (e.g. plain number, percentage, currency)",
           "attribute": "formatting_type_id"
+        },
+        "minimumValue": {
+          "key": "minimumValue",
+          "type": "number",
+          "typeCategory": "primitive",
+          "param": "minimum_value",
+          "description": "Lower bound of a progress field; required together with maximum_value",
+          "attribute": "minimum_value",
+          "enabledWhen": {
+            "flags": [
+              "manualProgressCustomField"
+            ]
+          }
+        },
+        "maximumValue": {
+          "key": "maximumValue",
+          "type": "number",
+          "typeCategory": "primitive",
+          "param": "maximum_value",
+          "description": "Upper bound of a progress field; required together with minimum_value and greater than it",
+          "attribute": "maximum_value",
+          "enabledWhen": {
+            "flags": [
+              "manualProgressCustomField"
+            ]
+          }
         },
         "options": {
           "key": "options",
@@ -5555,8 +5644,8 @@
       "domain": "Resource Planning",
       "itemName": "absence allowance",
       "collectionName": "absence allowances",
-      "description": "Absence Allowance defines the time-off allowance for a person on a specific absence category (event) for a defined period.\nOnly applicable to absence categories with a limited limitation type (limited by days or hours).\nDistinct from the read-only `allocations` resource, which aggregates scheduled time from bookings.\n\nEach absence allowance tracks:\n- Allocated: total days or hours allocated to the person (e.g. 21 vacation days). Can include half-day allocations (e.g. 4.5 days).\n- Used: days/hours consumed through approved absence bookings (auto-calculated).\n- Pending: days/hours in bookings awaiting approval (auto-calculated).\n- Available balance: allocated - used - pending.\n\nAbsence allowances are scoped to a date range (start_date to end_date), typically a calendar year.\nA person must have an absence allowance before they can request time off for that absence category.\nHolidays (from the person's holiday calendar) are excluded from balance deductions — booking over a holiday does not reduce the balance.",
-      "routingSummary": "time-off allowance per person and absence category — tracks allocated, used, pending, and available days",
+      "description": "Absence Allowance defines the time-off allowance for a person on a specific absence category (event) for a defined period.\nOnly applicable to absence categories with a limited limitation type (limited by days or hours).\nDistinct from the read-only `allocations` resource, which aggregates scheduled time from bookings.\n\nEach absence allowance tracks:\n- Allocated: total allocated to the person. The unit follows the category's limitation type — days when limited by days (half days allowed, e.g. 4.5), minutes when limited by hours (e.g. 9600 = 160 h).\n- Used: approved absence bookings plus everything awaiting approval (auto-calculated).\n- Pending: the part of Used that is in bookings awaiting approval (auto-calculated).\n- Available balance: allocated - used. Pending is already in Used — do not subtract it twice.\n\nAbsence allowances are scoped to a date range (start_date to end_date), typically a calendar year.\nA person must have an absence allowance before they can request time off for that absence category.\nHolidays (from the person's holiday calendar) are excluded from balance deductions — booking over a holiday does not reduce the balance.",
+      "routingSummary": "time-off allowance per person and absence category — allocated, used and pending in days or minutes",
       "fields": {
         "id": {
           "key": "id",
@@ -5597,7 +5686,7 @@
           "param": "allocated",
           "required": true,
           "filter": "allocated",
-          "description": "Total days or hours allocated in this period",
+          "description": "Total allocated. Read the category limitation type before writing: by days -> days in 0.5 steps; by hours -> whole MINUTES, round(hours * 60)",
           "attribute": "allocated"
         },
         "used": {
@@ -5607,7 +5696,7 @@
           "param": "used",
           "readonly": true,
           "filter": "used",
-          "description": "Days or hours already used through approved bookings (auto-calculated)",
+          "description": "Approved plus pending bookings (auto-calculated). Same unit as allocated",
           "attribute": "used"
         },
         "pending": {
@@ -5616,7 +5705,7 @@
           "typeCategory": "primitive",
           "param": "pending",
           "readonly": true,
-          "description": "Days or hours pending approval (auto-calculated)",
+          "description": "Awaiting approval, already counted in used (auto-calculated). Same unit as allocated",
           "attribute": "pending"
         },
         "note": {
@@ -8636,7 +8725,7 @@
       "itemName": "organization membership",
       "collectionName": "organization memberships",
       "description": "Organization Membership links a user to an organization, granting them access. Each membership connects a person (profile) and a user (login account) to a specific organization. A user can be a member of multiple organizations.",
-      "routingSummary": "links between users and organizations, granting access",
+      "routingSummary": "links between users and organizations, granting access; notetaker settings",
       "fields": {
         "id": {
           "key": "id",
@@ -8668,9 +8757,18 @@
           "param": "user",
           "readonly": true,
           "relationship": "user"
+        },
+        "notetakerSettings": {
+          "key": "notetakerSettings",
+          "type": "hash",
+          "typeCategory": "primitive",
+          "param": "notetaker_settings",
+          "description": "Notetaker preferences, merged on update: `notetaker_display_name`, `notetaker_join_message`, `notetaker_auto_join_rule` (`all_meetings` or `off`)",
+          "attribute": "notetaker_settings"
         }
       },
-      "collections": {}
+      "collections": {},
+      "queryHints": "A membership's ID is its person's ID."
     },
     "organization_subscriptions": {
       "type": "organization_subscriptions",
@@ -10004,11 +10102,6 @@
           "relationship": "job_role",
           "filterConfig": {
             "allowBlank": true
-          },
-          "enabledWhen": {
-            "flags": [
-              "userRole"
-            ]
           }
         },
         "company": {
@@ -10267,8 +10360,36 @@
           "format": "percentage",
           "param": "discount",
           "sort": "discount",
-          "description": "Discount on the price",
+          "description": "Discount percentage (0–100) on the price. Reads as the effective percentage even when a fixed-amount discount is in effect; writing that derived value back converts the discount to a percentage",
           "attribute": "discount"
+        },
+        "discountAmount": {
+          "key": "discountAmount",
+          "type": "number",
+          "typeCategory": "primitive",
+          "format": "money",
+          "param": "discount_amount",
+          "description": "Discount money value in effect — the fixed amount in amount mode, otherwise computed from the percentage. A positive write selects amount mode and resets discount to 0 (Fixed billing type only, at most the line total); 0 clears it. Cannot combine with a positive discount",
+          "attribute": "discount_amount",
+          "enabledWhen": {
+            "flags": [
+              "serviceDiscountFixedAmount"
+            ]
+          }
+        },
+        "discountType": {
+          "key": "discountType",
+          "type": "discount_type",
+          "typeCategory": "enum",
+          "param": "discount_type",
+          "readonly": true,
+          "description": "Discount mode in effect",
+          "attribute": "discount_type",
+          "enabledWhen": {
+            "flags": [
+              "serviceDiscountFixedAmount"
+            ]
+          }
         },
         "markup": {
           "key": "markup",
@@ -12179,7 +12300,7 @@
       "domain": "People & Organization",
       "itemName": "role",
       "collectionName": "roles",
-      "description": "Permission set (the roles API resource) defines a named group of permissions that controls what a person can do in the organization. Roles are assigned to users to grant or restrict access to features such as project management, invoicing, time tracking, and administration. Each role targets a specific user type (employee, contractor, or client). Resolved permissions show the final effective permissions after inheritance is applied. Permission sets are access control, not job classification — what a person does is described by their job role (the organization-defined job_roles resource, where enabled) or their free-text title.",
+      "description": "Permission set (the roles API resource) defines a named group of permissions that controls what a person can do in the organization. Roles are assigned to users to grant or restrict access to features such as project management, invoicing, time tracking, and administration. Each role targets a specific user type (employee, contractor, or client). Resolved permissions show the final effective permissions after inheritance is applied. Permission sets are access control, not job classification — what a person does is described by their job role (the organization-defined job_roles resource) or their free-text title.",
       "routingSummary": "permission sets controlling what a person can do in the organization, distinct from organization-defined job roles",
       "fields": {
         "id": {
@@ -12229,7 +12350,7 @@
       "aliases": [
         "permission set"
       ],
-      "queryHints": "An unqualified request about \"roles\" or \"user roles\" is ambiguous: it may mean these permission sets or the organization-defined job roles (job_roles resource, where enabled). An answer that presents permission sets for such a request should also surface the other meaning — noting that job roles exist as a separate concept, or asking which one is meant."
+      "queryHints": "An unqualified request about \"roles\" or \"user roles\" is ambiguous: it may mean these permission sets or the organization-defined job roles (job_roles resource). An answer that presents permission sets for such a request should also surface the other meaning — noting that job roles exist as a separate concept, or asking which one is meant."
     },
     "salaries": {
       "type": "salaries",
@@ -12767,8 +12888,36 @@
           "typeCategory": "primitive",
           "format": "percentage",
           "param": "discount",
-          "description": "Discount percentage (0–100)",
+          "description": "Discount percentage (0–100). Reads as the effective percentage even when a fixed-amount discount is in effect; writing that derived value back converts the discount to a percentage",
           "attribute": "discount"
+        },
+        "discountAmount": {
+          "key": "discountAmount",
+          "type": "number",
+          "typeCategory": "primitive",
+          "format": "money",
+          "param": "discount_amount",
+          "description": "Discount money value in effect — the fixed amount in amount mode, otherwise computed from the percentage. A positive write selects amount mode and resets discount to 0 (fixed-price services only, at most the line total); 0 clears it. Cannot combine with a positive discount",
+          "attribute": "discount_amount",
+          "enabledWhen": {
+            "flags": [
+              "serviceDiscountFixedAmount"
+            ]
+          }
+        },
+        "discountType": {
+          "key": "discountType",
+          "type": "discount_type",
+          "typeCategory": "enum",
+          "param": "discount_type",
+          "readonly": true,
+          "description": "Discount mode in effect",
+          "attribute": "discount_type",
+          "enabledWhen": {
+            "flags": [
+              "serviceDiscountFixedAmount"
+            ]
+          }
         },
         "markup": {
           "key": "markup",
@@ -13734,8 +13883,37 @@
           "format": "percentage",
           "param": "discount",
           "filter": "discount",
-          "description": "Discount percentage (0–100) applied to the service price",
+          "description": "Discount percentage (0–100). Reads as the effective percentage even when a fixed-amount discount is in effect; writing that derived value back converts the discount to a percentage",
           "attribute": "discount"
+        },
+        "discountAmount": {
+          "key": "discountAmount",
+          "type": "number",
+          "typeCategory": "primitive",
+          "format": "money",
+          "param": "discount_amount",
+          "filter": "discount_amount",
+          "description": "Discount money value in effect — the fixed amount in amount mode, otherwise computed from the percentage. A positive write selects amount mode and resets discount to 0 (fixed-price services only, at most the line total); 0 clears it. Cannot combine with a positive discount",
+          "attribute": "discount_amount",
+          "enabledWhen": {
+            "flags": [
+              "serviceDiscountFixedAmount"
+            ]
+          }
+        },
+        "discountType": {
+          "key": "discountType",
+          "type": "discount_type",
+          "typeCategory": "enum",
+          "param": "discount_type",
+          "readonly": true,
+          "description": "Discount mode in effect",
+          "attribute": "discount_type",
+          "enabledWhen": {
+            "flags": [
+              "serviceDiscountFixedAmount"
+            ]
+          }
         },
         "budgetTotal": {
           "key": "budgetTotal",
@@ -14349,7 +14527,7 @@
           "typeCategory": "enum",
           "param": "data_type",
           "required": true,
-          "description": "Person is not a valid form-field type (unlike custom fields on tasks/deals, which do accept person)",
+          "description": "Person and progress are not accepted as form field types",
           "attribute": "data_type_id"
         },
         "required": {
@@ -17316,6 +17494,11 @@
         }
       }
     },
+    "agent_reasoning_effort": {
+      "type": "agent_reasoning_effort",
+      "description": "How much reasoning effort an AI agent uses performing a task",
+      "values": {}
+    },
     "agent_status": {
       "type": "agent_status",
       "description": "Status of an agent",
@@ -17787,6 +17970,10 @@
         "7": {
           "label": "File attachment",
           "description": "value is attachment ID or array of attachment IDs"
+        },
+        "8": {
+          "label": "Progress",
+          "description": "numeric value between the configured minimum and maximum"
         }
       }
     },
@@ -17827,6 +18014,18 @@
         "manual": {
           "label": "Manual",
           "description": "set via deal_value field (cents)"
+        }
+      }
+    },
+    "discount_type": {
+      "type": "discount_type",
+      "description": "Whether the discount in effect is a percentage or a fixed money amount — derived from the stored discount values, not directly settable",
+      "values": {
+        "percentage": {
+          "label": "Percentage"
+        },
+        "amount": {
+          "label": "Fixed amount"
         }
       }
     },
