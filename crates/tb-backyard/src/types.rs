@@ -65,10 +65,8 @@ fn string_or_u64<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Option<
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Trace {
     pub id: i64,
-    pub langfuse_id: String,
-    #[serde(default)]
-    pub name: Option<String>,
-    pub timestamp: String,
+    pub trace_id: String,
+    pub start_time: String,
     #[serde(default)]
     pub user_id: Option<String>,
     #[serde(default)]
@@ -79,18 +77,22 @@ pub struct Trace {
     pub tags: Option<Vec<String>>,
     #[serde(default)]
     pub environment: Option<String>,
+    /// Where the run came from — `ai_assistant`, `automation`, `ai-api`, `slack`. Populated on
+    /// every v4 trace, but held as a plain string: the set is closed today, not by contract.
+    #[serde(default)]
+    pub trace_origin: Option<String>,
     #[serde(default, deserialize_with = "string_or_f64")]
-    pub cost_usd: Option<f64>,
-    #[serde(default, deserialize_with = "string_or_f64")]
-    pub latency_ms: Option<f64>,
+    pub total_cost: Option<f64>,
+    /// Wire field is `latency`, in SECONDS since the v4 cutover. The suffix keeps the unit
+    /// visible — read it through `latency_ms()` anywhere a millisecond is wanted.
+    #[serde(rename = "latency", default, deserialize_with = "string_or_f64")]
+    pub latency_s: Option<f64>,
     #[serde(default)]
     pub user_query: Option<String>,
     #[serde(default)]
     pub agent_response: Option<String>,
     #[serde(default)]
     pub triage_status: Option<String>,
-    #[serde(default)]
-    pub display_name: Option<String>,
     #[serde(default)]
     pub user_satisfied: Option<bool>,
     #[serde(default)]
@@ -151,18 +153,21 @@ pub struct Score {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Observation {
     pub id: i64,
-    pub langfuse_id: String,
-    pub trace_langfuse_id: String,
+    pub observation_id: String,
+    pub trace_id: String,
     #[serde(default)]
-    pub observation_type: Option<String>,
+    pub langfuse_type: Option<String>,
+    #[serde(default)]
+    pub raw_item_type: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
     pub start_time: Option<String>,
     #[serde(default)]
     pub end_time: Option<String>,
-    #[serde(default, deserialize_with = "string_or_f64")]
-    pub latency_ms: Option<f64>,
+    /// Wire field is `latency`, in SECONDS since the v4 cutover — see `Trace::latency_s`.
+    #[serde(rename = "latency", default, deserialize_with = "string_or_f64")]
+    pub latency_s: Option<f64>,
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
@@ -172,9 +177,45 @@ pub struct Observation {
     #[serde(default, deserialize_with = "string_or_u64")]
     pub output_tokens: Option<u64>,
     #[serde(default, deserialize_with = "string_or_u64")]
-    pub total_tokens: Option<u64>,
+    pub cached_input_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "string_or_u64")]
+    pub reasoning_output_tokens: Option<u64>,
     #[serde(default, deserialize_with = "string_or_f64")]
-    pub cost_usd: Option<f64>,
+    pub input_cost: Option<f64>,
+    #[serde(default, deserialize_with = "string_or_f64")]
+    pub output_cost: Option<f64>,
+    #[serde(default, deserialize_with = "string_or_f64")]
+    pub total_cost: Option<f64>,
+}
+
+impl Trace {
+    /// Latency in milliseconds. The wire carries seconds; every millisecond-facing call site
+    /// goes through here so the conversion lives in one place.
+    pub fn latency_ms(&self) -> Option<f64> {
+        self.latency_s.map(|s| s * 1000.0)
+    }
+
+    /// What the list view shows where trace-level `name` used to be. v4 dropped `name`, and
+    /// `trace_origin` is the only always-populated field saying what kind of run this was.
+    /// Tags cannot serve: only 58% of root traces carry any tag, and none names the run kind.
+    pub fn run_kind(&self) -> Option<&str> {
+        self.trace_origin.as_deref().filter(|s| !s.is_empty())
+    }
+}
+
+impl Observation {
+    /// Latency in milliseconds — see `Trace::latency_ms`.
+    pub fn latency_ms(&self) -> Option<f64> {
+        self.latency_s.map(|s| s * 1000.0)
+    }
+
+    /// v4 dropped `total_tokens`; it is the sum of the halves when either is present.
+    pub fn total_tokens(&self) -> Option<u64> {
+        match (self.input_tokens, self.output_tokens) {
+            (None, None) => None,
+            (a, b) => Some(a.unwrap_or(0) + b.unwrap_or(0)),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1105,16 +1146,94 @@ mod tests {
     fn deserialize_trace_reads_organization_id() {
         // Guards the cross-repo field-name contract with backyard's traces serializer.
         let with_org: Trace = serde_json::from_value(json!({
-            "id": 1, "langfuse_id": "lf-1", "timestamp": "2026-07-14T00:00:00Z",
+            "id": 1, "trace_id": "lf-1", "start_time": "2026-07-14T00:00:00Z",
             "organization_id": "109"
         }))
         .unwrap();
         assert_eq!(with_org.organization_id.as_deref(), Some("109"));
 
         let without: Trace = serde_json::from_value(json!({
-            "id": 2, "langfuse_id": "lf-2", "timestamp": "2026-07-14T00:00:00Z"
+            "id": 2, "trace_id": "lf-2", "start_time": "2026-07-14T00:00:00Z"
         }))
         .unwrap();
         assert_eq!(without.organization_id, None);
+    }
+
+    fn v4_trace() -> serde_json::Value {
+        json!({
+            "id": 1,
+            "trace_id": "abc123",
+            "start_time": "2026-08-30T10:00:00Z",
+            "trace_origin": "ai_assistant",
+            "tags": ["resource:deal", "skill:planning"],
+            "latency": 2.5,
+            "total_cost": 0.0042
+        })
+    }
+
+    #[test]
+    fn trace_reads_v4_field_names() {
+        let t: Trace = serde_json::from_value(v4_trace()).unwrap();
+        assert_eq!(t.trace_id, "abc123");
+        assert_eq!(t.start_time, "2026-08-30T10:00:00Z");
+        assert_eq!(t.total_cost, Some(0.0042));
+    }
+
+    #[test]
+    fn trace_latency_converts_seconds_to_milliseconds() {
+        let t: Trace = serde_json::from_value(v4_trace()).unwrap();
+        assert_eq!(t.latency_s, Some(2.5));
+        // the wire carries seconds — a plain rename would have printed 2.5ms, not 2500ms
+        assert_eq!(t.latency_ms(), Some(2500.0));
+    }
+
+    #[test]
+    fn trace_run_kind_comes_from_origin_not_tags() {
+        let t: Trace = serde_json::from_value(v4_trace()).unwrap();
+        assert_eq!(t.run_kind(), Some("ai_assistant"));
+
+        let mut p = v4_trace();
+        p["trace_origin"] = serde_json::Value::Null;
+        let t: Trace = serde_json::from_value(p).unwrap();
+        assert_eq!(
+            t.run_kind(),
+            None,
+            "tags carry resource/skill, never the run kind"
+        );
+    }
+
+    #[test]
+    fn trace_accepts_an_unknown_origin() {
+        // four values is what production carries today, not a contract — don't break on a fifth
+        let mut p = v4_trace();
+        p["trace_origin"] = json!("some_future_origin");
+        let t: Trace = serde_json::from_value(p).unwrap();
+        assert_eq!(t.run_kind(), Some("some_future_origin"));
+    }
+
+    #[test]
+    fn observation_reads_v4_names_and_sums_tokens() {
+        let o: Observation = serde_json::from_value(json!({
+            "id": 7, "observation_id": "obs-1", "trace_id": "abc123",
+            "langfuse_type": "GENERATION", "raw_item_type": "message",
+            "latency": 0.75, "input_tokens": 400, "output_tokens": 120, "total_cost": 0.002
+        }))
+        .unwrap();
+        assert_eq!(o.observation_id, "obs-1");
+        assert_eq!(o.trace_id, "abc123");
+        assert_eq!(o.langfuse_type.as_deref(), Some("GENERATION"));
+        assert_eq!(o.latency_ms(), Some(750.0));
+        // v4 dropped total_tokens — it is summed from the halves
+        assert_eq!(o.total_tokens(), Some(520));
+    }
+
+    #[test]
+    fn observation_total_tokens_is_none_when_both_halves_missing() {
+        let o: Observation = serde_json::from_value(json!({
+            "id": 8, "observation_id": "obs-2", "trace_id": "abc123"
+        }))
+        .unwrap();
+        assert_eq!(o.total_tokens(), None);
+        assert_eq!(o.latency_ms(), None);
     }
 }

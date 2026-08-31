@@ -1019,14 +1019,10 @@ async fn run() -> tb_backyard::error::Result<()> {
 
             println!("{}\n", "Traces".bold());
             for t in &resp.data {
-                let name = t
-                    .display_name
-                    .as_deref()
-                    .or(t.name.as_deref())
-                    .unwrap_or("(unnamed)");
-                let cost = t.cost_usd.map(output::fmt_cost).unwrap_or_default();
+                let name = t.run_kind().unwrap_or("(unknown)");
+                let cost = t.total_cost.map(output::fmt_cost).unwrap_or_default();
                 let latency = t
-                    .latency_ms
+                    .latency_ms()
                     .map(|l| format!("{:.0}ms", l))
                     .unwrap_or_default();
                 let triage_str = match t.triage_status.as_deref() {
@@ -1039,11 +1035,11 @@ async fn run() -> tb_backyard::error::Result<()> {
                     .as_deref()
                     .map(|o| format!("  org:{}", o).dimmed().to_string())
                     .unwrap_or_default();
-                let time = output::relative_time(&t.timestamp);
+                let time = output::relative_time(&t.start_time);
 
                 println!(
                     "  {} {}  {}  {}  {}{}{}",
-                    t.langfuse_id.dimmed(),
+                    t.trace_id.dimmed(),
                     output::truncate(name, 40).bold(),
                     cost,
                     latency,
@@ -1115,16 +1111,16 @@ async fn run() -> tb_backyard::error::Result<()> {
                 let obs: Vec<Observation> = client.get(&obs_path, CacheTtl::Short).await?;
                 println!("\n{} ({})\n", "Observations".bold(), obs.len());
                 for o in &obs {
-                    let kind = o.observation_type.as_deref().unwrap_or("?");
+                    let kind = o.langfuse_type.as_deref().unwrap_or("?");
                     let name = o.name.as_deref().unwrap_or("(unnamed)");
                     let model = o.model.as_deref().unwrap_or("");
                     let tokens = o
-                        .total_tokens
+                        .total_tokens()
                         .map(|t| format!("{} tok", t))
                         .unwrap_or_default();
-                    let cost = o.cost_usd.map(output::fmt_cost).unwrap_or_default();
+                    let cost = o.total_cost.map(output::fmt_cost).unwrap_or_default();
                     let latency = o
-                        .latency_ms
+                        .latency_ms()
                         .map(|l| format!("{:.0}ms", l))
                         .unwrap_or_default();
                     println!(
@@ -1231,20 +1227,16 @@ async fn run() -> tb_backyard::error::Result<()> {
 
             println!("{} ({})\n", "Session".bold(), id);
             for t in &traces {
-                let name = t
-                    .display_name
-                    .as_deref()
-                    .or(t.name.as_deref())
-                    .unwrap_or("(unnamed)");
-                let cost = t.cost_usd.map(output::fmt_cost).unwrap_or_default();
+                let name = t.run_kind().unwrap_or("(unknown)");
+                let cost = t.total_cost.map(output::fmt_cost).unwrap_or_default();
                 let latency = t
-                    .latency_ms
+                    .latency_ms()
                     .map(|l| format!("{:.0}ms", l))
                     .unwrap_or_default();
 
                 println!(
                     "  {} {}  {}  {}",
-                    t.langfuse_id.dimmed(),
+                    t.trace_id.dimmed(),
                     name.bold(),
                     cost,
                     latency
@@ -1292,16 +1284,16 @@ async fn run() -> tb_backyard::error::Result<()> {
 
             println!("{} ({})\n", "Observations".bold(), obs.len());
             for o in &obs {
-                let kind = o.observation_type.as_deref().unwrap_or("?");
+                let kind = o.langfuse_type.as_deref().unwrap_or("?");
                 let name = o.name.as_deref().unwrap_or("(unnamed)");
                 let model = o.model.as_deref().unwrap_or("");
                 let tokens = o
-                    .total_tokens
+                    .total_tokens()
                     .map(|t| format!("{} tok", t))
                     .unwrap_or_default();
-                let cost = o.cost_usd.map(output::fmt_cost).unwrap_or_default();
+                let cost = o.total_cost.map(output::fmt_cost).unwrap_or_default();
                 let latency = o
-                    .latency_ms
+                    .latency_ms()
                     .map(|l| format!("{:.0}ms", l))
                     .unwrap_or_default();
 
@@ -2640,7 +2632,7 @@ async fn run() -> tb_backyard::error::Result<()> {
 
                     if ids_only {
                         for r in &resp.data {
-                            println!("{}", r.trace.langfuse_id);
+                            println!("{}", r.trace.trace_id);
                         }
                         return Ok(());
                     }
@@ -2660,12 +2652,7 @@ async fn run() -> tb_backyard::error::Result<()> {
                         resp.data.len()
                     );
                     for r in &resp.data {
-                        let name = r
-                            .trace
-                            .display_name
-                            .as_deref()
-                            .or(r.trace.name.as_deref())
-                            .unwrap_or("(unnamed)");
+                        let name = r.trace.run_kind().unwrap_or("(unknown)");
                         let match_type = r.match_type.as_deref().unwrap_or("");
                         let match_type_colored = match match_type {
                             "name" => match_type.green().to_string(),
@@ -2674,11 +2661,11 @@ async fn run() -> tb_backyard::error::Result<()> {
                             "user_query" | "agent_response" => match_type.yellow().to_string(),
                             _ => match_type.to_string(),
                         };
-                        let time = output::relative_time(&r.trace.timestamp);
+                        let time = output::relative_time(&r.trace.start_time);
 
                         println!(
                             "  {} {} [{}]  {}",
-                            r.trace.langfuse_id.dimmed(),
+                            r.trace.trace_id.dimmed(),
                             name.bold(),
                             match_type_colored,
                             time.dimmed()
@@ -2710,7 +2697,7 @@ async fn run() -> tb_backyard::error::Result<()> {
 
                     if ids_only {
                         for t in &resp.data {
-                            println!("{}", t.langfuse_id);
+                            println!("{}", t.trace_id);
                         }
                         return Ok(());
                     }
@@ -2731,15 +2718,11 @@ async fn run() -> tb_backyard::error::Result<()> {
                         "(name filter fallback)".dimmed()
                     );
                     for t in &resp.data {
-                        let name = t
-                            .display_name
-                            .as_deref()
-                            .or(t.name.as_deref())
-                            .unwrap_or("(unnamed)");
-                        let time = output::relative_time(&t.timestamp);
+                        let name = t.run_kind().unwrap_or("(unknown)");
+                        let time = output::relative_time(&t.start_time);
                         println!(
                             "  {} {}  {}",
-                            t.langfuse_id.dimmed(),
+                            t.trace_id.dimmed(),
                             name.bold(),
                             time.dimmed()
                         );
@@ -3595,20 +3578,16 @@ async fn run() -> tb_backyard::error::Result<()> {
 
             println!("{}\n", "Flag Traces".bold());
             for t in &resp.data {
-                let name = t
-                    .display_name
-                    .as_deref()
-                    .or(t.name.as_deref())
-                    .unwrap_or("(unnamed)");
-                let cost = t.cost_usd.map(output::fmt_cost).unwrap_or_default();
+                let name = t.run_kind().unwrap_or("(unknown)");
+                let cost = t.total_cost.map(output::fmt_cost).unwrap_or_default();
                 let latency = t
-                    .latency_ms
+                    .latency_ms()
                     .map(|ms| format!("{:.0}ms", ms))
                     .unwrap_or_default();
-                let age = output::relative_time(&t.timestamp);
+                let age = output::relative_time(&t.start_time);
                 println!(
                     "  {} {} {} {}  {}",
-                    t.langfuse_id.dimmed(),
+                    t.trace_id.dimmed(),
                     name.cyan(),
                     cost,
                     latency,
