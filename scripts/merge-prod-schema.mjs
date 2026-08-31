@@ -24,6 +24,10 @@ const CARRIED_KEYS = ['customActions', 'searchFilterParam', 'searchQuickResultTy
 // type name and still supports the carried key.
 //   slack_channel -> slack_channels (2026-08): type name aligned with the endpoint; the new
 //   definition still exposes a `query` filter, so searchFilterParam stays valid.
+//
+// A rename moves the carried keys, nothing else: the old type name stops resolving in `describe`
+// and `query`, because resolve_resource() only matches a type name or an entry in `aliases`, and
+// the generator does not alias renamed-away names. Note the lost spelling in the PR description.
 const RENAMES = { slack_channel: 'slack_channels' };
 
 function parseArgs(argv) {
