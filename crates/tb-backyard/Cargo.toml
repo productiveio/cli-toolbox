@@ -1,6 +1,6 @@
 [package]
 name = "tb-backyard"
-version = "0.1.5"
+version = "0.1.7"
 edition = "2024"
 description = "Productive Backyard CLI — AI insights, evals, and document shares"
 authors.workspace = true
