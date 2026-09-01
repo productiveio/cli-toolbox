@@ -31,10 +31,35 @@ fn api_error(status: u16, body: String) -> TbBackyardError {
     let message = match status {
         401 => "Invalid token. Run `tb-backyard config show` to check.".into(),
         404 => "Not found.".into(),
+        429 => "Rate limited by Backyard and retries exhausted. Try again shortly.".into(),
         s if s >= 500 => format!("Backyard error ({}): {}", s, body),
         _ => body,
     };
     TbBackyardError::Api { status, message }
+}
+
+/// How many times we re-issue a request after a 429 before giving up.
+const MAX_RETRY_ATTEMPTS: u32 = 3;
+/// Fallback wait when a 429 carries no (or an unparseable) Retry-After.
+const DEFAULT_RETRY_SECS: u64 = 5;
+/// Ceiling on a single honored Retry-After so a hostile/huge value can't hang
+/// the CLI indefinitely.
+const MAX_RETRY_SECS: u64 = 60;
+
+/// Seconds to wait from a `Retry-After` header value. Backyard (and the
+/// Langfuse proxy behind it) send delay-seconds; parse that, fall back to a
+/// default when absent/unparseable, and clamp to a sane ceiling.
+fn retry_after_secs(raw: Option<&str>) -> u64 {
+    raw.and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_RETRY_SECS)
+        .min(MAX_RETRY_SECS)
+}
+
+fn retry_after_delay(headers: &reqwest::header::HeaderMap) -> std::time::Duration {
+    let raw = headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok());
+    std::time::Duration::from_secs(retry_after_secs(raw))
 }
 
 impl BackyardClient {
@@ -64,12 +89,33 @@ impl BackyardClient {
         F: FnOnce(RequestBuilder) -> RequestBuilder,
     {
         let url = format!("{}{}", base, path);
-        let request = self
-            .client
-            .request(method, &url)
-            .header("X-Auth-Token", &self.token)
-            .header("Accept", "application/json");
-        let resp = configure(request).send().await?;
+        let request = configure(
+            self.client
+                .request(method, &url)
+                .header("X-Auth-Token", &self.token)
+                .header("Accept", "application/json"),
+        );
+
+        // Honor 429 + Retry-After: a real rate limit (from the Langfuse proxy's
+        // relayed 429, or Backyard's own Rack::Attack throttle) is transient, so
+        // wait it out rather than failing the user's command (INV-1). We always
+        // send a clone and keep `request` as the template so the request can be
+        // re-issued; our bodies (JSON / empty) are all cloneable.
+        let mut attempt = 0u32;
+        let resp = loop {
+            let attempt_req = request
+                .try_clone()
+                .ok_or_else(|| TbBackyardError::Other("request body is not retryable".into()))?;
+            let resp = attempt_req.send().await?;
+
+            if resp.status().as_u16() == 429 && attempt < MAX_RETRY_ATTEMPTS {
+                let delay = retry_after_delay(resp.headers());
+                attempt += 1;
+                tokio::time::sleep(delay).await;
+                continue;
+            }
+            break resp;
+        };
 
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
@@ -329,5 +375,32 @@ impl BackyardClient {
     /// successful alias write.
     pub fn backyard_url(&self) -> &str {
         &self.backyard_url
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DEFAULT_RETRY_SECS, MAX_RETRY_SECS, retry_after_secs};
+
+    #[test]
+    fn parses_a_numeric_retry_after() {
+        assert_eq!(retry_after_secs(Some("9")), 9);
+        assert_eq!(retry_after_secs(Some("  12  ")), 12);
+    }
+
+    #[test]
+    fn falls_back_to_default_when_absent_or_unparseable() {
+        assert_eq!(retry_after_secs(None), DEFAULT_RETRY_SECS);
+        assert_eq!(retry_after_secs(Some("")), DEFAULT_RETRY_SECS);
+        // HTTP-date form (not delay-seconds) is not parsed — use the default.
+        assert_eq!(
+            retry_after_secs(Some("Wed, 21 Oct 2015 07:28:00 GMT")),
+            DEFAULT_RETRY_SECS
+        );
+    }
+
+    #[test]
+    fn clamps_a_hostile_retry_after_to_the_ceiling() {
+        assert_eq!(retry_after_secs(Some("100000")), MAX_RETRY_SECS);
     }
 }
