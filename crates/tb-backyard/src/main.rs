@@ -47,27 +47,103 @@ struct Cli {
     version: bool,
 }
 
+/// Sort columns backyard honours on `/traces`; it silently falls back to
+/// `start_time` for anything outside its own allowlist.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum TraceSortBy {
+    StartTime,
+    UserId,
+    TotalCost,
+    Latency,
+    Environment,
+}
+
+impl TraceSortBy {
+    fn as_param(self) -> &'static str {
+        match self {
+            TraceSortBy::StartTime => "start_time",
+            TraceSortBy::UserId => "user_id",
+            TraceSortBy::TotalCost => "total_cost",
+            TraceSortBy::Latency => "latency",
+            TraceSortBy::Environment => "environment",
+        }
+    }
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum SortDir {
+    Asc,
+    Desc,
+}
+
+impl SortDir {
+    fn as_param(self) -> &'static str {
+        match self {
+            SortDir::Asc => "asc",
+            SortDir::Desc => "desc",
+        }
+    }
+}
+
+/// Triage states backyard stores on a trace. `confirmed` and the other queue-item
+/// statuses are a different vocabulary and it ignores them.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum TriageStatus {
+    Flagged,
+    Dismissed,
+    Untouched,
+}
+
+impl TriageStatus {
+    fn as_param(self) -> &'static str {
+        match self {
+            TriageStatus::Flagged => "flagged",
+            TriageStatus::Dismissed => "dismissed",
+            TriageStatus::Untouched => "untouched",
+        }
+    }
+}
+
+/// Backyard scores satisfaction thumbs-down or not at all, so there is no
+/// thumbs-up filter to offer.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Satisfaction {
+    /// Traces carrying a thumbs-down "User satisfied" score
+    Unsatisfied,
+    /// Traces carrying any "User satisfied" score
+    Any,
+}
+
+impl Satisfaction {
+    fn as_param(self) -> &'static str {
+        match self {
+            Satisfaction::Unsatisfied => "down",
+            Satisfaction::Any => "any",
+        }
+    }
+}
+
 #[derive(clap::Subcommand)]
 enum Commands {
     /// List traces
     #[command(
-        after_help = "Examples:\n  tb-backyard traces --from 1d\n  tb-backyard traces --triage flagged --limit 50\n  tb-backyard traces --name my-agent --env production\n  tb-backyard traces --tags resource:deal,tool:plan --from 7d\n  tb-backyard traces --stats --from 7d"
+        after_help = "Examples:\n  tb-backyard traces --from 1d\n  tb-backyard traces --triage flagged --limit 50\n  tb-backyard traces --satisfaction unsatisfied --env production\n  tb-backyard traces --sort-by total-cost --sort-dir desc --from 7d\n  tb-backyard traces --tags resource:deal,tool:plan --from 7d\n  tb-backyard traces --stats --from 7d"
     )]
     Traces {
-        #[arg(long)]
-        name: Option<String>,
         #[arg(long)]
         user: Option<String>,
         #[arg(long)]
         session: Option<String>,
         #[arg(long)]
         env: Option<String>,
-        #[arg(long)]
-        triage: Option<String>,
-        #[arg(long)]
-        satisfaction: Option<String>,
-        #[arg(long)]
-        sort: Option<String>,
+        #[arg(long, value_enum)]
+        triage: Option<TriageStatus>,
+        #[arg(long, value_enum)]
+        satisfaction: Option<Satisfaction>,
+        #[arg(long, value_enum)]
+        sort_by: Option<TraceSortBy>,
+        #[arg(long, value_enum)]
+        sort_dir: Option<SortDir>,
         /// Comma-separated Langfuse tags to filter by (e.g. resource:deal,tool:plan)
         #[arg(long)]
         tags: Option<String>,
@@ -948,25 +1024,21 @@ async fn run() -> tb_backyard::error::Result<()> {
 
     match command {
         Commands::Traces {
-            name,
             user,
             session,
             env,
             triage,
             satisfaction,
-            sort,
+            sort_by,
+            sort_dir,
             tags,
             stats,
             time,
             pagination,
         } => {
             if stats {
-                let mut params: Vec<(&str, Option<String>)> = vec![
-                    ("project_id", pid),
-                    ("name", name),
-                    ("environment", env),
-                    ("tags", tags),
-                ];
+                let mut params: Vec<(&str, Option<String>)> =
+                    vec![("project_id", pid), ("environment", env), ("tags", tags)];
                 time.push_date_params_inclusive_or_exit(&mut params);
                 let path = BackyardClient::build_path("/traces/stats", &params);
                 let s: TraceStats = client.get(&path, CacheTtl::Short).await?;
@@ -987,13 +1059,16 @@ async fn run() -> tb_backyard::error::Result<()> {
 
             let mut params: Vec<(&str, Option<String>)> = vec![
                 ("project_id", pid),
-                ("name", name),
                 ("user_id", user),
                 ("session_id", session),
                 ("environment", env),
-                ("triage_status", triage),
-                ("satisfaction", satisfaction),
-                ("sort", sort),
+                ("triage_status", triage.map(|t| t.as_param().to_string())),
+                (
+                    "satisfaction",
+                    satisfaction.map(|s| s.as_param().to_string()),
+                ),
+                ("sort_by", sort_by.map(|s| s.as_param().to_string())),
+                ("sort_dir", sort_dir.map(|d| d.as_param().to_string())),
                 ("tags", tags),
             ];
             time.push_date_params_inclusive_or_exit(&mut params);
@@ -1019,14 +1094,10 @@ async fn run() -> tb_backyard::error::Result<()> {
 
             println!("{}\n", "Traces".bold());
             for t in &resp.data {
-                let name = t
-                    .display_name
-                    .as_deref()
-                    .or(t.name.as_deref())
-                    .unwrap_or("(unnamed)");
-                let cost = t.cost_usd.map(output::fmt_cost).unwrap_or_default();
+                let name = t.run_kind().unwrap_or("(unknown)");
+                let cost = t.total_cost.map(output::fmt_cost).unwrap_or_default();
                 let latency = t
-                    .latency_ms
+                    .latency_ms()
                     .map(|l| format!("{:.0}ms", l))
                     .unwrap_or_default();
                 let triage_str = match t.triage_status.as_deref() {
@@ -1039,11 +1110,11 @@ async fn run() -> tb_backyard::error::Result<()> {
                     .as_deref()
                     .map(|o| format!("  org:{}", o).dimmed().to_string())
                     .unwrap_or_default();
-                let time = output::relative_time(&t.timestamp);
+                let time = output::relative_time(&t.start_time);
 
                 println!(
                     "  {} {}  {}  {}  {}{}{}",
-                    t.langfuse_id.dimmed(),
+                    t.trace_id.dimmed(),
                     output::truncate(name, 40).bold(),
                     cost,
                     latency,
@@ -1115,16 +1186,16 @@ async fn run() -> tb_backyard::error::Result<()> {
                 let obs: Vec<Observation> = client.get(&obs_path, CacheTtl::Short).await?;
                 println!("\n{} ({})\n", "Observations".bold(), obs.len());
                 for o in &obs {
-                    let kind = o.observation_type.as_deref().unwrap_or("?");
+                    let kind = o.langfuse_type.as_deref().unwrap_or("?");
                     let name = o.name.as_deref().unwrap_or("(unnamed)");
                     let model = o.model.as_deref().unwrap_or("");
                     let tokens = o
-                        .total_tokens
+                        .total_tokens()
                         .map(|t| format!("{} tok", t))
                         .unwrap_or_default();
-                    let cost = o.cost_usd.map(output::fmt_cost).unwrap_or_default();
+                    let cost = o.total_cost.map(output::fmt_cost).unwrap_or_default();
                     let latency = o
-                        .latency_ms
+                        .latency_ms()
                         .map(|l| format!("{:.0}ms", l))
                         .unwrap_or_default();
                     println!(
@@ -1231,20 +1302,16 @@ async fn run() -> tb_backyard::error::Result<()> {
 
             println!("{} ({})\n", "Session".bold(), id);
             for t in &traces {
-                let name = t
-                    .display_name
-                    .as_deref()
-                    .or(t.name.as_deref())
-                    .unwrap_or("(unnamed)");
-                let cost = t.cost_usd.map(output::fmt_cost).unwrap_or_default();
+                let name = t.run_kind().unwrap_or("(unknown)");
+                let cost = t.total_cost.map(output::fmt_cost).unwrap_or_default();
                 let latency = t
-                    .latency_ms
+                    .latency_ms()
                     .map(|l| format!("{:.0}ms", l))
                     .unwrap_or_default();
 
                 println!(
                     "  {} {}  {}  {}",
-                    t.langfuse_id.dimmed(),
+                    t.trace_id.dimmed(),
                     name.bold(),
                     cost,
                     latency
@@ -1292,16 +1359,16 @@ async fn run() -> tb_backyard::error::Result<()> {
 
             println!("{} ({})\n", "Observations".bold(), obs.len());
             for o in &obs {
-                let kind = o.observation_type.as_deref().unwrap_or("?");
+                let kind = o.langfuse_type.as_deref().unwrap_or("?");
                 let name = o.name.as_deref().unwrap_or("(unnamed)");
                 let model = o.model.as_deref().unwrap_or("");
                 let tokens = o
-                    .total_tokens
+                    .total_tokens()
                     .map(|t| format!("{} tok", t))
                     .unwrap_or_default();
-                let cost = o.cost_usd.map(output::fmt_cost).unwrap_or_default();
+                let cost = o.total_cost.map(output::fmt_cost).unwrap_or_default();
                 let latency = o
-                    .latency_ms
+                    .latency_ms()
                     .map(|l| format!("{:.0}ms", l))
                     .unwrap_or_default();
 
@@ -2627,131 +2694,63 @@ async fn run() -> tb_backyard::error::Result<()> {
             pagination.push_params(&mut params);
             let path = BackyardClient::build_path("/search", &params);
 
-            let result = client.get_raw(&path, CacheTtl::Short).await;
-            match result {
-                Ok(body) => {
-                    // Search endpoint exists
-                    let resp: PaginatedResponse<SearchResult> = serde_json::from_str(&body)?;
+            let body = client.get_raw(&path, CacheTtl::Short).await?;
+            let resp: PaginatedResponse<SearchResult> = serde_json::from_str(&body)?;
 
-                    if cli.json {
-                        println!("{}", output::render_json(&resp.data));
-                        return Ok(());
-                    }
+            if cli.json {
+                println!("{}", output::render_json(&resp.data));
+                return Ok(());
+            }
 
-                    if ids_only {
-                        for r in &resp.data {
-                            println!("{}", r.trace.langfuse_id);
-                        }
-                        return Ok(());
-                    }
-
-                    if resp.data.is_empty() {
-                        println!(
-                            "{}",
-                            output::empty_hint("search results", "Try a different query.")
-                        );
-                        return Ok(());
-                    }
-
-                    println!(
-                        "{} for \"{}\" ({})\n",
-                        "Search".bold(),
-                        query,
-                        resp.data.len()
-                    );
-                    for r in &resp.data {
-                        let name = r
-                            .trace
-                            .display_name
-                            .as_deref()
-                            .or(r.trace.name.as_deref())
-                            .unwrap_or("(unnamed)");
-                        let match_type = r.match_type.as_deref().unwrap_or("");
-                        let match_type_colored = match match_type {
-                            "name" => match_type.green().to_string(),
-                            "user_id" => match_type.green().to_string(),
-                            "tags" => match_type.cyan().to_string(),
-                            "user_query" | "agent_response" => match_type.yellow().to_string(),
-                            _ => match_type.to_string(),
-                        };
-                        let time = output::relative_time(&r.trace.timestamp);
-
-                        println!(
-                            "  {} {} [{}]  {}",
-                            r.trace.langfuse_id.dimmed(),
-                            name.bold(),
-                            match_type_colored,
-                            time.dimmed()
-                        );
-                        if let Some(ctx) = &r.match_context {
-                            println!("    {}", output::truncate(ctx, 80).dimmed());
-                        }
-                    }
-
-                    if let Some(hint) =
-                        output::pagination_hint(pagination.page, pagination.limit, resp.meta.total)
-                    {
-                        println!("\n  {}", hint.dimmed());
-                    }
+            if ids_only {
+                for r in &resp.data {
+                    println!("{}", r.trace.trace_id);
                 }
-                Err(tb_backyard::error::TbBackyardError::Api { status: 404, .. }) => {
-                    // Search endpoint not deployed — fall back to traces name filter
-                    let mut params: Vec<(&str, Option<String>)> =
-                        vec![("project_id", pid), ("name", Some(query.clone()))];
-                    time.push_date_params_inclusive_or_exit(&mut params);
-                    pagination.push_params(&mut params);
-                    let path = BackyardClient::build_path("/traces", &params);
-                    let resp: PaginatedResponse<Trace> = client.get(&path, CacheTtl::Short).await?;
+                return Ok(());
+            }
 
-                    if cli.json {
-                        println!("{}", output::render_json(&resp.data));
-                        return Ok(());
-                    }
+            if resp.data.is_empty() {
+                println!(
+                    "{}",
+                    output::empty_hint("search results", "Try a different query.")
+                );
+                return Ok(());
+            }
 
-                    if ids_only {
-                        for t in &resp.data {
-                            println!("{}", t.langfuse_id);
-                        }
-                        return Ok(());
-                    }
+            println!(
+                "{} for \"{}\" ({})\n",
+                "Search".bold(),
+                query,
+                resp.data.len()
+            );
+            for r in &resp.data {
+                let name = r.trace.run_kind().unwrap_or("(unknown)");
+                let match_type = r.match_type.as_deref().unwrap_or("");
+                let match_type_colored = match match_type {
+                    "name" => match_type.green().to_string(),
+                    "user_id" => match_type.green().to_string(),
+                    "tags" => match_type.cyan().to_string(),
+                    "user_query" | "agent_response" => match_type.yellow().to_string(),
+                    _ => match_type.to_string(),
+                };
+                let time = output::relative_time(&r.trace.start_time);
 
-                    if resp.data.is_empty() {
-                        println!(
-                            "{}",
-                            output::empty_hint("search results", "Try a different query.")
-                        );
-                        return Ok(());
-                    }
-
-                    println!(
-                        "{} for \"{}\" ({}) {}\n",
-                        "Search".bold(),
-                        query,
-                        resp.data.len(),
-                        "(name filter fallback)".dimmed()
-                    );
-                    for t in &resp.data {
-                        let name = t
-                            .display_name
-                            .as_deref()
-                            .or(t.name.as_deref())
-                            .unwrap_or("(unnamed)");
-                        let time = output::relative_time(&t.timestamp);
-                        println!(
-                            "  {} {}  {}",
-                            t.langfuse_id.dimmed(),
-                            name.bold(),
-                            time.dimmed()
-                        );
-                    }
-
-                    if let Some(hint) =
-                        output::pagination_hint(pagination.page, pagination.limit, resp.meta.total)
-                    {
-                        println!("\n  {}", hint.dimmed());
-                    }
+                println!(
+                    "  {} {} [{}]  {}",
+                    r.trace.trace_id.dimmed(),
+                    name.bold(),
+                    match_type_colored,
+                    time.dimmed()
+                );
+                if let Some(ctx) = &r.match_context {
+                    println!("    {}", output::truncate(ctx, 80).dimmed());
                 }
-                Err(e) => return Err(e),
+            }
+
+            if let Some(hint) =
+                output::pagination_hint(pagination.page, pagination.limit, resp.meta.total)
+            {
+                println!("\n  {}", hint.dimmed());
             }
         }
 
@@ -3557,69 +3556,14 @@ async fn run() -> tb_backyard::error::Result<()> {
             }
         }
 
-        Commands::FlagTraces {
-            flag_name,
-            value,
-            name,
-            env,
-            time,
-            pagination,
-        } => {
-            let mut params: Vec<(&str, Option<String>)> = vec![
-                ("project_id", pid),
-                ("flag_name", Some(flag_name)),
-                ("flag_value", Some(value)),
-                ("name", name),
-                ("environment", env),
-            ];
-            time.push_date_params_inclusive_or_exit(&mut params);
-            pagination.push_params(&mut params);
-            let path = BackyardClient::build_path("/traces", &params);
-            let resp: PaginatedResponse<Trace> = client.get(&path, CacheTtl::Short).await?;
-
-            if cli.json {
-                println!("{}", output::render_json(&resp.data));
-                return Ok(());
-            }
-
-            if resp.data.is_empty() {
-                println!(
-                    "{}",
-                    output::empty_hint(
-                        "flag traces",
-                        "No traces found for this flag/value combination."
-                    )
-                );
-                return Ok(());
-            }
-
-            println!("{}\n", "Flag Traces".bold());
-            for t in &resp.data {
-                let name = t
-                    .display_name
-                    .as_deref()
-                    .or(t.name.as_deref())
-                    .unwrap_or("(unnamed)");
-                let cost = t.cost_usd.map(output::fmt_cost).unwrap_or_default();
-                let latency = t
-                    .latency_ms
-                    .map(|ms| format!("{:.0}ms", ms))
-                    .unwrap_or_default();
-                let age = output::relative_time(&t.timestamp);
-                println!(
-                    "  {} {} {} {}  {}",
-                    t.langfuse_id.dimmed(),
-                    name.cyan(),
-                    cost,
-                    latency,
-                    age.dimmed()
-                );
-            }
-            if let Some(hint) =
-                output::pagination_hint(pagination.page, pagination.limit, resp.meta.total)
-            {
-                println!("\n  {}", hint.dimmed());
-            }
+        Commands::FlagTraces { .. } => {
+            // Backyard dropped ait_lf_trace_flags with the v4 cutover, so /traces
+            // ignores flag_name/flag_value and would answer with every trace.
+            return Err(tb_backyard::error::TbBackyardError::Other(
+                "flag-traces is unavailable: backyard removed the flag cohort surface \
+                 in the v4 cutover, so no flag filter exists to answer this."
+                    .into(),
+            ));
         }
 
         Commands::Share { action } => match action {
@@ -4776,4 +4720,96 @@ async fn handle_config(action: Option<&ConfigAction>) -> tb_backyard::error::Res
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    /// The wire names backyard reads. `sort_by` values are its `SORTABLE_COLUMNS`
+    /// and `satisfaction` its `with_satisfaction` vocabulary; sending anything
+    /// else is silently ignored rather than rejected, so a typo here is invisible.
+    #[test]
+    fn param_values_match_server_vocabulary() {
+        let sorts: Vec<&str> = [
+            TraceSortBy::StartTime,
+            TraceSortBy::UserId,
+            TraceSortBy::TotalCost,
+            TraceSortBy::Latency,
+            TraceSortBy::Environment,
+        ]
+        .iter()
+        .map(|s| s.as_param())
+        .collect();
+        assert_eq!(
+            sorts,
+            [
+                "start_time",
+                "user_id",
+                "total_cost",
+                "latency",
+                "environment"
+            ]
+        );
+
+        assert_eq!(SortDir::Asc.as_param(), "asc");
+        assert_eq!(SortDir::Desc.as_param(), "desc");
+
+        assert_eq!(Satisfaction::Unsatisfied.as_param(), "down");
+        assert_eq!(Satisfaction::Any.as_param(), "any");
+
+        assert_eq!(TriageStatus::Flagged.as_param(), "flagged");
+        assert_eq!(TriageStatus::Dismissed.as_param(), "dismissed");
+        assert_eq!(TriageStatus::Untouched.as_param(), "untouched");
+    }
+
+    #[test]
+    fn traces_accepts_supported_filters() {
+        let cli = Cli::try_parse_from([
+            "tb-backyard",
+            "traces",
+            "--sort-by",
+            "total-cost",
+            "--sort-dir",
+            "asc",
+            "--satisfaction",
+            "unsatisfied",
+            "--triage",
+            "untouched",
+        ])
+        .expect("supported filters should parse");
+
+        match cli.command {
+            Some(Commands::Traces {
+                sort_by,
+                sort_dir,
+                satisfaction,
+                triage,
+                ..
+            }) => {
+                assert_eq!(sort_by.map(|s| s.as_param()), Some("total_cost"));
+                assert_eq!(sort_dir.map(|d| d.as_param()), Some("asc"));
+                assert_eq!(satisfaction.map(|s| s.as_param()), Some("down"));
+                assert_eq!(triage.map(|t| t.as_param()), Some("untouched"));
+            }
+            _ => panic!("expected traces subcommand"),
+        }
+    }
+
+    /// Each of these was accepted before and answered with an unfiltered list.
+    #[test]
+    fn traces_rejects_filters_backyard_cannot_answer() {
+        for args in [
+            ["traces", "--name", "my-agent"],
+            ["traces", "--satisfaction", "satisfied"],
+            ["traces", "--sort-by", "cost"],
+            ["traces", "--sort", "total_cost"],
+            ["traces", "--triage", "confirmed"],
+        ] {
+            let parsed =
+                Cli::try_parse_from(std::iter::once("tb-backyard").chain(args.iter().copied()));
+            assert!(parsed.is_err(), "{args:?} should be rejected");
+        }
+    }
 }
