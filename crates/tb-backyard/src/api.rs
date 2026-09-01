@@ -1,3 +1,4 @@
+use colored::Colorize;
 use reqwest::{Client, Method, RequestBuilder};
 use serde::{Deserialize, Serialize};
 
@@ -53,6 +54,18 @@ fn retry_after_secs(raw: Option<&str>) -> u64 {
     raw.and_then(|s| s.trim().parse::<u64>().ok())
         .unwrap_or(DEFAULT_RETRY_SECS)
         .min(MAX_RETRY_SECS)
+}
+
+/// What the user sees while a 429 is being waited out. Without it a rate-limited
+/// run just looks slow.
+fn retry_notice(attempt: u32, delay_secs: u64) -> String {
+    format!(
+        "{} rate limited (429), waiting {}s before retry {}/{}",
+        "warn:".yellow().bold(),
+        delay_secs,
+        attempt,
+        MAX_RETRY_ATTEMPTS
+    )
 }
 
 fn retry_after_delay(headers: &reqwest::header::HeaderMap) -> std::time::Duration {
@@ -111,6 +124,8 @@ impl BackyardClient {
             if resp.status().as_u16() == 429 && attempt < MAX_RETRY_ATTEMPTS {
                 let delay = retry_after_delay(resp.headers());
                 attempt += 1;
+                // stderr keeps `--json` pipeable.
+                eprintln!("{}", retry_notice(attempt, delay.as_secs()));
                 tokio::time::sleep(delay).await;
                 continue;
             }
@@ -380,7 +395,9 @@ impl BackyardClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_RETRY_SECS, MAX_RETRY_SECS, retry_after_secs};
+    use super::{
+        DEFAULT_RETRY_SECS, MAX_RETRY_ATTEMPTS, MAX_RETRY_SECS, retry_after_secs, retry_notice,
+    };
 
     #[test]
     fn parses_a_numeric_retry_after() {
@@ -402,5 +419,35 @@ mod tests {
     #[test]
     fn clamps_a_hostile_retry_after_to_the_ceiling() {
         assert_eq!(retry_after_secs(Some("100000")), MAX_RETRY_SECS);
+    }
+
+    /// The wait is the only thing that explains the pause, so it has to be in
+    /// the line along with which attempt this is.
+    #[test]
+    fn retry_notice_names_the_wait_and_the_attempt() {
+        let notice = strip_ansi(&retry_notice(2, 9));
+        assert_eq!(
+            notice,
+            format!("warn: rate limited (429), waiting 9s before retry 2/{MAX_RETRY_ATTEMPTS}")
+        );
+    }
+
+    /// `colored` emits escapes when it thinks a terminal is attached, so compare
+    /// on the text rather than depending on the test process's tty state.
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::new();
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' {
+                for c in chars.by_ref() {
+                    if c == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
     }
 }
