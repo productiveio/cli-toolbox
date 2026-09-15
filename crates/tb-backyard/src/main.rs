@@ -4943,3 +4943,228 @@ mod tests {
         }
     }
 }
+
+/// End-to-end coverage for the multi-file branch of `share download`, driven
+/// against a loopback HTTP stub rather than mocks: `download_share_file`
+/// builds its own `reqwest::Client` internally, so middleware-based recording
+/// (the `rvcr` cassettes `tb-prod` uses) never sees these requests. A real
+/// socket is the only way to exercise the fetch loop, and it keeps the test
+/// honest about the write-ordering the pre-flight promises.
+#[cfg(test)]
+mod bundle_download_tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+    use std::path::Path;
+    use tb_backyard::config::Config;
+    use tb_backyard::types::{ShareViewFile, ShareViewMetadata};
+
+    /// Body the stub serves for `filename`, so a test can assert the bytes on
+    /// disk came from the right route rather than merely existing.
+    fn body_for(filename: &str) -> String {
+        format!("contents of {filename}\n")
+    }
+
+    /// The one filename the stub fails on, to drive the partial-failure path.
+    const FAILING_FILE: &str = "boom.txt";
+
+    /// Spawn a blocking HTTP/1.1 stub serving `GET /s/:token/:filename` and
+    /// return its base URL. The thread is detached and dies with the test
+    /// process; every request gets `Connection: close`, which matches how
+    /// `download_share_file` behaves (a fresh client per call).
+    fn start_stub() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let base = format!("http://{}", listener.local_addr().expect("local addr"));
+
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut reader = BufReader::new(stream.try_clone().expect("clone stream"));
+                let mut request_line = String::new();
+                if reader.read_line(&mut request_line).is_err() {
+                    continue;
+                }
+                // Drain headers so the client sees a clean read of our response.
+                loop {
+                    let mut header = String::new();
+                    match reader.read_line(&mut header) {
+                        Ok(0) => break,
+                        Ok(_) if header.trim().is_empty() => break,
+                        Ok(_) => {}
+                        Err(_) => break,
+                    }
+                }
+
+                let path = request_line.split_whitespace().nth(1).unwrap_or("/");
+                let filename = path.rsplit('/').next().unwrap_or("");
+                let response = if filename == FAILING_FILE {
+                    "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\nConnection: close\r\n\r\nboom!".to_string()
+                } else {
+                    let body = body_for(filename);
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    )
+                };
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+
+        base
+    }
+
+    fn client_for(base_url: &str) -> BackyardClient {
+        let config = Config {
+            url: base_url.to_string(),
+            token: "test-token".to_string(),
+            project: None,
+        };
+        BackyardClient::new(&config, true).expect("client")
+    }
+
+    fn share_with(files: &[&str]) -> ShareViewMetadata {
+        ShareViewMetadata {
+            token: "TESTTOKEN".to_string(),
+            title: Some("bundle".to_string()),
+            visibility: "private".to_string(),
+            state: Some("live".to_string()),
+            files_count: files.len() as u64,
+            files: files
+                .iter()
+                .map(|f| ShareViewFile {
+                    filename: (*f).to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    fn read(path: &Path) -> String {
+        std::fs::read_to_string(path).expect("read written file")
+    }
+
+    #[tokio::test]
+    async fn writes_every_file_into_a_directory_it_creates() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // Deliberately a path that does not exist yet — the bundle branch owns
+        // creating it, which the single-file branch never had to do.
+        let dest = tmp.path().join("nested/bundle");
+
+        let share = share_with(&["index.html", "styles.css", "data.jsonl"]);
+        share_download_bundle(&client_for(&base), &share, Some(dest.clone()), false, false)
+            .await
+            .expect("bundle download succeeds");
+
+        for name in ["index.html", "styles.css", "data.jsonl"] {
+            assert_eq!(read(&dest.join(name)), body_for(name), "{name} bytes");
+        }
+    }
+
+    #[tokio::test]
+    async fn existing_file_aborts_before_anything_is_fetched() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dest = tmp.path().to_path_buf();
+        std::fs::write(dest.join("styles.css"), "SENTINEL").expect("seed conflict");
+
+        let share = share_with(&["index.html", "styles.css"]);
+        let err =
+            share_download_bundle(&client_for(&base), &share, Some(dest.clone()), false, false)
+                .await
+                .expect_err("conflict must abort");
+
+        let msg = err.to_string();
+        assert!(msg.contains("styles.css"), "names the conflict: {msg}");
+        assert!(msg.contains("--force"), "points at the escape hatch: {msg}");
+        // The pre-flight promise: the untouched file was never even fetched.
+        assert_eq!(read(&dest.join("styles.css")), "SENTINEL");
+        assert!(
+            !dest.join("index.html").exists(),
+            "no file may be written when the plan conflicts"
+        );
+    }
+
+    #[tokio::test]
+    async fn force_overwrites_existing_files() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dest = tmp.path().to_path_buf();
+        std::fs::write(dest.join("styles.css"), "STALE").expect("seed conflict");
+
+        let share = share_with(&["index.html", "styles.css"]);
+        share_download_bundle(&client_for(&base), &share, Some(dest.clone()), true, false)
+            .await
+            .expect("--force succeeds over an existing file");
+
+        assert_eq!(read(&dest.join("styles.css")), body_for("styles.css"));
+        assert_eq!(read(&dest.join("index.html")), body_for("index.html"));
+    }
+
+    #[tokio::test]
+    async fn mid_bundle_failure_reports_progress_and_stops() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dest = tmp.path().to_path_buf();
+
+        let share = share_with(&["first.txt", FAILING_FILE, "third.txt"]);
+        let err =
+            share_download_bundle(&client_for(&base), &share, Some(dest.clone()), false, false)
+                .await
+                .expect_err("a failing file must surface");
+
+        let msg = err.to_string();
+        assert!(msg.contains("downloaded 1 of 3"), "counts progress: {msg}");
+        assert!(msg.contains(FAILING_FILE), "names the failure: {msg}");
+        // Files before the failure stay; nothing after it is attempted.
+        assert_eq!(read(&dest.join("first.txt")), body_for("first.txt"));
+        assert!(!dest.join("third.txt").exists(), "stops at the failure");
+    }
+
+    #[tokio::test]
+    async fn unsafe_filename_aborts_without_writing_anything() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dest = tmp.path().join("bundle");
+
+        let share = share_with(&["safe.txt", "../escape.html"]);
+        let err =
+            share_download_bundle(&client_for(&base), &share, Some(dest.clone()), false, false)
+                .await
+                .expect_err("a traversing filename must abort the plan");
+
+        assert!(
+            err.to_string().contains("escape.html"),
+            "names the offending file: {err}"
+        );
+        assert!(
+            !dest.join("safe.txt").exists(),
+            "planning fails closed — no sibling is written"
+        );
+        assert!(
+            !tmp.path().join("escape.html").exists(),
+            "nothing escaped the destination directory"
+        );
+    }
+
+    #[tokio::test]
+    async fn output_pointing_at_a_file_is_rejected() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let file = tmp.path().join("not-a-dir.txt");
+        std::fs::write(&file, "x").expect("seed file");
+
+        let share = share_with(&["a.txt", "b.txt"]);
+        let err =
+            share_download_bundle(&client_for(&base), &share, Some(file.clone()), false, false)
+                .await
+                .expect_err("a file --output must be rejected for a bundle");
+
+        assert!(
+            err.to_string().contains("needs a directory"),
+            "explains the requirement: {err}"
+        );
+        assert_eq!(read(&file), "x", "the existing file is untouched");
+    }
+}
