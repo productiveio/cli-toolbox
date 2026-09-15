@@ -88,6 +88,72 @@ pub fn download_dest(
     }
 }
 
+/// Guard against a server-supplied filename escaping the destination
+/// directory. The viewer route is `/s/:token/*filename` (a glob segment),
+/// so nothing on the wire guarantees a filename is a single path component.
+/// Accept exactly one non-empty, non-`.`/`..` component with no separators
+/// (either flavour), no drive prefix and no NUL. Applied to single-file
+/// downloads too — `download_dest(None, ..)` writes `filename` verbatim.
+pub fn safe_share_filename(filename: &str) -> Result<&str, String> {
+    let bad = || {
+        format!(
+            "share file `{}` has an unsafe filename — refusing to write it outside the destination directory",
+            filename.escape_debug()
+        )
+    };
+    if filename.is_empty() || filename == "." || filename == ".." {
+        return Err(bad());
+    }
+    if filename.contains(['/', '\\', '\0', ':']) {
+        return Err(bad());
+    }
+    Ok(filename)
+}
+
+/// Where a multi-file share lands: `--output <dir>` verbatim when given,
+/// otherwise `./<token>/`. Token (not title) because it is always present,
+/// URL-safe, and unique per share — titles can be missing or collide.
+pub fn bundle_dest_dir(output: Option<std::path::PathBuf>, token: &str) -> std::path::PathBuf {
+    output.unwrap_or_else(|| std::path::PathBuf::from(token))
+}
+
+/// One planned write in a bundle download.
+#[derive(Debug, PartialEq, Eq)]
+pub struct BundleEntry {
+    /// Filename exactly as the server reports it (used for the fetch).
+    pub filename: String,
+    /// `dir/filename` — where the bytes go.
+    pub dest: std::path::PathBuf,
+}
+
+/// Every destination of a bundle download, resolved before a single byte
+/// is fetched, so unsafe names and overwrite conflicts abort the whole
+/// download instead of half of it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct BundlePlan {
+    /// Directory containing all planned bundle writes.
+    pub dir: std::path::PathBuf,
+    /// Every validated file and its resolved destination.
+    pub entries: Vec<BundleEntry>,
+}
+
+/// Build a [`BundlePlan`]. Fails closed: any unsafe filename (see
+/// [`safe_share_filename`]) or an empty list is an error naming the cause.
+pub fn plan_bundle(dir: std::path::PathBuf, filenames: &[String]) -> Result<BundlePlan, String> {
+    if filenames.is_empty() {
+        return Err("share reports no files to download".into());
+    }
+    let mut entries = Vec::with_capacity(filenames.len());
+    for filename in filenames {
+        let safe = safe_share_filename(filename)?;
+        entries.push(BundleEntry {
+            filename: filename.clone(),
+            dest: dir.join(safe),
+        });
+    }
+    Ok(BundlePlan { dir, entries })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,5 +240,61 @@ mod tests {
             download_dest(None, false, "report.html"),
             PathBuf::from("report.html")
         );
+    }
+
+    #[test]
+    fn safe_share_filename_accepts_plain_and_rejects_traversal() {
+        assert_eq!(safe_share_filename("report.html").unwrap(), "report.html");
+        assert_eq!(safe_share_filename("data.v2.csv").unwrap(), "data.v2.csv");
+        assert_eq!(safe_share_filename(".hidden").unwrap(), ".hidden");
+        for bad in [
+            "",
+            ".",
+            "..",
+            "a/b.html",
+            "../x",
+            "a\\b",
+            "c:\\x",
+            "nul\0byte",
+            "/abs.html",
+        ] {
+            assert!(
+                safe_share_filename(bad).is_err(),
+                "expected `{bad:?}` to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn bundle_dest_dir_defaults_to_token_dir() {
+        use std::path::PathBuf;
+        assert_eq!(bundle_dest_dir(None, "AbC123"), PathBuf::from("AbC123"));
+        assert_eq!(
+            bundle_dest_dir(Some(PathBuf::from("/tmp/out")), "AbC123"),
+            PathBuf::from("/tmp/out")
+        );
+    }
+
+    #[test]
+    fn plan_bundle_maps_every_file_and_fails_closed() {
+        use std::path::PathBuf;
+        let files = vec!["index.html".to_string(), "styles.css".to_string()];
+        let plan = plan_bundle(PathBuf::from("out"), &files).unwrap();
+        assert_eq!(plan.dir, PathBuf::from("out"));
+        assert_eq!(plan.entries.len(), 2);
+        assert_eq!(plan.entries[0].filename, "index.html");
+        assert_eq!(plan.entries[0].dest, PathBuf::from("out/index.html"));
+        assert_eq!(plan.entries[1].dest, PathBuf::from("out/styles.css"));
+
+        // One bad filename poisons the whole plan — nothing is partially planned.
+        let poisoned = vec!["ok.html".to_string(), "../escape.html".to_string()];
+        let err = plan_bundle(PathBuf::from("out"), &poisoned).unwrap_err();
+        assert!(
+            err.contains("../escape.html"),
+            "error should name the offending file: {err}"
+        );
+
+        // Empty file list is an error, not an empty plan.
+        assert!(plan_bundle(PathBuf::from("out"), &[]).is_err());
     }
 }

@@ -658,17 +658,17 @@ enum ShareAction {
     /// List your shares
     #[command(after_help = "Example:\n  tb-backyard share list")]
     List,
-    /// Download a single-file share to disk (token-or-URL target)
+    /// Download a share to disk — single file or whole bundle (token-or-URL target)
     #[command(
-        after_help = "<share-target> accepts a bare token OR a /s/:token URL.\nDownloads only single-file shares — open the URL to browse a bundle.\n\nExamples:\n  tb-backyard share download <token>\n  tb-backyard share download https://backyard.productive.io/s/<token> --output ~/Downloads\n  tb-backyard share download <token> --output report.html --force"
+        after_help = "<share-target> accepts a bare token OR a /s/:token URL.\nSingle-file share: --output is a directory (keeps the filename) or a file path (renames); default cwd.\nMulti-file bundle: every file lands in one directory — --output <dir> (created if missing), default ./<token>/.\nDestinations are checked before anything is fetched; --force overwrites.\n\nExamples:\n  tb-backyard share download <token>\n  tb-backyard share download https://backyard.productive.io/s/<token> --output ~/Downloads\n  tb-backyard share download <token> --output report.html --force\n  tb-backyard share download <bundle-token> --output ./q3-report      # all files into ./q3-report/\n  tb-backyard share download <bundle-token> --json                    # {token, dir, files_count, files[], bytes}"
     )]
     Download {
         /// Target: bare token or `https://backyard.productive.io/s/<token>` URL
         target: String,
-        /// Destination path — a directory keeps the share's filename, a file path renames. Default: cwd
+        /// Destination. Single file: a directory keeps the share's filename, a file path renames (default: cwd). Bundle: a directory, created if missing (default: ./<token>/)
         #[arg(long)]
         output: Option<std::path::PathBuf>,
-        /// Overwrite the destination if it already exists
+        /// Overwrite destination files that already exist
         #[arg(long)]
         force: bool,
     },
@@ -4189,17 +4189,14 @@ async fn share_download(
     // can see is downloadable — not only shares they own.
     let share = resolve_viewable_share_by_target(client, target).await?;
 
-    if share.files_count != 1 {
-        return Err(TbBackyardError::Other(format!(
-            "`{}` is a {}-file bundle — CLI download supports single-file shares only. Open {} to browse it.",
-            share.token,
-            share.files_count,
-            share_url(client.backyard_url(), &share.token)
-        )));
+    if share.files_count > 1 || share.files.len() > 1 {
+        return share_download_bundle(client, &share, output, force, json).await;
     }
     let filename = share
         .first_filename()
         .ok_or_else(|| TbBackyardError::Other("share has no file to download".into()))?;
+    let filename =
+        tb_backyard::share::safe_share_filename(filename).map_err(TbBackyardError::Other)?;
 
     let output_is_dir = output.as_ref().map(|p| p.is_dir()).unwrap_or(false);
     let dest = tb_backyard::share::download_dest(output, output_is_dir, filename);
@@ -4232,6 +4229,122 @@ async fn share_download(
         dest.display().to_string().bold()
     );
     println!("  {} {} bytes", "Size:".dimmed(), bytes.len());
+    Ok(())
+}
+
+/// Multi-file branch of `share download`: every file of the share lands in
+/// one directory (`--output <dir>`, default `./<token>/`). Destinations are
+/// planned and conflict-checked before the first fetch so a half-written
+/// bundle only happens on a network failure, never on a local one.
+async fn share_download_bundle(
+    client: &BackyardClient,
+    share: &tb_backyard::types::ShareViewMetadata,
+    output: Option<std::path::PathBuf>,
+    force: bool,
+    json: bool,
+) -> Result<(), tb_backyard::error::TbBackyardError> {
+    use tb_backyard::error::TbBackyardError;
+    use tb_backyard::share::{bundle_dest_dir, plan_bundle};
+    use tokio::io::AsyncWriteExt;
+
+    let dir = bundle_dest_dir(output, &share.token);
+    if dir.exists() && !dir.is_dir() {
+        return Err(TbBackyardError::Other(format!(
+            "{} is a file — a {}-file bundle needs a directory for --output",
+            dir.display(),
+            share.files.len()
+        )));
+    }
+
+    let filenames: Vec<String> = share.files.iter().map(|f| f.filename.clone()).collect();
+    let plan = plan_bundle(dir, &filenames).map_err(TbBackyardError::Other)?;
+
+    let mut conflicts = Vec::new();
+    for entry in &plan.entries {
+        match tokio::fs::symlink_metadata(&entry.dest).await {
+            Ok(_) => conflicts.push(entry.dest.display().to_string()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    if !conflicts.is_empty() && !force {
+        return Err(TbBackyardError::Other(format!(
+            "{} already exist{}:\n  {}\npass --force to overwrite",
+            if conflicts.len() == 1 {
+                "a file"
+            } else {
+                "files"
+            },
+            if conflicts.len() == 1 { "s" } else { "" },
+            conflicts.join("\n  ")
+        )));
+    }
+
+    tokio::fs::create_dir_all(&plan.dir).await?;
+
+    let total = plan.entries.len();
+    let mut written: Vec<(String, std::path::PathBuf, usize)> = Vec::with_capacity(total);
+    for entry in &plan.entries {
+        let bytes = match client
+            .download_share_file(&share.token, &entry.filename)
+            .await
+        {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                return Err(TbBackyardError::Other(format!(
+                    "downloaded {} of {} files into {} before `{}` failed: {}",
+                    written.len(),
+                    total,
+                    plan.dir.display(),
+                    entry.filename,
+                    e
+                )));
+            }
+        };
+        if force {
+            match tokio::fs::symlink_metadata(&entry.dest).await {
+                Ok(_) => tokio::fs::remove_file(&entry.dest).await?,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
+        let mut file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&entry.dest)
+            .await?;
+        file.write_all(&bytes).await?;
+        written.push((entry.filename.clone(), entry.dest.clone(), bytes.len()));
+    }
+    let total_bytes: usize = written.iter().map(|w| w.2).sum();
+
+    if json {
+        let payload = serde_json::json!({
+            "token": share.token,
+            "dir": plan.dir.display().to_string(),
+            "files_count": written.len(),
+            "files": written.iter().map(|(filename, path, bytes)| serde_json::json!({
+                "filename": filename,
+                "path": path.display().to_string(),
+                "bytes": bytes,
+            })).collect::<Vec<_>>(),
+            "bytes": total_bytes,
+        });
+        println!("{}", output::render_json(&payload));
+        return Ok(());
+    }
+
+    println!("{}\n", format!("Downloaded {} files", written.len()).bold());
+    println!(
+        "  {} {}",
+        "Dir:".dimmed(),
+        plan.dir.display().to_string().bold()
+    );
+    println!("  {}", "Files:".dimmed());
+    for (filename, _, bytes) in &written {
+        println!("    {}  {} bytes", filename, bytes);
+    }
+    println!("  {} {} bytes", "Size:".dimmed(), total_bytes);
     Ok(())
 }
 
