@@ -4189,16 +4189,33 @@ async fn share_download(
     // can see is downloadable — not only shares they own.
     let share = resolve_viewable_share_by_target(client, target).await?;
 
-    if share.files_count > 1 || share.files.len() > 1 {
+    // `files` is what we can actually fetch; `files_count` is what the share
+    // claims to hold. They come from the same array server-side, so a mismatch
+    // means the payload changed shape — fail loudly rather than download a
+    // subset and report it as the whole bundle.
+    if share.files_count as usize != share.files.len() {
+        return Err(TbBackyardError::Other(format!(
+            "share reports {} file(s) but lists {} — refusing to download a partial bundle",
+            share.files_count,
+            share.files.len()
+        )));
+    }
+
+    if share.files.len() > 1 {
         return share_download_bundle(client, &share, output, force, json).await;
     }
     let filename = share
         .first_filename()
         .ok_or_else(|| TbBackyardError::Other("share has no file to download".into()))?;
-    let filename =
-        tb_backyard::share::safe_share_filename(filename).map_err(TbBackyardError::Other)?;
 
     let output_is_dir = output.as_ref().map(|p| p.is_dir()).unwrap_or(false);
+    // The server filename only becomes a path component when it is joined onto
+    // a directory or the cwd. An explicit `--output <file>` replaces it, so
+    // validating there would reject a download that is not writing that name.
+    let filename_becomes_path_component = output.is_none() || output_is_dir;
+    if filename_becomes_path_component {
+        tb_backyard::share::safe_share_filename(filename).map_err(TbBackyardError::Other)?;
+    }
     let dest = tb_backyard::share::download_dest(output, output_is_dir, filename);
     if dest.exists() && !force {
         return Err(TbBackyardError::Other(format!(

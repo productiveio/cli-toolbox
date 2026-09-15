@@ -92,8 +92,12 @@ pub fn download_dest(
 /// directory. The viewer route is `/s/:token/*filename` (a glob segment),
 /// so nothing on the wire guarantees a filename is a single path component.
 /// Accept exactly one non-empty, non-`.`/`..` component with no separators
-/// (either flavour), no drive prefix and no NUL. Applied to single-file
-/// downloads too — `download_dest(None, ..)` writes `filename` verbatim.
+/// (either flavour) and no NUL.
+///
+/// `:` is deliberately NOT rejected: it is a legal byte in a filename on the
+/// platforms we ship (macOS, Linux), so refusing it would reject shares that
+/// download fine today. It would only matter as a Windows drive prefix, and
+/// there is no Windows release target.
 pub fn safe_share_filename(filename: &str) -> Result<&str, String> {
     let bad = || {
         format!(
@@ -104,7 +108,7 @@ pub fn safe_share_filename(filename: &str) -> Result<&str, String> {
     if filename.is_empty() || filename == "." || filename == ".." {
         return Err(bad());
     }
-    if filename.contains(['/', '\\', '\0', ':']) {
+    if filename.contains(['/', '\\', '\0']) {
         return Err(bad());
     }
     Ok(filename)
@@ -137,18 +141,34 @@ pub struct BundlePlan {
     pub entries: Vec<BundleEntry>,
 }
 
-/// Build a [`BundlePlan`]. Fails closed: any unsafe filename (see
-/// [`safe_share_filename`]) or an empty list is an error naming the cause.
+/// Build a [`BundlePlan`]. Fails closed: an empty list, any unsafe filename
+/// (see [`safe_share_filename`]) or two files resolving to the same
+/// destination is an error naming the cause.
+///
+/// The duplicate check is defence in depth — the server validates filename
+/// uniqueness per share (`ShareFile`), so a collision means the payload
+/// disagrees with that invariant. Without it, a duplicate would pass the
+/// caller's conflict pre-flight and then either abort mid-bundle or (under
+/// `--force`) overwrite the earlier file while the summary still counts both.
 pub fn plan_bundle(dir: std::path::PathBuf, filenames: &[String]) -> Result<BundlePlan, String> {
     if filenames.is_empty() {
         return Err("share reports no files to download".into());
     }
-    let mut entries = Vec::with_capacity(filenames.len());
+    let mut entries: Vec<BundleEntry> = Vec::with_capacity(filenames.len());
     for filename in filenames {
         let safe = safe_share_filename(filename)?;
+        let dest = dir.join(safe);
+        if let Some(clash) = entries.iter().find(|e| e.dest == dest) {
+            return Err(format!(
+                "share lists two files that would write to the same path: `{}` and `{}` both resolve to {}",
+                clash.filename.escape_debug(),
+                filename.escape_debug(),
+                dest.display()
+            ));
+        }
         entries.push(BundleEntry {
             filename: filename.clone(),
-            dest: dir.join(safe),
+            dest,
         });
     }
     Ok(BundlePlan { dir, entries })
@@ -247,6 +267,8 @@ mod tests {
         assert_eq!(safe_share_filename("report.html").unwrap(), "report.html");
         assert_eq!(safe_share_filename("data.v2.csv").unwrap(), "data.v2.csv");
         assert_eq!(safe_share_filename(".hidden").unwrap(), ".hidden");
+        // `:` is legal on macOS/Linux — the only platforms we ship.
+        assert_eq!(safe_share_filename("2024:q3.html").unwrap(), "2024:q3.html");
         for bad in [
             "",
             ".",
@@ -254,7 +276,6 @@ mod tests {
             "a/b.html",
             "../x",
             "a\\b",
-            "c:\\x",
             "nul\0byte",
             "/abs.html",
         ] {
@@ -296,5 +317,14 @@ mod tests {
 
         // Empty file list is an error, not an empty plan.
         assert!(plan_bundle(PathBuf::from("out"), &[]).is_err());
+
+        // Two files resolving to the same destination abort the plan — without
+        // this the conflict pre-flight passes and the write loop collides.
+        let dupes = vec!["a.html".to_string(), "a.html".to_string()];
+        let err = plan_bundle(PathBuf::from("out"), &dupes).unwrap_err();
+        assert!(
+            err.contains("same path") && err.contains("a.html"),
+            "error should name the collision: {err}"
+        );
     }
 }
