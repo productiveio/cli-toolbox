@@ -145,30 +145,42 @@ pub struct BundlePlan {
 /// (see [`safe_share_filename`]) or two files resolving to the same
 /// destination is an error naming the cause.
 ///
-/// The duplicate check is defence in depth — the server validates filename
-/// uniqueness per share (`ShareFile`), so a collision means the payload
-/// disagrees with that invariant. Without it, a duplicate would pass the
-/// caller's conflict pre-flight and then either abort mid-bundle or (under
-/// `--force`) overwrite the earlier file while the summary still counts both.
+/// "Same destination" is judged case-insensitively. The server keeps
+/// filenames unique per share case-sensitively (`ShareFile`), so a bundle
+/// uploaded from Linux can legitimately hold `A.txt` and `a.txt` — which are
+/// one file on macOS. Without this check such a pair passes the caller's
+/// conflict pre-flight and then either aborts mid-bundle with a bare
+/// `File exists` or (under `--force`) overwrites the earlier file while the
+/// summary still counts both. Rejecting the pair on every target keeps the
+/// behaviour independent of the filesystem the download happens to land on.
 pub fn plan_bundle(dir: std::path::PathBuf, filenames: &[String]) -> Result<BundlePlan, String> {
     if filenames.is_empty() {
         return Err("share reports no files to download".into());
     }
     let mut entries: Vec<BundleEntry> = Vec::with_capacity(filenames.len());
+    let mut seen: Vec<String> = Vec::with_capacity(filenames.len());
     for filename in filenames {
         let safe = safe_share_filename(filename)?;
-        let dest = dir.join(safe);
-        if let Some(clash) = entries.iter().find(|e| e.dest == dest) {
+        let key = safe.to_lowercase();
+        if let Some(idx) = seen.iter().position(|k| *k == key) {
+            let clash = &entries[idx];
+            let reason = if clash.filename == *filename {
+                "both resolve to".to_string()
+            } else {
+                "differ only in case, which is one file on a case-insensitive filesystem such as macOS:".to_string()
+            };
             return Err(format!(
-                "share lists two files that would write to the same path: `{}` and `{}` both resolve to {}",
+                "share lists two files that would write to the same path: `{}` and `{}` {} {}",
                 clash.filename.escape_debug(),
                 filename.escape_debug(),
-                dest.display()
+                reason,
+                dir.join(safe).display()
             ));
         }
+        seen.push(key);
         entries.push(BundleEntry {
             filename: filename.clone(),
-            dest,
+            dest: dir.join(safe),
         });
     }
     Ok(BundlePlan { dir, entries })
@@ -325,6 +337,24 @@ mod tests {
         assert!(
             err.contains("same path") && err.contains("a.html"),
             "error should name the collision: {err}"
+        );
+
+        // Names differing only in case are one file on macOS. The server
+        // stores them as two (case-sensitive uniqueness), so a Linux-built
+        // bundle can carry the pair; reject it on every target rather than
+        // half-download it on one.
+        let case_dupes = vec![
+            "Readme.md".to_string(),
+            "notes.txt".to_string(),
+            "README.MD".to_string(),
+        ];
+        let err = plan_bundle(PathBuf::from("out"), &case_dupes).unwrap_err();
+        assert!(
+            err.contains("same path")
+                && err.contains("Readme.md")
+                && err.contains("README.MD")
+                && err.contains("case"),
+            "error should name both spellings and the cause: {err}"
         );
     }
 }

@@ -4281,7 +4281,13 @@ async fn share_download_bundle(
         match tokio::fs::symlink_metadata(&entry.dest).await {
             Ok(_) => conflicts.push(entry.dest.display().to_string()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
+            Err(e) => {
+                return Err(TbBackyardError::Other(format!(
+                    "cannot inspect {}: {}",
+                    entry.dest.display(),
+                    e
+                )));
+            }
         }
     }
     if !conflicts.is_empty() && !force {
@@ -4297,40 +4303,54 @@ async fn share_download_bundle(
         )));
     }
 
-    tokio::fs::create_dir_all(&plan.dir).await?;
-
     let total = plan.entries.len();
+    tokio::fs::create_dir_all(&plan.dir).await.map_err(|e| {
+        TbBackyardError::Other(format!(
+            "cannot create {} for a {}-file bundle: {}",
+            plan.dir.display(),
+            total,
+            e
+        ))
+    })?;
+
     let mut written: Vec<(String, std::path::PathBuf, usize)> = Vec::with_capacity(total);
     for entry in &plan.entries {
-        let bytes = match client
+        // Every failure inside the loop — fetch or write — reports the same
+        // way: how far the bundle got, where it landed, which file broke and
+        // why. A bare IO error here would name none of those.
+        let failed = |cause: String| {
+            TbBackyardError::Other(format!(
+                "downloaded {} of {} files into {} before `{}` failed: {}",
+                written.len(),
+                total,
+                plan.dir.display(),
+                entry.filename,
+                cause
+            ))
+        };
+        let write_failed =
+            |e: std::io::Error| failed(format!("cannot write {}: {}", entry.dest.display(), e));
+
+        let bytes = client
             .download_share_file(&share.token, &entry.filename)
             .await
-        {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                return Err(TbBackyardError::Other(format!(
-                    "downloaded {} of {} files into {} before `{}` failed: {}",
-                    written.len(),
-                    total,
-                    plan.dir.display(),
-                    entry.filename,
-                    e
-                )));
-            }
-        };
+            .map_err(|e| failed(e.to_string()))?;
         if force {
             match tokio::fs::symlink_metadata(&entry.dest).await {
-                Ok(_) => tokio::fs::remove_file(&entry.dest).await?,
+                Ok(_) => tokio::fs::remove_file(&entry.dest)
+                    .await
+                    .map_err(write_failed)?,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(write_failed(e)),
             }
         }
         let mut file = tokio::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&entry.dest)
-            .await?;
-        file.write_all(&bytes).await?;
+            .await
+            .map_err(write_failed)?;
+        file.write_all(&bytes).await.map_err(write_failed)?;
         written.push((entry.filename.clone(), entry.dest.clone(), bytes.len()));
     }
     let total_bytes: usize = written.iter().map(|w| w.2).sum();
@@ -5119,6 +5139,42 @@ mod bundle_download_tests {
         assert!(msg.contains(FAILING_FILE), "names the failure: {msg}");
         // Files before the failure stay; nothing after it is attempted.
         assert_eq!(read(&dest.join("first.txt")), body_for("first.txt"));
+        assert!(!dest.join("third.txt").exists(), "stops at the failure");
+    }
+
+    /// The write-side twin of the fetch failure above: `--force` on a
+    /// destination that is a directory makes `remove_file` fail, and the
+    /// error has to carry the same progress, directory and filename instead
+    /// of a bare `IO error: <os message>`.
+    #[tokio::test]
+    async fn mid_bundle_write_failure_reports_progress_and_stops() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dest = tmp.path().to_path_buf();
+        std::fs::create_dir(dest.join("second.txt")).expect("seed a directory in the way");
+
+        let share = share_with(&["first.txt", "second.txt", "third.txt"]);
+        let err =
+            share_download_bundle(&client_for(&base), &share, Some(dest.clone()), true, false)
+                .await
+                .expect_err("a destination that cannot be replaced must surface");
+
+        let msg = err.to_string();
+        assert!(msg.contains("downloaded 1 of 3"), "counts progress: {msg}");
+        assert!(
+            msg.contains(&dest.display().to_string()),
+            "names the directory: {msg}"
+        );
+        assert!(msg.contains("second.txt"), "names the failure: {msg}");
+        assert!(
+            msg.contains("cannot write"),
+            "says it was the write, not the fetch: {msg}"
+        );
+        assert_eq!(read(&dest.join("first.txt")), body_for("first.txt"));
+        assert!(
+            dest.join("second.txt").is_dir(),
+            "the directory in the way is left alone"
+        );
         assert!(!dest.join("third.txt").exists(), "stops at the failure");
     }
 
