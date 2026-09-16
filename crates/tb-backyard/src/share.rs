@@ -88,6 +88,107 @@ pub fn download_dest(
     }
 }
 
+/// Guard against a server-supplied filename escaping the destination
+/// directory. The viewer route is `/s/:token/*filename` (a glob segment),
+/// so nothing on the wire guarantees a filename is a single path component.
+/// Accept exactly one non-empty, non-`.`/`..` component with no separators
+/// (either flavour) and no NUL.
+///
+/// `:` is deliberately NOT rejected: it is a legal byte in a filename on the
+/// platforms we ship (macOS, Linux), so refusing it would reject shares that
+/// download fine today. It would only matter as a Windows drive prefix, and
+/// there is no Windows release target.
+pub fn safe_share_filename(filename: &str) -> Result<&str, String> {
+    let bad = || {
+        format!(
+            "share file `{}` has an unsafe filename — refusing to write it outside the destination directory",
+            filename.escape_debug()
+        )
+    };
+    if filename.is_empty() || filename == "." || filename == ".." {
+        return Err(bad());
+    }
+    if filename.contains(['/', '\\', '\0']) {
+        return Err(bad());
+    }
+    Ok(filename)
+}
+
+/// Where a multi-file share lands: `--output <dir>` verbatim when given,
+/// otherwise `./<token>/`. Token (not title) because it is always present,
+/// URL-safe, and unique per share — titles can be missing or collide.
+pub fn bundle_dest_dir(output: Option<std::path::PathBuf>, token: &str) -> std::path::PathBuf {
+    output.unwrap_or_else(|| std::path::PathBuf::from(token))
+}
+
+/// One planned write in a bundle download.
+#[derive(Debug, PartialEq, Eq)]
+pub struct BundleEntry {
+    /// Filename exactly as the server reports it (used for the fetch).
+    pub filename: String,
+    /// `dir/filename` — where the bytes go.
+    pub dest: std::path::PathBuf,
+}
+
+/// Every destination of a bundle download, resolved before a single byte
+/// is fetched, so unsafe names and overwrite conflicts abort the whole
+/// download instead of half of it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct BundlePlan {
+    /// Directory containing all planned bundle writes.
+    pub dir: std::path::PathBuf,
+    /// Every validated file and its resolved destination.
+    pub entries: Vec<BundleEntry>,
+}
+
+/// Build a [`BundlePlan`]. Fails closed: an empty list, any unsafe filename
+/// (see [`safe_share_filename`]) or two files resolving to the same
+/// destination is an error naming the cause.
+///
+/// "Same destination" is judged case-insensitively. The server keeps
+/// filenames unique per share case-sensitively (`ShareFile`), so a bundle
+/// uploaded from Linux can legitimately hold `A.txt` and `a.txt` — which are
+/// one file on macOS. Without this check such a pair passes the caller's
+/// conflict pre-flight and then either aborts mid-bundle with a bare
+/// `File exists` or (under `--force`) overwrites the earlier file while the
+/// summary still counts both. Rejecting the pair on every target keeps the
+/// behaviour independent of the filesystem the download happens to land on.
+pub fn plan_bundle(dir: std::path::PathBuf, filenames: &[String]) -> Result<BundlePlan, String> {
+    if filenames.is_empty() {
+        return Err("share reports no files to download".into());
+    }
+    let mut entries: Vec<BundleEntry> = Vec::with_capacity(filenames.len());
+    let mut seen: Vec<String> = Vec::with_capacity(filenames.len());
+    for filename in filenames {
+        let safe = safe_share_filename(filename)?;
+        // Upper-then-lower approximates Unicode case folding, which std does
+        // not expose: it maps the final sigma `ς` onto `σ` like `Σ` does, where
+        // a plain `to_lowercase` leaves the pair apart while APFS folds it.
+        let key = safe.to_uppercase().to_lowercase();
+        if let Some(idx) = seen.iter().position(|k| *k == key) {
+            let clash = &entries[idx];
+            let reason = if clash.filename == *filename {
+                "both resolve to".to_string()
+            } else {
+                "differ only in case, which is one file on a case-insensitive filesystem such as macOS:".to_string()
+            };
+            return Err(format!(
+                "share lists two files that would write to the same path: `{}` and `{}` {} {}",
+                clash.filename.escape_debug(),
+                filename.escape_debug(),
+                reason,
+                dir.join(safe).display()
+            ));
+        }
+        seen.push(key);
+        entries.push(BundleEntry {
+            filename: filename.clone(),
+            dest: dir.join(safe),
+        });
+    }
+    Ok(BundlePlan { dir, entries })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,6 +274,98 @@ mod tests {
         assert_eq!(
             download_dest(None, false, "report.html"),
             PathBuf::from("report.html")
+        );
+    }
+
+    #[test]
+    fn safe_share_filename_accepts_plain_and_rejects_traversal() {
+        assert_eq!(safe_share_filename("report.html").unwrap(), "report.html");
+        assert_eq!(safe_share_filename("data.v2.csv").unwrap(), "data.v2.csv");
+        assert_eq!(safe_share_filename(".hidden").unwrap(), ".hidden");
+        // `:` is legal on macOS/Linux — the only platforms we ship.
+        assert_eq!(safe_share_filename("2024:q3.html").unwrap(), "2024:q3.html");
+        for bad in [
+            "",
+            ".",
+            "..",
+            "a/b.html",
+            "../x",
+            "a\\b",
+            "nul\0byte",
+            "/abs.html",
+        ] {
+            assert!(
+                safe_share_filename(bad).is_err(),
+                "expected `{bad:?}` to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn bundle_dest_dir_defaults_to_token_dir() {
+        use std::path::PathBuf;
+        assert_eq!(bundle_dest_dir(None, "AbC123"), PathBuf::from("AbC123"));
+        assert_eq!(
+            bundle_dest_dir(Some(PathBuf::from("/tmp/out")), "AbC123"),
+            PathBuf::from("/tmp/out")
+        );
+    }
+
+    #[test]
+    fn plan_bundle_maps_every_file_and_fails_closed() {
+        use std::path::PathBuf;
+        let files = vec!["index.html".to_string(), "styles.css".to_string()];
+        let plan = plan_bundle(PathBuf::from("out"), &files).unwrap();
+        assert_eq!(plan.dir, PathBuf::from("out"));
+        assert_eq!(plan.entries.len(), 2);
+        assert_eq!(plan.entries[0].filename, "index.html");
+        assert_eq!(plan.entries[0].dest, PathBuf::from("out/index.html"));
+        assert_eq!(plan.entries[1].dest, PathBuf::from("out/styles.css"));
+
+        // One bad filename poisons the whole plan — nothing is partially planned.
+        let poisoned = vec!["ok.html".to_string(), "../escape.html".to_string()];
+        let err = plan_bundle(PathBuf::from("out"), &poisoned).unwrap_err();
+        assert!(
+            err.contains("../escape.html"),
+            "error should name the offending file: {err}"
+        );
+
+        // Empty file list is an error, not an empty plan.
+        assert!(plan_bundle(PathBuf::from("out"), &[]).is_err());
+
+        // Two files resolving to the same destination abort the plan — without
+        // this the conflict pre-flight passes and the write loop collides.
+        let dupes = vec!["a.html".to_string(), "a.html".to_string()];
+        let err = plan_bundle(PathBuf::from("out"), &dupes).unwrap_err();
+        assert!(
+            err.contains("same path") && err.contains("a.html"),
+            "error should name the collision: {err}"
+        );
+
+        // Names differing only in case are one file on macOS. The server
+        // stores them as two (case-sensitive uniqueness), so a Linux-built
+        // bundle can carry the pair; reject it on every target rather than
+        // half-download it on one.
+        let case_dupes = vec![
+            "Readme.md".to_string(),
+            "notes.txt".to_string(),
+            "README.MD".to_string(),
+        ];
+        let err = plan_bundle(PathBuf::from("out"), &case_dupes).unwrap_err();
+        assert!(
+            err.contains("same path")
+                && err.contains("Readme.md")
+                && err.contains("README.MD")
+                && err.contains("case"),
+            "error should name both spellings and the cause: {err}"
+        );
+
+        // Final sigma: `to_lowercase` alone keeps `ς` and `σ` distinct while
+        // a case-folding filesystem does not.
+        let sigma = vec!["Σ.txt".to_string(), "ς.txt".to_string()];
+        assert!(
+            plan_bundle(PathBuf::from("out"), &sigma).is_err(),
+            "case-fold equivalents beyond ASCII collide too"
         );
     }
 }

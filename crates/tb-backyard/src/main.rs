@@ -658,17 +658,17 @@ enum ShareAction {
     /// List your shares
     #[command(after_help = "Example:\n  tb-backyard share list")]
     List,
-    /// Download a single-file share to disk (token-or-URL target)
+    /// Download a share to disk — single file or whole bundle (token-or-URL target)
     #[command(
-        after_help = "<share-target> accepts a bare token OR a /s/:token URL.\nDownloads only single-file shares — open the URL to browse a bundle.\n\nExamples:\n  tb-backyard share download <token>\n  tb-backyard share download https://backyard.productive.io/s/<token> --output ~/Downloads\n  tb-backyard share download <token> --output report.html --force"
+        after_help = "<share-target> accepts a bare token OR a /s/:token URL.\nSingle-file share: --output is a directory (keeps the filename) or a file path (renames); default cwd.\nMulti-file bundle: every file lands in one directory — --output <dir> (created if missing), default ./<token>/.\nDestinations are checked before anything is fetched; --force overwrites.\n\nExamples:\n  tb-backyard share download <token>\n  tb-backyard share download https://backyard.productive.io/s/<token> --output ~/Downloads\n  tb-backyard share download <token> --output report.html --force\n  tb-backyard share download <bundle-token> --output ./q3-report      # all files into ./q3-report/\n  tb-backyard share download <bundle-token> --json                    # {token, dir, files_count, files[], bytes}"
     )]
     Download {
         /// Target: bare token or `https://backyard.productive.io/s/<token>` URL
         target: String,
-        /// Destination path — a directory keeps the share's filename, a file path renames. Default: cwd
+        /// Destination. Single file: a directory keeps the share's filename, a file path renames (default: cwd). Bundle: a directory, created if missing (default: ./<token>/)
         #[arg(long)]
         output: Option<std::path::PathBuf>,
-        /// Overwrite the destination if it already exists
+        /// Overwrite destination files that already exist
         #[arg(long)]
         force: bool,
     },
@@ -4189,19 +4189,33 @@ async fn share_download(
     // can see is downloadable — not only shares they own.
     let share = resolve_viewable_share_by_target(client, target).await?;
 
-    if share.files_count != 1 {
+    // `files` is what we can actually fetch; `files_count` is what the share
+    // claims to hold. They come from the same array server-side, so a mismatch
+    // means the payload changed shape — fail loudly rather than download a
+    // subset and report it as the whole bundle.
+    if share.files_count as usize != share.files.len() {
         return Err(TbBackyardError::Other(format!(
-            "`{}` is a {}-file bundle — CLI download supports single-file shares only. Open {} to browse it.",
-            share.token,
+            "share reports {} file(s) but lists {} — refusing to download a partial bundle",
             share.files_count,
-            share_url(client.backyard_url(), &share.token)
+            share.files.len()
         )));
+    }
+
+    if share.files.len() > 1 {
+        return share_download_bundle(client, &share, output, force, json).await;
     }
     let filename = share
         .first_filename()
         .ok_or_else(|| TbBackyardError::Other("share has no file to download".into()))?;
 
     let output_is_dir = output.as_ref().map(|p| p.is_dir()).unwrap_or(false);
+    // The server filename only becomes a path component when it is joined onto
+    // a directory or the cwd. An explicit `--output <file>` replaces it, so
+    // validating there would reject a download that is not writing that name.
+    let filename_becomes_path_component = output.is_none() || output_is_dir;
+    if filename_becomes_path_component {
+        tb_backyard::share::safe_share_filename(filename).map_err(TbBackyardError::Other)?;
+    }
     let dest = tb_backyard::share::download_dest(output, output_is_dir, filename);
     if dest.exists() && !force {
         return Err(TbBackyardError::Other(format!(
@@ -4232,6 +4246,144 @@ async fn share_download(
         dest.display().to_string().bold()
     );
     println!("  {} {} bytes", "Size:".dimmed(), bytes.len());
+    Ok(())
+}
+
+/// Multi-file branch of `share download`: every file of the share lands in
+/// one directory (`--output <dir>`, default `./<token>/`). Destinations are
+/// planned and conflict-checked before the first fetch, so planning and
+/// conflict problems abort before anything is written. A half-written bundle
+/// can still come from a failure during transfer — fetch or write — and the
+/// error then says how far it got.
+async fn share_download_bundle(
+    client: &BackyardClient,
+    share: &tb_backyard::types::ShareViewMetadata,
+    output: Option<std::path::PathBuf>,
+    force: bool,
+    json: bool,
+) -> Result<(), tb_backyard::error::TbBackyardError> {
+    use tb_backyard::error::TbBackyardError;
+    use tb_backyard::share::{bundle_dest_dir, plan_bundle};
+    use tokio::io::AsyncWriteExt;
+
+    let dir = bundle_dest_dir(output, &share.token);
+    if dir.exists() && !dir.is_dir() {
+        return Err(TbBackyardError::Other(format!(
+            "{} is a file — a {}-file bundle needs a directory for --output",
+            dir.display(),
+            share.files.len()
+        )));
+    }
+
+    let filenames: Vec<String> = share.files.iter().map(|f| f.filename.clone()).collect();
+    let plan = plan_bundle(dir, &filenames).map_err(TbBackyardError::Other)?;
+
+    let mut conflicts = Vec::new();
+    for entry in &plan.entries {
+        match tokio::fs::symlink_metadata(&entry.dest).await {
+            Ok(_) => conflicts.push(entry.dest.display().to_string()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(TbBackyardError::Other(format!(
+                    "cannot inspect {}: {}",
+                    entry.dest.display(),
+                    e
+                )));
+            }
+        }
+    }
+    if !conflicts.is_empty() && !force {
+        return Err(TbBackyardError::Other(format!(
+            "{} already exist{}:\n  {}\npass --force to overwrite",
+            if conflicts.len() == 1 {
+                "a file"
+            } else {
+                "files"
+            },
+            if conflicts.len() == 1 { "s" } else { "" },
+            conflicts.join("\n  ")
+        )));
+    }
+
+    let total = plan.entries.len();
+    tokio::fs::create_dir_all(&plan.dir).await.map_err(|e| {
+        TbBackyardError::Other(format!(
+            "cannot create {} for a {}-file bundle: {}",
+            plan.dir.display(),
+            total,
+            e
+        ))
+    })?;
+
+    let mut written: Vec<(String, std::path::PathBuf, usize)> = Vec::with_capacity(total);
+    for entry in &plan.entries {
+        // Every failure inside the loop — fetch or write — reports the same
+        // way: how far the bundle got, where it landed, which file broke and
+        // why. A bare IO error here would name none of those.
+        let failed = |cause: String| {
+            TbBackyardError::Other(format!(
+                "downloaded {} of {} files into {} before `{}` failed: {}",
+                written.len(),
+                total,
+                plan.dir.display(),
+                entry.filename,
+                cause
+            ))
+        };
+        let write_failed =
+            |e: std::io::Error| failed(format!("cannot write {}: {}", entry.dest.display(), e));
+
+        let bytes = client
+            .download_share_file(&share.token, &entry.filename)
+            .await
+            .map_err(|e| failed(e.to_string()))?;
+        if force {
+            match tokio::fs::symlink_metadata(&entry.dest).await {
+                Ok(_) => tokio::fs::remove_file(&entry.dest)
+                    .await
+                    .map_err(write_failed)?,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(write_failed(e)),
+            }
+        }
+        let mut file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&entry.dest)
+            .await
+            .map_err(write_failed)?;
+        file.write_all(&bytes).await.map_err(write_failed)?;
+        written.push((entry.filename.clone(), entry.dest.clone(), bytes.len()));
+    }
+    let total_bytes: usize = written.iter().map(|w| w.2).sum();
+
+    if json {
+        let payload = serde_json::json!({
+            "token": share.token,
+            "dir": plan.dir.display().to_string(),
+            "files_count": written.len(),
+            "files": written.iter().map(|(filename, path, bytes)| serde_json::json!({
+                "filename": filename,
+                "path": path.display().to_string(),
+                "bytes": bytes,
+            })).collect::<Vec<_>>(),
+            "bytes": total_bytes,
+        });
+        println!("{}", output::render_json(&payload));
+        return Ok(());
+    }
+
+    println!("{}\n", format!("Downloaded {} files", written.len()).bold());
+    println!(
+        "  {} {}",
+        "Dir:".dimmed(),
+        plan.dir.display().to_string().bold()
+    );
+    println!("  {}", "Files:".dimmed());
+    for (filename, _, bytes) in &written {
+        println!("    {}  {} bytes", filename, bytes);
+    }
+    println!("  {} {} bytes", "Size:".dimmed(), total_bytes);
     Ok(())
 }
 
@@ -4811,5 +4963,266 @@ mod tests {
                 Cli::try_parse_from(std::iter::once("tb-backyard").chain(args.iter().copied()));
             assert!(parsed.is_err(), "{args:?} should be rejected");
         }
+    }
+}
+
+/// End-to-end coverage for the multi-file branch of `share download`, driven
+/// against a loopback HTTP stub rather than mocks: `download_share_file`
+/// builds its own `reqwest::Client` internally, so middleware-based recording
+/// (the `rvcr` cassettes `tb-prod` uses) never sees these requests. A real
+/// socket is the only way to exercise the fetch loop, and it keeps the test
+/// honest about the write-ordering the pre-flight promises.
+#[cfg(test)]
+mod bundle_download_tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+    use std::path::Path;
+    use tb_backyard::config::Config;
+    use tb_backyard::types::{ShareViewFile, ShareViewMetadata};
+
+    /// Body the stub serves for `filename`, so a test can assert the bytes on
+    /// disk came from the right route rather than merely existing.
+    fn body_for(filename: &str) -> String {
+        format!("contents of {filename}\n")
+    }
+
+    /// The one filename the stub fails on, to drive the partial-failure path.
+    const FAILING_FILE: &str = "boom.txt";
+
+    /// Spawn a blocking HTTP/1.1 stub serving `GET /s/:token/:filename` and
+    /// return its base URL. The thread is detached and dies with the test
+    /// process; every request gets `Connection: close`, which matches how
+    /// `download_share_file` behaves (a fresh client per call).
+    fn start_stub() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let base = format!("http://{}", listener.local_addr().expect("local addr"));
+
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut reader = BufReader::new(stream.try_clone().expect("clone stream"));
+                let mut request_line = String::new();
+                if reader.read_line(&mut request_line).is_err() {
+                    continue;
+                }
+                // Drain headers so the client sees a clean read of our response.
+                loop {
+                    let mut header = String::new();
+                    match reader.read_line(&mut header) {
+                        Ok(0) => break,
+                        Ok(_) if header.trim().is_empty() => break,
+                        Ok(_) => {}
+                        Err(_) => break,
+                    }
+                }
+
+                let path = request_line.split_whitespace().nth(1).unwrap_or("/");
+                let filename = path.rsplit('/').next().unwrap_or("");
+                let response = if filename == FAILING_FILE {
+                    "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\nConnection: close\r\n\r\nboom!".to_string()
+                } else {
+                    let body = body_for(filename);
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    )
+                };
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+
+        base
+    }
+
+    fn client_for(base_url: &str) -> BackyardClient {
+        let config = Config {
+            url: base_url.to_string(),
+            token: "test-token".to_string(),
+            project: None,
+        };
+        BackyardClient::new(&config, true).expect("client")
+    }
+
+    fn share_with(files: &[&str]) -> ShareViewMetadata {
+        ShareViewMetadata {
+            token: "TESTTOKEN".to_string(),
+            title: Some("bundle".to_string()),
+            visibility: "private".to_string(),
+            state: Some("live".to_string()),
+            files_count: files.len() as u64,
+            files: files
+                .iter()
+                .map(|f| ShareViewFile {
+                    filename: (*f).to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    fn read(path: &Path) -> String {
+        std::fs::read_to_string(path).expect("read written file")
+    }
+
+    #[tokio::test]
+    async fn writes_every_file_into_a_directory_it_creates() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // Deliberately a path that does not exist yet — the bundle branch owns
+        // creating it, which the single-file branch never had to do.
+        let dest = tmp.path().join("nested/bundle");
+
+        let share = share_with(&["index.html", "styles.css", "data.jsonl"]);
+        share_download_bundle(&client_for(&base), &share, Some(dest.clone()), false, false)
+            .await
+            .expect("bundle download succeeds");
+
+        for name in ["index.html", "styles.css", "data.jsonl"] {
+            assert_eq!(read(&dest.join(name)), body_for(name), "{name} bytes");
+        }
+    }
+
+    #[tokio::test]
+    async fn existing_file_aborts_before_anything_is_fetched() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dest = tmp.path().to_path_buf();
+        std::fs::write(dest.join("styles.css"), "SENTINEL").expect("seed conflict");
+
+        let share = share_with(&["index.html", "styles.css"]);
+        let err =
+            share_download_bundle(&client_for(&base), &share, Some(dest.clone()), false, false)
+                .await
+                .expect_err("conflict must abort");
+
+        let msg = err.to_string();
+        assert!(msg.contains("styles.css"), "names the conflict: {msg}");
+        assert!(msg.contains("--force"), "points at the escape hatch: {msg}");
+        // The pre-flight promise: the untouched file was never even fetched.
+        assert_eq!(read(&dest.join("styles.css")), "SENTINEL");
+        assert!(
+            !dest.join("index.html").exists(),
+            "no file may be written when the plan conflicts"
+        );
+    }
+
+    #[tokio::test]
+    async fn force_overwrites_existing_files() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dest = tmp.path().to_path_buf();
+        std::fs::write(dest.join("styles.css"), "STALE").expect("seed conflict");
+
+        let share = share_with(&["index.html", "styles.css"]);
+        share_download_bundle(&client_for(&base), &share, Some(dest.clone()), true, false)
+            .await
+            .expect("--force succeeds over an existing file");
+
+        assert_eq!(read(&dest.join("styles.css")), body_for("styles.css"));
+        assert_eq!(read(&dest.join("index.html")), body_for("index.html"));
+    }
+
+    #[tokio::test]
+    async fn mid_bundle_failure_reports_progress_and_stops() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dest = tmp.path().to_path_buf();
+
+        let share = share_with(&["first.txt", FAILING_FILE, "third.txt"]);
+        let err =
+            share_download_bundle(&client_for(&base), &share, Some(dest.clone()), false, false)
+                .await
+                .expect_err("a failing file must surface");
+
+        let msg = err.to_string();
+        assert!(msg.contains("downloaded 1 of 3"), "counts progress: {msg}");
+        assert!(msg.contains(FAILING_FILE), "names the failure: {msg}");
+        // Files before the failure stay; nothing after it is attempted.
+        assert_eq!(read(&dest.join("first.txt")), body_for("first.txt"));
+        assert!(!dest.join("third.txt").exists(), "stops at the failure");
+    }
+
+    /// The write-side twin of the fetch failure above: `--force` on a
+    /// destination that is a directory makes `remove_file` fail, and the
+    /// error has to carry the same progress, directory and filename instead
+    /// of a bare `IO error: <os message>`.
+    #[tokio::test]
+    async fn mid_bundle_write_failure_reports_progress_and_stops() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dest = tmp.path().to_path_buf();
+        std::fs::create_dir(dest.join("second.txt")).expect("seed a directory in the way");
+
+        let share = share_with(&["first.txt", "second.txt", "third.txt"]);
+        let err =
+            share_download_bundle(&client_for(&base), &share, Some(dest.clone()), true, false)
+                .await
+                .expect_err("a destination that cannot be replaced must surface");
+
+        let msg = err.to_string();
+        assert!(msg.contains("downloaded 1 of 3"), "counts progress: {msg}");
+        assert!(
+            msg.contains(&dest.display().to_string()),
+            "names the directory: {msg}"
+        );
+        assert!(msg.contains("second.txt"), "names the failure: {msg}");
+        assert!(
+            msg.contains("cannot write"),
+            "says it was the write, not the fetch: {msg}"
+        );
+        assert_eq!(read(&dest.join("first.txt")), body_for("first.txt"));
+        assert!(
+            dest.join("second.txt").is_dir(),
+            "the directory in the way is left alone"
+        );
+        assert!(!dest.join("third.txt").exists(), "stops at the failure");
+    }
+
+    #[tokio::test]
+    async fn unsafe_filename_aborts_without_writing_anything() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dest = tmp.path().join("bundle");
+
+        let share = share_with(&["safe.txt", "../escape.html"]);
+        let err =
+            share_download_bundle(&client_for(&base), &share, Some(dest.clone()), false, false)
+                .await
+                .expect_err("a traversing filename must abort the plan");
+
+        assert!(
+            err.to_string().contains("escape.html"),
+            "names the offending file: {err}"
+        );
+        assert!(
+            !dest.join("safe.txt").exists(),
+            "planning fails closed — no sibling is written"
+        );
+        assert!(
+            !tmp.path().join("escape.html").exists(),
+            "nothing escaped the destination directory"
+        );
+    }
+
+    #[tokio::test]
+    async fn output_pointing_at_a_file_is_rejected() {
+        let base = start_stub();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let file = tmp.path().join("not-a-dir.txt");
+        std::fs::write(&file, "x").expect("seed file");
+
+        let share = share_with(&["a.txt", "b.txt"]);
+        let err =
+            share_download_bundle(&client_for(&base), &share, Some(file.clone()), false, false)
+                .await
+                .expect_err("a file --output must be rejected for a bundle");
+
+        assert!(
+            err.to_string().contains("needs a directory"),
+            "explains the requirement: {err}"
+        );
+        assert_eq!(read(&file), "x", "the existing file is untouched");
     }
 }
