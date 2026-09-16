@@ -4353,6 +4353,10 @@ async fn share_download_bundle(
             .await
             .map_err(write_failed)?;
         file.write_all(&bytes).await.map_err(write_failed)?;
+        // tokio's File hands the write to a blocking task and `write_all`
+        // returns before it lands; without a flush the handle drops while the
+        // bytes may still be in flight and a reader can see an empty file.
+        file.flush().await.map_err(write_failed)?;
         written.push((entry.filename.clone(), entry.dest.clone(), bytes.len()));
     }
     let total_bytes: usize = written.iter().map(|w| w.2).sum();
