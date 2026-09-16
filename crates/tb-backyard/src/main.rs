@@ -4353,9 +4353,10 @@ async fn share_download_bundle(
             .await
             .map_err(write_failed)?;
         file.write_all(&bytes).await.map_err(write_failed)?;
-        // tokio's File hands the write to a blocking task and `write_all`
-        // returns before it lands; without a flush the handle drops while the
-        // bytes may still be in flight and a reader can see an empty file.
+        // tokio's File hands the write to a blocking task and `write_all` may
+        // return before it lands; dropping the handle detaches that task, so a
+        // reader can see an empty file and a failed OS write is never reported.
+        // `flush` awaits the task and surfaces its result.
         file.flush().await.map_err(write_failed)?;
         written.push((entry.filename.clone(), entry.dest.clone(), bytes.len()));
     }
