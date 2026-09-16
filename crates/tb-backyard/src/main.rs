@@ -4251,8 +4251,10 @@ async fn share_download(
 
 /// Multi-file branch of `share download`: every file of the share lands in
 /// one directory (`--output <dir>`, default `./<token>/`). Destinations are
-/// planned and conflict-checked before the first fetch so a half-written
-/// bundle only happens on a network failure, never on a local one.
+/// planned and conflict-checked before the first fetch, so planning and
+/// conflict problems abort before anything is written. A half-written bundle
+/// can still come from a failure during transfer — fetch or write — and the
+/// error then says how far it got.
 async fn share_download_bundle(
     client: &BackyardClient,
     share: &tb_backyard::types::ShareViewMetadata,

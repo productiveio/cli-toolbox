@@ -161,7 +161,10 @@ pub fn plan_bundle(dir: std::path::PathBuf, filenames: &[String]) -> Result<Bund
     let mut seen: Vec<String> = Vec::with_capacity(filenames.len());
     for filename in filenames {
         let safe = safe_share_filename(filename)?;
-        let key = safe.to_lowercase();
+        // Upper-then-lower approximates Unicode case folding, which std does
+        // not expose: it maps the final sigma `ς` onto `σ` like `Σ` does, where
+        // a plain `to_lowercase` leaves the pair apart while APFS folds it.
+        let key = safe.to_uppercase().to_lowercase();
         if let Some(idx) = seen.iter().position(|k| *k == key) {
             let clash = &entries[idx];
             let reason = if clash.filename == *filename {
@@ -355,6 +358,14 @@ mod tests {
                 && err.contains("README.MD")
                 && err.contains("case"),
             "error should name both spellings and the cause: {err}"
+        );
+
+        // Final sigma: `to_lowercase` alone keeps `ς` and `σ` distinct while
+        // a case-folding filesystem does not.
+        let sigma = vec!["Σ.txt".to_string(), "ς.txt".to_string()];
+        assert!(
+            plan_bundle(PathBuf::from("out"), &sigma).is_err(),
+            "case-fold equivalents beyond ASCII collide too"
         );
     }
 }
