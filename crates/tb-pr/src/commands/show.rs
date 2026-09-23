@@ -202,7 +202,7 @@ pub async fn run(pr_ref: &str, json: bool) -> Result<()> {
 
     println!();
     println!("{}", "Reviews:".bold());
-    let mut latest: Vec<&Review> = summary.iter_latest().collect();
+    let mut latest: Vec<&Review> = summary.iter_effective().collect();
     if latest.is_empty() {
         println!("  {}", "(none yet)".dimmed());
     } else {

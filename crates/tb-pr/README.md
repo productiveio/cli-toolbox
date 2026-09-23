@@ -16,6 +16,12 @@ to merge / Waiting on me / Waiting on author.
   don't hit the GitHub API.
 - **Direct-only "waiting on me"** — team/CODEOWNERS requests are excluded
   via `user-review-requested:@me`.
+- **Changes-requested flag** — my in-review PRs where a reviewer's latest
+  review is CHANGES_REQUESTED carry a `✎` badge (TUI + `list`), a
+  `changes_requested_by` login list in `--json`, and their own section in
+  `prime`. GitHub's notification feed can't isolate this (a review on your
+  PR arrives as a generic `author` thread), so it's derived from the reviews
+  API instead.
 - **Productive task linking** — extracts `productive_task_id` from PR
   descriptions; press `t` in the TUI to open the linked task.
 - **Claude Code skill** — ships a `SKILL.md` so agents can reason about
@@ -63,7 +69,7 @@ tb-pr doctor
 | Column | Source | Filter |
 |---|---|---|
 | Draft (mine) | `author:@me draft:true` | — |
-| In review (mine) | `author:@me draft:false` | not fully approved |
+| In review (mine) | `author:@me draft:false` | not fully approved; `✎` when a reviewer's latest review is CHANGES_REQUESTED |
 | Ready to merge (mine) | `author:@me draft:false` | ≥1 approval, no CHANGES_REQUESTED |
 | Waiting on me | `user-review-requested:@me` | direct requests only (no CODEOWNERS team) |
 | Waiting on author | `reviewed-by:@me -author:@me` | my last review is COMMENTED or CHANGES_REQUESTED |

@@ -16,54 +16,76 @@ pub struct ReviewUser {
     pub login: String,
 }
 
-/// Summary of a PR's review state: each reviewer's *latest* review.
+/// Summary of a PR's review state, two views per reviewer:
 ///
-/// GitHub returns the full history; for filter decisions what matters is the
-/// most recent submitted review per reviewer (excluding `PENDING`/`DISMISSED`).
+/// - `latest_by_user`: the most recent submitted review of any state
+///   (PENDING/DISMISSED excluded). Answers "what did I do last" for the
+///   waiting-on-author filter, where COMMENTED matters.
+/// - `decision_by_user`: the reviewer's standing verdict, i.e. their latest
+///   APPROVED or CHANGES_REQUESTED. Mirrors GitHub: a COMMENTED review (a
+///   thread reply, say) never clears a verdict; DISMISSED does.
 pub struct ReviewSummary {
     latest_by_user: HashMap<String, Review>,
+    decision_by_user: HashMap<String, Review>,
 }
 
 impl ReviewSummary {
     pub fn from_reviews(reviews: &[Review]) -> Self {
+        // Walk in submission order so "later wins" and "DISMISSED clears"
+        // hold regardless of how the API ordered the list.
+        let mut ordered: Vec<&Review> = reviews
+            .iter()
+            .filter(|r| r.submitted_at.is_some())
+            .collect();
+        ordered.sort_by_key(|r| r.submitted_at);
+
         let mut latest_by_user: HashMap<String, Review> = HashMap::new();
-        for r in reviews {
-            // Ignore reviews without a submitted_at (drafts/pending) and
-            // explicitly DISMISSED ones.
-            if r.submitted_at.is_none() {
-                continue;
-            }
-            if r.state.eq_ignore_ascii_case("DISMISSED") {
-                continue;
-            }
-            let entry = latest_by_user.entry(r.user.login.clone());
-            match entry {
-                std::collections::hash_map::Entry::Vacant(e) => {
-                    e.insert(r.clone());
+        let mut decision_by_user: HashMap<String, Review> = HashMap::new();
+        for r in ordered {
+            let login = r.user.login.clone();
+            match r.state.to_ascii_uppercase().as_str() {
+                "DISMISSED" => {
+                    decision_by_user.remove(&login);
                 }
-                std::collections::hash_map::Entry::Occupied(mut e) => {
-                    let existing_ts = e.get().submitted_at;
-                    if r.submitted_at > existing_ts {
-                        e.insert(r.clone());
-                    }
+                "APPROVED" | "CHANGES_REQUESTED" => {
+                    decision_by_user.insert(login.clone(), r.clone());
+                    latest_by_user.insert(login, r.clone());
+                }
+                _ => {
+                    latest_by_user.insert(login, r.clone());
                 }
             }
         }
-        Self { latest_by_user }
+        Self {
+            latest_by_user,
+            decision_by_user,
+        }
     }
 
-    /// At least one reviewer's latest review is APPROVED.
+    /// At least one reviewer's standing verdict is APPROVED.
     pub fn has_approval(&self) -> bool {
-        self.latest_by_user
+        self.decision_by_user
             .values()
             .any(|r| r.state.eq_ignore_ascii_case("APPROVED"))
     }
 
-    /// Any reviewer's latest review is CHANGES_REQUESTED.
+    /// Any reviewer's standing verdict is CHANGES_REQUESTED.
     pub fn has_pending_changes_requested(&self) -> bool {
-        self.latest_by_user
+        self.decision_by_user
             .values()
             .any(|r| r.state.eq_ignore_ascii_case("CHANGES_REQUESTED"))
+    }
+
+    /// Logins whose standing verdict is CHANGES_REQUESTED, sorted for stable output.
+    pub fn changes_requested_by(&self) -> Vec<String> {
+        let mut logins: Vec<String> = self
+            .decision_by_user
+            .values()
+            .filter(|r| r.state.eq_ignore_ascii_case("CHANGES_REQUESTED"))
+            .map(|r| r.user.login.clone())
+            .collect();
+        logins.sort();
+        logins
     }
 
     /// Approved by at least one reviewer AND no reviewer is blocking.
@@ -76,14 +98,15 @@ impl ReviewSummary {
         self.latest_by_user.get(my_login)
     }
 
-    /// Iterate over the latest kept review per reviewer.
-    ///
-    /// Note: PENDING-submitted and explicitly DISMISSED reviews are already
-    /// filtered out by `from_reviews`, so this hides reviews that no longer
-    /// apply. Callers that want to render the full raw history should iterate
-    /// over the original `&[Review]` instead.
-    pub fn iter_latest(&self) -> impl Iterator<Item = &Review> {
-        self.latest_by_user.values()
+    /// One review per reviewer: their standing verdict when they have one,
+    /// otherwise their latest review. What `show` renders, so a blocking
+    /// reviewer reads as CHANGES_REQUESTED even after a later thread reply.
+    /// Callers that want the full raw history should iterate the original
+    /// `&[Review]` instead.
+    pub fn iter_effective(&self) -> impl Iterator<Item = &Review> {
+        self.latest_by_user
+            .iter()
+            .map(|(login, latest)| self.decision_by_user.get(login).unwrap_or(latest))
     }
 }
 
@@ -129,6 +152,24 @@ mod tests {
     }
 
     #[test]
+    fn changes_requested_by_lists_blocking_reviewers_sorted() {
+        let s = ReviewSummary::from_reviews(&[
+            review("zed", "CHANGES_REQUESTED", Some("2026-04-10T10:00:00Z")),
+            review("amy", "CHANGES_REQUESTED", Some("2026-04-11T10:00:00Z")),
+            review("bob", "APPROVED", Some("2026-04-11T10:00:00Z")),
+            // Superseded by a later approval — must not be listed.
+            review("cal", "CHANGES_REQUESTED", Some("2026-04-10T10:00:00Z")),
+            review("cal", "APPROVED", Some("2026-04-12T10:00:00Z")),
+        ]);
+        assert_eq!(s.changes_requested_by(), vec!["amy", "zed"]);
+        assert!(
+            ReviewSummary::from_reviews(&[review("bob", "APPROVED", Some("2026-04-11T10:00:00Z"))])
+                .changes_requested_by()
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn superseded_changes_requested_is_cleared() {
         // Bob first requested changes, then approved — latest wins.
         let s = ReviewSummary::from_reviews(&[
@@ -139,15 +180,35 @@ mod tests {
     }
 
     #[test]
-    fn dismissed_reviews_ignored() {
+    fn comment_after_changes_requested_keeps_it_blocking() {
+        // GitHub keeps a CHANGES_REQUESTED verdict until the reviewer approves
+        // or it's dismissed; a thread reply lands as a COMMENTED review and
+        // must not clear it. Fed in reverse order to prove we sort first.
+        let s = ReviewSummary::from_reviews(&[
+            review("bob", "COMMENTED", Some("2026-04-12T10:00:00Z")),
+            review("bob", "APPROVED", Some("2026-04-11T10:00:00Z")),
+            review("zed", "COMMENTED", Some("2026-04-11T10:00:05Z")),
+            review("zed", "CHANGES_REQUESTED", Some("2026-04-11T10:00:00Z")),
+        ]);
+        assert_eq!(s.changes_requested_by(), vec!["zed"]);
+        assert!(s.has_pending_changes_requested());
+        assert!(
+            s.has_approval(),
+            "bob's approval survives his later comment"
+        );
+        assert!(!s.is_ready_to_merge());
+        // The plain-latest view still sees the comment (waiting-on-author needs it).
+        assert_eq!(s.my_latest_review("zed").unwrap().state, "COMMENTED");
+    }
+
+    #[test]
+    fn dismissed_review_clears_the_decision() {
         let s = ReviewSummary::from_reviews(&[
             review("alice", "CHANGES_REQUESTED", Some("2026-04-10T10:00:00Z")),
             review("alice", "DISMISSED", Some("2026-04-11T10:00:00Z")),
         ]);
-        // Dismissed is filtered out, so alice's CHANGES_REQUESTED is latest
-        // kept — pretty conservative but matches reality where the dismissed
-        // review was re-classified.
-        assert!(s.has_pending_changes_requested());
+        assert!(!s.has_pending_changes_requested());
+        assert!(s.changes_requested_by().is_empty());
     }
 
     #[test]

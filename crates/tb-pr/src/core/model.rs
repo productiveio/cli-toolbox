@@ -122,6 +122,11 @@ pub struct Pr {
     /// author has pushed commits since the viewer's last review.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub has_new_commits_since_my_review: Option<bool>,
+    /// Reviewer logins whose latest review is CHANGES_REQUESTED. Populated
+    /// only for my own PRs in `review_mine`; empty elsewhere (reviews aren't
+    /// fetched for other columns).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changes_requested_by: Vec<String>,
     /// Rolled-up CI status on the head commit. Populated only for my own
     /// PRs (draft/review/ready-to-merge) — where CI failures are
     /// actionable — and left `None` on everyone else's to keep fetch cost
