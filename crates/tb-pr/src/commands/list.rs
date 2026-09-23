@@ -245,6 +245,9 @@ fn render_table(state: &crate::core::model::BoardState) {
         if pr.has_new_commits_since_my_review == Some(true) {
             title = format!("🆕 {title}");
         }
+        if !pr.changes_requested_by.is_empty() {
+            title = format!("✎ {title}");
+        }
         let task = pr.productive_task_id.as_deref().unwrap_or("");
         println!(
             "{:<8} {:<2} {:<24} {:<4} {:<6} {:<60} {}",

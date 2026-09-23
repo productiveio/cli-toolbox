@@ -66,6 +66,18 @@ impl ReviewSummary {
             .any(|r| r.state.eq_ignore_ascii_case("CHANGES_REQUESTED"))
     }
 
+    /// Logins whose latest review is CHANGES_REQUESTED, sorted for stable output.
+    pub fn changes_requested_by(&self) -> Vec<String> {
+        let mut logins: Vec<String> = self
+            .latest_by_user
+            .values()
+            .filter(|r| r.state.eq_ignore_ascii_case("CHANGES_REQUESTED"))
+            .map(|r| r.user.login.clone())
+            .collect();
+        logins.sort();
+        logins
+    }
+
     /// Approved by at least one reviewer AND no reviewer is blocking.
     pub fn is_ready_to_merge(&self) -> bool {
         self.has_approval() && !self.has_pending_changes_requested()
@@ -126,6 +138,24 @@ mod tests {
             Some("2026-04-10T10:00:00Z"),
         )]);
         assert!(!s.is_ready_to_merge());
+    }
+
+    #[test]
+    fn changes_requested_by_lists_blocking_reviewers_sorted() {
+        let s = ReviewSummary::from_reviews(&[
+            review("zed", "CHANGES_REQUESTED", Some("2026-04-10T10:00:00Z")),
+            review("amy", "CHANGES_REQUESTED", Some("2026-04-11T10:00:00Z")),
+            review("bob", "APPROVED", Some("2026-04-11T10:00:00Z")),
+            // Superseded by a later approval — must not be listed.
+            review("cal", "CHANGES_REQUESTED", Some("2026-04-10T10:00:00Z")),
+            review("cal", "APPROVED", Some("2026-04-12T10:00:00Z")),
+        ]);
+        assert_eq!(s.changes_requested_by(), vec!["amy", "zed"]);
+        assert!(
+            ReviewSummary::from_reviews(&[review("bob", "APPROVED", Some("2026-04-11T10:00:00Z"))])
+                .changes_requested_by()
+                .is_empty()
+        );
     }
 
     #[test]

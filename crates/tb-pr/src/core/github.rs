@@ -685,6 +685,7 @@ pub async fn fetch_board_state(
         } else {
             let mut pr = build_pr(item, Column::ReviewMine, &details, productive_org_slug, now);
             pr.check_state = check_states.get(&key).copied().flatten();
+            pr.changes_requested_by = summary.changes_requested_by();
             review_mine.push(pr);
         }
     }
@@ -1060,6 +1061,7 @@ fn build_pr(
         base_branch,
         head_branch,
         has_new_commits_since_my_review: None,
+        changes_requested_by: Vec::new(),
         check_state: None,
     }
 }
@@ -1225,6 +1227,7 @@ mod tests {
             base_branch: None,
             head_branch: None,
             has_new_commits_since_my_review: None,
+            changes_requested_by: Vec::new(),
             check_state: None,
         }
     }

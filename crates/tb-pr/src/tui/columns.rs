@@ -336,6 +336,10 @@ fn render_help(frame: &mut Frame) {
             "toggle draft filter (hide drafts in waiting-on-me/author)",
         ),
         ("A       ", "toggle the \"Waiting on author\" column"),
+        (
+            "✎       ",
+            "card badge: a reviewer requested changes on my PR",
+        ),
         ("?       ", "toggle this help"),
         ("q  Esc  ", "quit"),
     ]

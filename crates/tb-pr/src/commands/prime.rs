@@ -42,14 +42,27 @@ fn render(state: &BoardState) -> String {
         state.user
     ));
 
+    // My in-review PRs where a reviewer is blocking — the author's
+    // "someone requested changes" signal, which plain review_mine hides.
+    let changes_requested: Vec<&Pr> = c
+        .review_mine
+        .iter()
+        .filter(|p| !p.changes_requested_by.is_empty())
+        .collect();
+
     // One-line summary counts.
     out.push_str(&format!(
         "- {} waiting on me{}\n",
         c.waiting_on_me.len(),
         oldest_suffix(&c.waiting_on_me),
     ));
+    let cr_suffix = if changes_requested.is_empty() {
+        String::new()
+    } else {
+        format!(", {} with changes requested", changes_requested.len())
+    };
     out.push_str(&format!(
-        "- {} of my PRs in review ({} ready to merge)\n",
+        "- {} of my PRs in review ({} ready to merge{cr_suffix})\n",
         c.review_mine.len(),
         c.ready_to_merge_mine.len(),
     ));
@@ -70,6 +83,11 @@ fn render(state: &BoardState) -> String {
     }
 
     append_section(&mut out, "Waiting on me (urgent first)", &c.waiting_on_me);
+    append_section(
+        &mut out,
+        "Changes requested on my PRs",
+        changes_requested.iter().copied(),
+    );
     append_section(&mut out, "Ready to merge", &c.ready_to_merge_mine);
     append_section(&mut out, "Waiting on author", &c.waiting_on_author);
     append_notifications(&mut out, &c.notifications);
@@ -113,12 +131,12 @@ fn oldest_notification_suffix(notifications: &[Notification]) -> String {
 
 /// Append a `## Title` section with a bulleted PR list. Sorted by age desc
 /// so the oldest (most urgent) PR surfaces first.
-fn append_section(out: &mut String, title: &str, prs: &[Pr]) {
-    if prs.is_empty() {
+fn append_section<'a>(out: &mut String, title: &str, prs: impl IntoIterator<Item = &'a Pr>) {
+    let mut sorted: Vec<&Pr> = prs.into_iter().collect();
+    if sorted.is_empty() {
         return;
     }
     out.push_str(&format!("\n## {title}\n"));
-    let mut sorted: Vec<&Pr> = prs.iter().collect();
     sorted.sort_by(|a, b| {
         b.age_days
             .partial_cmp(&a.age_days)
@@ -149,6 +167,12 @@ fn format_pr(pr: &Pr) -> String {
     }
     if pr.has_new_commits_since_my_review == Some(true) {
         extras.push_str(", 🆕");
+    }
+    if !pr.changes_requested_by.is_empty() {
+        extras.push_str(&format!(
+            ", ✎ changes requested by {}",
+            pr.changes_requested_by.join(", ")
+        ));
     }
     format!(
         "- {}#{} — {} ({age}, {size}{extras})",
@@ -186,18 +210,21 @@ mod tests {
             base_branch: None,
             head_branch: None,
             has_new_commits_since_my_review: None,
+            changes_requested_by: Vec::new(),
             check_state: None,
         }
     }
 
     #[test]
     fn renders_summary_and_sections() {
+        let mut blocked = pr("ai-agent", 3, "Blocked one", 2.0);
+        blocked.changes_requested_by = vec!["tatjana".to_string(), "zed".to_string()];
         let state = BoardState {
             user: "ilucin".to_string(),
             fetched_at: Utc::now(),
             columns: ColumnsData {
                 draft_mine: vec![pr("ai-agent", 1, "Spike", 15.0)],
-                review_mine: vec![pr("api", 2, "Feature A", 1.0)],
+                review_mine: vec![pr("api", 2, "Feature A", 1.0), blocked],
                 ready_to_merge_mine: vec![pr("frontend", 9, "Ready one", 0.5)],
                 waiting_on_me: vec![
                     pr("frontend", 1234, "Fix billing form", 5.0),
@@ -211,6 +238,12 @@ mod tests {
         let s = render(&state);
         assert!(s.contains("2 waiting on me"));
         assert!(s.contains("1 of my drafts"));
+        assert!(s.contains("2 of my PRs in review (1 ready to merge, 1 with changes requested)"));
+        // Only the blocked in-review PR gets its own section; the plain one stays hidden.
+        assert!(s.contains("## Changes requested on my PRs"));
+        assert!(s.contains("ai-agent#3 — Blocked one"));
+        assert!(s.contains("✎ changes requested by tatjana, zed"));
+        assert!(!s.contains("api#2"));
         assert!(s.contains("## Waiting on me"));
         assert!(s.contains("frontend#1234"));
         assert!(s.contains("[P-1234]"));
@@ -238,6 +271,8 @@ mod tests {
         };
         let s = render(&state);
         assert!(s.contains("0 waiting on me"));
+        assert!(s.contains("0 of my PRs in review (0 ready to merge)\n"));
         assert!(!s.contains("## Waiting on me"));
+        assert!(!s.contains("## Changes requested"));
     }
 }

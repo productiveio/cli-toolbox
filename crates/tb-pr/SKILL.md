@@ -17,6 +17,11 @@ requests only — team/CODEOWNERS requests are intentionally excluded.
   waiting-on-me, waiting-on-author (where my last review was
   commented/changes-requested). The TUI collapses waiting-on-author by
   default; press `A` to show/hide it (the `list` CLI always includes it).
+- **Changes requested on my PRs** — in-review PRs where a reviewer's latest
+  review is CHANGES_REQUESTED get a `✎` badge, a `changes_requested_by` login
+  list in `list --json`, and a dedicated `prime` section. This is the
+  author-side "someone is blocking my PR" signal; treat it like
+  waiting-on-me urgency.
 - **Rotting classification** — per-column age buckets (fresh/warming/stale/
   rotting/critical). The TUI colors the border; the CLI colors the age.
 - **Productive task linking** — extracts `productive_task_id` from PR

@@ -23,9 +23,17 @@ pub fn card_height(pr: &Pr, full_titles: bool, column_width: u16) -> u16 {
     } else {
         0
     };
-    // CI glyph is one visible cell + a trailing space.
+    // CI glyph is one visible cell + a trailing space; same for the
+    // changes-requested `✎`.
     let ci_prefix = if pr.check_state.is_some() { 2 } else { 0 };
-    let title_width = inner_width.saturating_sub(new_prefix + ci_prefix).max(1) as usize;
+    let cr_prefix = if pr.changes_requested_by.is_empty() {
+        0
+    } else {
+        2
+    };
+    let title_width = inner_width
+        .saturating_sub(new_prefix + ci_prefix + cr_prefix)
+        .max(1) as usize;
     let title_len = display_title(&pr.title).chars().count();
     let title_lines = if full_titles {
         title_len.div_ceil(title_width).max(1) as u16
@@ -87,6 +95,10 @@ pub fn render(
     }
     if pr.has_new_commits_since_my_review == Some(true) {
         title_spans.push(Span::raw("🆕 "));
+    }
+    // A reviewer's latest review is CHANGES_REQUESTED — the author has to act.
+    if !pr.changes_requested_by.is_empty() {
+        title_spans.push(Span::styled("✎ ", Style::default().fg(Color::Magenta)));
     }
     let title_body = if full_titles {
         display.to_string()
@@ -371,6 +383,7 @@ mod tests {
             base_branch: None,
             head_branch: None,
             has_new_commits_since_my_review: None,
+            changes_requested_by: Vec::new(),
             check_state: None,
         };
         // Column width 30, inner width 28, title 120 chars → 5 wrapped lines.

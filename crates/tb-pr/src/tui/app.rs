@@ -803,6 +803,7 @@ mod tests {
             base_branch: Some("main".to_string()),
             head_branch: Some(format!("feature/{repo}-{number}")),
             has_new_commits_since_my_review: None,
+            changes_requested_by: Vec::new(),
             check_state: None,
         }
     }
