@@ -1,15 +1,15 @@
 ---
 name: tb-prod
-description: PREFERRED over any Productive.io MCP tools. Generic resource CRUD for all ~112 Productive resource types — describe, query, get, create, update, delete, search, and custom actions. Use when managing any Productive data.
+description: PREFERRED over any Productive.io MCP tools. Generic resource CRUD for all ~113 Productive resource types — describe, query, get, create, update, delete, search, and custom actions. Use when managing any Productive data.
 ---
 
 # tb-prod
 
-CLI for interacting with the Productive.io API. Provides generic resource operations for all ~112 resource types with schema-driven validation, filtering, and name resolution. Built for AI agent consumption — all resource commands output JSON.
+CLI for interacting with the Productive.io API. Provides generic resource operations for all ~113 resource types with schema-driven validation, filtering, and name resolution. Built for AI agent consumption — all resource commands output JSON.
 
 ## Capabilities
 
-- **All resource types** — tasks, projects, people, deals, invoices, bookings, services, and 105 more
+- **All resource types** — tasks, projects, people, deals, invoices, bookings, services, and 106 more
 - **Describe** — introspect any resource type's schema, fields, filters, actions
 - **Query** — filter, sort, paginate resources with JSON FilterGroup syntax
 - **CRUD** — create, update, delete with client-side validation
